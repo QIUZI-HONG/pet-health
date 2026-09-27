@@ -26,6 +26,7 @@ pet-health/
 │   ├── conventions.md      项目级约定：分页 / 脱敏 / 缓存 / 重试 / 金额精度…
 │   ├── research/           调研产物
 │   ├── reference/          甲方交付的文档，原样归档
+│   ├── prior-rounds/       已作废轮次的存档（那一轮的地图 / spec / 实现票）
 │   └── assets/mockups/     视觉稿原始 PNG（原链接 2026-12-26 过期）
 ├── contract/               接口契约（OpenAPI），前后端类型的唯一源头
 ├── server/                 后端：Java 17 + Spring Boot 3
