@@ -1,9 +1,9 @@
 # AI 服务设计方案
 
 > ⚠️ **供应商已变更（2026-09-27）**：本文里的模型名（qwen3-vl-plus / paraformer / qwen3-vl-embedding）
-> 是设计时的假设，实际接的是 DeepSeek 且**只有文本能力**——图片、语音、向量都不可用，
-> 实测记录与影响见 [ADR-0017](../adr/0017-model-provider-deepseek.md)。本文其余部分（职责边界、
-> 调用契约、护栏、留痕）仍然有效。
+> 是设计时的假设，实际接的是 DeepSeek：**文本与图片可用（图片走 flash，pro 看不见图）**，
+> 语音转写与向量不可用。逐项实测记录与影响见 [ADR-0017](../adr/0017-model-provider-deepseek.md)。
+> 本文其余部分（职责边界、调用契约、护栏、留痕）仍然有效。
 
 
 > 状态：**已裁决**（2026-09-27）。决策见 [ADR-0009](../adr/0009-ai-service-separate.md)（独立部署）与 [ADR-0010](../adr/0010-ai-config-layering.md)（配置分层）。

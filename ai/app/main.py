@@ -6,7 +6,8 @@
 - **硬红线预检**：词典要入库（#103），表还没建，因此现在完全依赖提示词里的铁律与模型判断；
 - **知识检索**：L1/L2/L3（#63 已给架构）尚未实现，所以 `citations` 恒为空——
   回答里的来源引用要等检索层落地；
-- **图片与语音**：当前供应商不具备（实测），请求带图会被**明确降级并告知**，不静默忽略。
+- **语音**：当前供应商没有转写端点；**图片可用**（走 `ai_vision_model`，实测 flash 能读图、
+  pro 不能），没配视觉模型时才降级并告知。
 
 链路设计见 `docs/design/ai-service.md` 第 3 节；护栏与留痕字段见同文第 5 节。
 """
@@ -55,22 +56,8 @@ def health() -> dict[str, object]:
     dependencies=[Depends(require_internal_token)],
 )
 async def consult(req: ConsultRequest) -> ConsultResponse:
-    image_count = len(req.input.media_urls)
-
-    # 图片：当前模型看不见（实测）。**明确降级并告知**，不做静默忽略——
-    # 用户以为模型看过照片、其实没看，比直接说不支持危险得多。
-    if image_count and not settings.ai_supports_image:
-        return ConsultResponse(
-            risk_level=2,
-            action_suggestion="当前模型还不支持看图片，请把症状用文字补充清楚（部位、多久、有没有变化）；"
-            "如情况紧急请直接送医。",
-            need_hospital=True,
-            degraded=True,
-            degrade_reason="image_not_supported",
-            care_tips=[f"已收到 {image_count} 张图片，但本轮没有分析它们。"],
-            model_name=settings.ai_model_grading,
-            prompt_version=prompts.PROMPT_VERSION,
-        )
+    images = req.input.media_urls[: settings.ai_max_images]
+    image_count = len(images)
 
     user_prompt = prompts.build_user_prompt(
         pet=req.pet.model_dump(),
@@ -81,7 +68,24 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
 
     try:
         result = await model_client.assess(
-            system_prompt=prompts.SYSTEM_PROMPT, user_prompt=user_prompt
+            system_prompt=prompts.SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            images=images,
+        )
+    except model_client.VisionUnavailable as exc:
+        # 有图但当前没有能看图的模型。**明确告知**，不做静默忽略——
+        # 用户以为模型看过照片、其实没看，比直接说不支持危险得多。
+        return ConsultResponse(
+            risk_level=2,
+            action_suggestion="暂时无法分析图片，请把症状用文字补充清楚（部位、多久、有没有变化）；"
+            "如情况紧急请直接送医。",
+            need_hospital=True,
+            degraded=True,
+            degrade_reason=f"image_not_supported: {exc}",
+            care_tips=[f"已收到 {image_count} 张图片，但本轮没有分析它们。"],
+            images_used=0,
+            model_name=settings.ai_model_grading,
+            prompt_version=prompts.PROMPT_VERSION,
         )
     except model_client.ModelUnavailable as exc:
         # 传输层挂了：降级成保守建议，不向用户报错（设计文档第 5 节的硬要求）
@@ -91,6 +95,7 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             need_hospital=True,
             degraded=True,
             degrade_reason=f"model_unavailable: {exc}",
+            images_used=0,
             model_name=settings.ai_model_grading,
             prompt_version=prompts.PROMPT_VERSION,
         )
@@ -102,6 +107,7 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             need_hospital=True,
             degraded=True,
             degrade_reason=f"model_output_invalid: {exc}",
+            images_used=0,
             model_name=settings.ai_model_grading,
             prompt_version=prompts.PROMPT_VERSION,
         )
@@ -114,6 +120,8 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
         care_tips=result.care_tips,
         # 检索层未实现，来源引用拿不出来。宁可空着，也不编造条目 ID。
         citations=[],
+        # 本轮模型实际看了几张图。留痕用：事后归因分级漂移时要能区分「当时有图」和「当时没图」
+        images_used=image_count,
         degraded=False,
         model_name=result.model_name,
         model_version=result.model_version,

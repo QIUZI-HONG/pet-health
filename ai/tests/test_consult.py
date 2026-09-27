@@ -41,7 +41,9 @@ def test_health_reports_capabilities():
     assert body["status"] == "ok"
     assert body["prompt_version"] == prompts.PROMPT_VERSION
     # 能力矩阵要如实报出来，别让调用方猜（当前供应商没有图片/语音/向量）
-    assert body["capabilities"] == {"text": True, "image": False, "audio": False, "embedding": False}
+    # 图片能力实测为真（flash 能读图，pro 不能），所以这里是 True 而不是 False——
+    # 我最初把它写成 False 是因为预算被 reasoning 吃光后得到空 content，那是误判（见 ADR-0017）
+    assert body["capabilities"] == {"text": True, "image": True, "audio": False, "embedding": False}
 
 
 def test_consult_requires_token():
@@ -73,10 +75,12 @@ def test_user_prompt_carries_pet_context():
     assert "上周也有一次" in prompt
 
 
-def test_user_prompt_flags_ignored_images():
-    """带图但模型看不见时，要在提示词里说明已忽略——不能让模型假装看过。"""
+def test_user_prompt_mentions_attached_images():
+    """带图时提示词要说明「图随消息一起来了，结合文字判断」，并禁止凭想象描写图片。"""
     prompt = prompts.build_user_prompt(pet={"species": 1}, text="皮肤有红点", history=[], image_count=2)
-    assert "2 张" in prompt and "看不见图片" in prompt
+    assert "2 张" in prompt and "结合图片与文字判断" in prompt
+    # 铁律里必须有「看不清就如实说、不要编」这一条
+    assert "不要" in prompts.SYSTEM_PROMPT and "图片不足以判断" in prompts.SYSTEM_PROMPT
 
 
 # ---------------------------------------------------------------- 结构化输出校验
@@ -117,13 +121,20 @@ def test_validate_rejects_bad_arguments(payload):
 # ---------------------------------------------------------------- 三条降级路径
 
 
-def test_image_request_degrades_explicitly(monkeypatch):
-    """图片：不是静默忽略，也不是假装成功——明确降级并告知。"""
-    calls = []
+def test_images_are_actually_sent_to_the_model(monkeypatch):
+    """带图请求：图片要真的进模型上下文，并且留下「本轮看了几张图」的痕迹。"""
+    seen = {}
 
-    async def fake_assess(**kwargs):  # pragma: no cover - 不该被调用
-        calls.append(kwargs)
-        raise AssertionError("带图请求且供应商不支持图片时，不应调用模型")
+    async def fake_assess(**kwargs):
+        seen.update(kwargs)
+        return TriageResult(
+            risk_level=2,
+            action_suggestion="建议 24 小时内就诊。",
+            need_hospital=True,
+            model_name="deepseek-flash",
+            model_version="deepseek-flash",
+            latency_ms=6700,
+        )
 
     monkeypatch.setattr(main.model_client, "assess", fake_assess)
 
@@ -133,8 +144,55 @@ def test_image_request_degrades_explicitly(monkeypatch):
         headers=TOKEN,
     ).json()
 
+    assert seen["images"] == ["https://example.com/skin.jpg"]
+    assert body["degraded"] is False
+    assert body["images_used"] == 1
+    # 提示词里也要写到有图，否则模型不知道去看
+    assert "结合图片与文字判断" in seen["user_prompt"]
+
+
+def test_image_count_is_capped(monkeypatch):
+    """图片直接进上下文，太多了既费 token 也没帮助——按配置截断。"""
+    seen = {}
+
+    async def fake_assess(**kwargs):
+        seen.update(kwargs)
+        return TriageResult(risk_level=1, action_suggestion="继续观察", model_name="m")
+
+    monkeypatch.setattr(main.model_client, "assess", fake_assess)
+
+    urls = [f"https://example.com/{i}.jpg" for i in range(5)]
+    body = client.post("/internal/consult", json=make_request(media_urls=urls), headers=TOKEN).json()
+
+    assert len(seen["images"]) == settings.ai_max_images
+    assert body["images_used"] == settings.ai_max_images
+
+
+def test_image_request_degrades_when_no_vision_model(monkeypatch):
+    """没有能看图的模型时：明确降级并告知，不硬发给看不见图的模型。"""
+    monkeypatch.setattr(settings, "ai_vision_model", "")
+    calls = []
+
+    async def fake_assess(**kwargs):  # 不该被调用
+        calls.append(kwargs)
+        raise AssertionError("没有视觉模型时不应该调用模型")
+
+    # 注意：这里要打到真正的 assess（它负责判断能不能看图），所以只桩掉底层 _chat
+    async def fake_chat(messages, model):  # pragma: no cover
+        raise AssertionError("不该真的发请求")
+
+    monkeypatch.setattr(model_client, "_chat", fake_chat)
+    monkeypatch.setattr(main.model_client, "assess", model_client.assess)
+
+    body = client.post(
+        "/internal/consult",
+        json=make_request(media_urls=["https://example.com/skin.jpg"]),
+        headers=TOKEN,
+    ).json()
+
     assert body["degraded"] is True
-    assert body["degrade_reason"] == "image_not_supported"
+    assert body["degrade_reason"].startswith("image_not_supported")
+    assert body["images_used"] == 0
     assert "图片" in body["action_suggestion"]
     assert calls == []
 

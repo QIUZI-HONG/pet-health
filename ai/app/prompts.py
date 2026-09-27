@@ -25,7 +25,10 @@ SYSTEM_PROMPT = """你是一只宠物（犬、猫）的健康分诊助手，服�
 4. 红色风险必须在 action_suggestion 里明确写「立即送医」，并提示 24 小时医院。
 5. action_suggestion 用 2–3 句白话讲清下一步做什么；care_tips 给居家观察要点；
    possible_causes 只列可能方向，用「可能」措辞，不超过 3 条。
-6. 最后必须调用 report_triage 工具上报结果，不要在正文里输出 JSON。"""
+6. 用户可能附了图片（皮肤、耳道、排泄物等）。图片只用于**辅助观察**：看到什么就据此判断，
+   看不清或与症状无关时如实说明「图片不足以判断，建议现场检查」，**不要**凭想象描写图片内容。
+   图片不能替代兽医诊断，任何用药仍由兽医判断。
+7. 最后必须调用 report_triage 工具上报结果，不要在正文里输出 JSON。"""
 
 #: 结构化输出的载体。为什么用工具调用而不是 json_object：
 #: 工具 schema 能表达类型与取值范围，且模型返回的是参数对象，客户端校验一次即可
@@ -86,7 +89,7 @@ def build_user_prompt(*, pet: dict, text: str, history: list[dict], image_count:
         lines.append(f"- 近期记录：{json.dumps(recent[:5], ensure_ascii=False)}")
 
     if image_count:
-        lines.append(f"\n【本次附带图片】{image_count} 张（当前模型看不见图片，已被忽略）")
+        lines.append(f"\n【本次附带图片】{image_count} 张，随本条消息一起提供，请结合图片与文字判断。")
 
     if history:
         lines.append("\n【对话上文】")

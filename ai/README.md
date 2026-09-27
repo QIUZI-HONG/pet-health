@@ -31,7 +31,8 @@ curl -s localhost:8000/internal/health
 | 文本分级 | ✅ 真调用，工具调用出结构化结果，失败一律降级 |
 | 硬红线预检 | ⬜ 词典要入库（[#103](https://github.com/QIUZI-HONG/pet-health/issues/103)），现在靠提示词铁律 |
 | 知识检索（L1/L2/L3） | ⬜ 未实现，所以 `citations` 恒为空——不编造条目 ID |
-| 图片 / 语音 / 向量 | ❌ 当前供应商不具备（带图请求明确降级并告知） |
+| 图片 | ✅ 走 `ai_vision_model`（当前 flash；**pro 看不见图**）。没配视觉模型时明确降级并告知 |
+| 语音 / 向量 | ❌ 该供应商没有这两个端点 |
 
 `/internal/health` 会报出能力矩阵（`capabilities`），别靠猜。
 

@@ -39,6 +39,9 @@ class ConsultResponse(BaseModel):
     need_hospital: bool = False
     care_tips: list[str] = Field(default_factory=list)
     citations: list[str] = Field(default_factory=list)  # 知识条目 ID，如 K-0042
+    # 本轮实际送进模型几张图（0 表示没看图或模型看不见）。留痕用：
+    # 事后归因「分级漂移」时要能区分「当时有图」和「当时没图」。
+    images_used: int = 0
     degraded: bool = False
     degrade_reason: str | None = None
     model_name: str = ""

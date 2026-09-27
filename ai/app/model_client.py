@@ -3,13 +3,16 @@
 只有这一个文件直接跟模型供应商说话。上层（`main.py`）拿到的是校验过的结构化结果，
 永远不接触 HTTP、JSON 解析或重试细节。
 
-三条实测得来的纪律（对应 [ADR-0017](../../docs/adr/0017-model-provider-deepseek.md)）：
+四条实测得来的纪律（对应 [ADR-0017](../../docs/adr/0017-model-provider-deepseek.md)）：
 
 1. **输出预算给足**。当前模型是推理型，reasoning 会先吃掉预算；给少了返回
-   `finish_reason=length` + 空 `content`，看起来像「模型不说话」。
-2. **工具调用只能 `tool_choice=auto`**。思考模式拒绝强制指定（HTTP 400），
+   `finish_reason=length` + 空 `content`，看起来像「模型不说话」——**别据此判断能力**，
+   我踩过这个坑：曾以为 flash 看不见图片，其实是预算被 reasoning 吃光了。
+2. **图片要走支持视觉的模型**。`ai_vision_model` 为空 = 当前没有能看图的模型，
+   带图请求由调用方降级——不要硬发给看不见图的模型，那会得到「无法确定」这种看似正常的错误答案。
+3. **工具调用只能 `tool_choice=auto`**。思考模式拒绝强制指定（HTTP 400），
    所以「模型没调工具」是正常分支，要重试一次而不是当成崩溃。
-3. **失败一律降级、不向上抛错**。模型不可用时用户拿到的是保守建议，不是 500。
+4. **失败一律降级、不向上抛错**。模型不可用时用户拿到的是保守建议，不是 500。
 """
 
 import json
@@ -24,6 +27,10 @@ from .prompts import REPORT_TOOL
 
 class ModelUnavailable(Exception):
     """传输层失败：超时、连不上、非 2xx。调用方据此降级。"""
+
+
+class VisionUnavailable(Exception):
+    """带图请求但当前没有能看图的模型。调用方据此明确降级并告知用户。"""
 
 
 class ModelOutputInvalid(Exception):
@@ -121,12 +128,37 @@ def _extract_tool_arguments(body: dict) -> tuple[str, str]:
     return tool_calls[0]["function"]["arguments"], str(body.get("model", ""))
 
 
-async def assess(*, system_prompt: str, user_prompt: str, model: str | None = None) -> TriageResult:
-    """跑一次分级。失败抛 ModelUnavailable / ModelOutputInvalid，由调用方决定怎么降级。"""
+def _user_content(user_prompt: str, images: list[str]) -> str | list[dict]:
+    """文字 + 图片组成一条消息。有图时用 OpenAI 的 content blocks 形状。"""
+    if not images:
+        return user_prompt
+    blocks: list[dict] = [{"type": "text", "text": user_prompt}]
+    for url in images:
+        blocks.append({"type": "image_url", "image_url": {"url": url}})
+    return blocks
+
+
+async def assess(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    images: list[str] | None = None,
+    model: str | None = None,
+) -> TriageResult:
+    """跑一次分级（可带图）。
+
+    失败抛三种异常，由调用方决定怎么降级：
+    `VisionUnavailable`（没配视觉模型）/ `ModelUnavailable`（传输层）/ `ModelOutputInvalid`（输出没法用）。
+    """
+    images = (images or [])[: settings.ai_max_images]
+    if images:
+        if not settings.ai_vision_model:
+            raise VisionUnavailable("当前没有配置支持图片的模型")
+        model = settings.ai_vision_model
     model = model or settings.ai_model_grading
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
+        {"role": "user", "content": _user_content(user_prompt, images)},
     ]
 
     started = time.perf_counter()

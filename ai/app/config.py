@@ -22,20 +22,27 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_base_url: str = "https://api.deepseek.com"
     # 分级默认用 flash：实测 pro 延迟跨到 20 秒并超时（5.6/11.3/20.3s），
-    # flash 稳定 5 秒左右（ADR-0017 有数据）。分级质量该由 #62 的评测集判断，
-    # 评测集落地后若 pro 的漏判率显著更低，再换并同步放大超时预算。
+    # flash 稳定 5~7 秒（ADR-0017 有数据）。**而且只有 flash 看得见图片**（pro 看图和
+    # 不看图都答「无法确定」），所以图片也走它。分级质量该由 #62 的评测集用漏判率判断。
     ai_model_grading: str = "deepseek-flash"
     ai_model_fast: str = "deepseek-flash"
+    # 支持图片输入的模型。留空 = 当前供应商不支持图片，带图请求会被明确降级。
+    ai_vision_model: str = "deepseek-flash"
 
     # **推理型模型会把输出预算烧在 reasoning 上**：给少了会返回空 content 且 finish_reason=length
-    # （40 / 120 / 900 token 都实测踩过）。所以默认给足，别按普通模型的习惯写 256。
-    ai_max_output_tokens: int = 1500
+    # （40 / 120 / 900 / 1500 token 都实测踩过）。一次带图的真实分级用了 1083 个输出 token
+    # （其中 reasoning 510），所以默认留到 3000——上限只是上限，不生成的 token 不计费。
+    ai_max_output_tokens: int = 3000
+    # 单次最多送几张图。图片直接进模型上下文，太多了既费 token 也没帮助。
+    ai_max_images: int = 3
     ai_timeout_seconds: float = 20.0
     ai_max_repair_retry: int = 1
 
-    # ---- 当前供应商不具备的能力（实测：图片看不见，embeddings / audio 都 404）----
-    # 留成开关而不是删掉：换供应商时改这里 + ADR，调用方按它决定走不走降级。
-    ai_supports_image: bool = False
+    # ---- 能力开关（实测记录见 ADR-0017）----
+    # 图片：**flash 可以**（红/蓝方块颜色都能正确识别，不给图则答「无法确定」；pro 不行），
+    #       所以这里为 true，由 ai_vision_model 承载。换供应商或换模型时先重测再改。
+    # 语音 / 向量：两个端点都是 404，确实没有。
+    ai_supports_image: bool = True
     ai_supports_audio: bool = False
     ai_supports_embedding: bool = False
 
