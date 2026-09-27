@@ -84,8 +84,10 @@ ai:
     base-url: ${AI_SERVICE_BASE_URL:http://127.0.0.1:8000}
     # 必须与 ai/.env 的 INTERNAL_TOKEN 一致
     token: ${AI_SERVICE_TOKEN:dev-internal-token}
-    # 交付文档说前端 10 秒提示重试，这里留 2 秒余量做降级
-    timeout-ms: ${AI_TIMEOUT_MS:8000}
+    # **20 秒不是拍脑袋**：模型实测中位数 5.3 秒、偶发 20 秒（ADR-0017 有六次样本）。
+    # 交付文档写的「10 秒提示重试」+ 原先的 8 秒超时，在推理型模型上等于常态化降级——
+    # 那条假设建立在「没有厂商 P95 数据」之上，现在有数据了，所以要重算。
+    timeout-ms: ${AI_TIMEOUT_MS:20000}
   quota:
     # 交付文档 F006：免费用户每日 3 次
     free-per-day: ${AI_FREE_QUOTA_PER_DAY:3}

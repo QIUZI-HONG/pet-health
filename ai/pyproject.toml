@@ -26,3 +26,10 @@ include = ["app*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# live 标记：真打模型，默认不跑（需要 key 与网络）。本地验证用：
+#   AI_LIVE_TEST=1 pytest -m live
+markers = ["live: 需要真实模型与网络的端到端测试"]
+addopts = "-m 'not live' -q"

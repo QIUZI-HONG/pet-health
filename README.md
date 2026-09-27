@@ -112,7 +112,7 @@ cd server && ./mvnw -B verify
 - `AI_TIMEOUT_MS`（`8000`）、`AI_FREE_QUOTA_PER_DAY`（`3`）、`AI_DAILY_BUDGET_CNY`（`50`）
 - `MYSQL_URL` / `MYSQL_USER` / `MYSQL_PASSWORD`、`REDIS_HOST` / `REDIS_PORT`（默认值与 `deploy/docker-compose.dev.yml` 一致）
 
-**密钥纪律**：`DASHSCOPE_API_KEY` 这类真实密钥只写在本地 `.env` 里（已 gitignore）——不提交、不贴进对话、不写进任何文档。
+**密钥纪律**：`AI_API_KEY` 这类真实密钥只写在本地 `.env` 里（已 gitignore）——不提交、不贴进对话、不写进任何文档。
 
 ### 环境状态
 
