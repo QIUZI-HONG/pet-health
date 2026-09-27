@@ -41,5 +41,10 @@ jobs:
       - name: Contract types are in sync
         run: pnpm --filter @pet-health/shared gen:api:check
 
+      # 前端测试：框架与导航、四态组件（验收标准里的「可导航」「可复用」是行为，得跑起来验）。
+      # 还没有测试的包会被 pnpm 跳过；`build` 里另带硬编码色值检查（ADR-0015）。
+      - name: Test
+        run: pnpm -r test
+
       - name: Build
         run: pnpm -r build

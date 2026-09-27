@@ -1,0 +1,160 @@
+/**
+ * C 端全局基础样式。
+ *
+ * 只放三类东西：页面级布局（框架骨架）、几个到处都要用的基类（按钮 / 卡片 / 文本）、
+ * 以及 reset。**所有颜色、间距、圆角都走 var(--ph-*)**——硬编码色值会被构建时的
+ * scripts/check-tokens.mjs 拦下（ADR-0015）。
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ph-color-bg);
+  color: var(--ph-color-text);
+  font-family: var(--ph-font-family);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--ph-color-blue);
+  text-decoration: none;
+}
+
+/* ===== 框架：左栏固定 208px，其余给内容区（ADR-0016）===== */
+.ph-shell {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.ph-shell__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ph-shell__content {
+  flex: 1;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--ph-space-6) var(--ph-space-8) var(--ph-space-10);
+}
+
+/* ===== 基类：按钮 ===== */
+.ph-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ph-space-2);
+  height: 36px;
+  padding: 0 var(--ph-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--ph-radius-button);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.ph-button--primary {
+  background: var(--ph-color-primary);
+  color: var(--ph-color-surface);
+}
+
+.ph-button--primary:hover:not(:disabled) {
+  background: var(--ph-color-primary-dark);
+}
+
+.ph-button--secondary {
+  background: var(--ph-color-surface);
+  border-color: var(--ph-color-border);
+  color: var(--ph-color-text);
+}
+
+.ph-button--secondary:hover:not(:disabled) {
+  border-color: var(--ph-color-primary);
+  color: var(--ph-color-primary);
+}
+
+.ph-button--text {
+  padding: 0 var(--ph-space-2);
+  background: transparent;
+  color: var(--ph-color-blue);
+}
+
+.ph-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== 基类：卡片 ===== */
+.ph-card {
+  background: var(--ph-color-surface);
+  border: 1px solid var(--ph-color-border);
+  border-radius: var(--ph-radius-card);
+  padding: var(--ph-space-5);
+}
+
+.ph-card__title {
+  margin: 0 0 var(--ph-space-4);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* ===== 基类：文本 ===== */
+.ph-text-sub {
+  color: var(--ph-color-text-sub);
+}
+
+.ph-text-weak {
+  color: var(--ph-color-text-weak);
+}
+
+.ph-page-title {
+  margin: 0 0 var(--ph-space-2);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.ph-page-desc {
+  margin: 0 0 var(--ph-space-6);
+  color: var(--ph-color-text-sub);
+}
+
+/* 首页两栏：主栏 2 份，次栏 1 份（ADR-0016） */
+.ph-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--ph-space-4);
+  align-items: start;
+}
+
+.ph-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ph-space-4);
+}
+
+@media (max-width: 1080px) {
+  .ph-shell {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .ph-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
