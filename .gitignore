@@ -1,0 +1,47 @@
+# ---- Java / Maven ----
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+
+# ---- Node / pnpm ----
+node_modules/
+dist/
+dist-ssr/
+*.local
+.pnpm-store/
+.eslintcache
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# ---- 构建与报告 ----
+*.log
+npm-debug.log*
+pnpm-debug.log*
+coverage/
+*.tsbuildinfo
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# ---- 本地环境 ----
+.env
+.env.local
+*.env.local
+deploy/data/
+
+# ---- 系统 ----
+.DS_Store
+Thumbs.db

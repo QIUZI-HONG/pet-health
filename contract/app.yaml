@@ -1,0 +1,23 @@
+# C 端接口契约 —— 路由前缀 /api/v1/app/**
+#
+# 消费方：C 端（桌面 Web）。公共组件（统一响应 / 错误码 / 分页）见 common.yaml。
+#
+# 状态：**尚未定义任何业务接口。** 它们取决于地图上未裁决的决策：
+#   - 订单交易 #77（且卡在支付语义澄清）
+#   - 券池 #53、核销 #55、裂变 #54、提醒 #56
+#   - AI 对话与分诊（设计见 docs/design/ai-service.md）
+#
+# 契约先于代码（ADR-0005）：**前端类型由契约生成**（pnpm --filter @pet-health/shared gen:api），
+# **后端 DTO 手写**但必须与契约对齐。改了这里就要重跑生成，CI 会检查生成物是否同步。
+
+openapi: 3.1.0
+
+info:
+  title: 宠物 AI 健康管理平台 · C 端接口
+  version: 0.1.0
+  description: 路由前缀 `/api/v1/app/**`。公共组件见 `common.yaml`。
+
+servers:
+  - url: /api/v1/app
+
+paths: {}

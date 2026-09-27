@@ -1,0 +1,10 @@
+{
+  "name": "pet-health",
+  "private": true,
+  "version": "0.1.0",
+  "description": "宠物 AI 健康管理平台 —— 单仓：后端 + 三个 Web 端 + 契约（ADR-0005）",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build"
+  }
+}

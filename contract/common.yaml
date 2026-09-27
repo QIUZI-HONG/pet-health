@@ -1,0 +1,110 @@
+# 骨架级公共契约：所有端共用的响应结构、错误码与分页。
+#
+# 来源：交付文档 8.1（统一响应）、8.2（错误码）、分页规范。
+#
+# 为什么先写这一份：它**不依赖任何未裁决的业务决策**——所以没有理由等。
+# 没有它，「契约优先、前后端并行」只是空话（ADR-0005）。
+#
+# 用法：各端契约（app / provider / admin / open）用 $ref 引入这里的组件，**不要复制**。
+
+openapi: 3.1.0
+
+info:
+  title: 宠物 AI 健康管理平台 · 公共契约
+  version: 0.1.0
+  description: |
+    骨架级公共组件。业务接口见同目录的 app.yaml / provider.yaml / admin.yaml / open.yaml。
+
+    `request_id` 是全链路追踪 ID，必须贯穿 Java → Python AI 服务 → 大模型调用（ADR-0009）。
+
+components:
+  schemas:
+    ApiResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+          description: 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes）
+        message:
+          type: string
+          description: 提示文案，前端直接展示
+        data:
+          description: 业务数据，可为对象 / 数组 / null
+        request_id:
+          type: string
+          description: 全链路追踪 ID
+
+    PageResult:
+      type: object
+      required: [list, page, page_size, total, has_more]
+      properties:
+        list:
+          type: array
+          items: {}
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          default: 20
+        total:
+          type: integer
+        has_more:
+          type: boolean
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  responses:
+    Unauthorized:
+      description: 未登录或 Token 已过期（40100 / 40101）
+    Forbidden:
+      description: 无权限（40300）
+    NotFound:
+      description: 资源不存在（40400）
+    Conflict:
+      description: 数据冲突，如重复提交（40900）
+    TooManyRequests:
+      description: 请求过于频繁（42900）
+    ServerError:
+      description: 服务器内部错误（50000）
+    ServiceUnavailable:
+      description: 服务不可用（50300）
+
+    # AI 专属：降级不报错是硬要求，调用方按这两个码走「重试 / 转人工」与「降级提示」
+    AiTimeout:
+      description: AI 服务超时（60001）—— 可重试一次，仍失败转人工
+    AiFailed:
+      description: AI 分析失败（60002）—— 返回降级话术，不向用户报错
+
+# 错误码表（交付文档 8.2 原文）。实现时以这份清单为准。
+x-error-codes:
+  0: 成功
+  40001: 参数错误
+  40100: 未登录
+  40101: Token 已过期
+  40300: 无权限
+  40400: 资源不存在
+  40900: 数据冲突（重复提交）
+  42900: 请求过于频繁
+  50000: 服务器内部错误
+  50300: 服务不可用
+  60001: AI 服务超时
+  60002: AI 分析失败
+  70001: 支付失败
+  70002: 订单已支付
+  80001: 券不可用
+  80002: 券已核销
+  90001: 价格超出区间
+
+x-notes:
+  - "70001 / 70002 是支付专属错误码。ADR-0002 定了不做线上收款，这两个码是否还用、语义改成什么，**等支付语义澄清后再定**（见地图 #52 的 Notes 首节）。"
+  - "60001 / 60002 的降级行为定义在 docs/design/ai-service.md 第 5 节。"

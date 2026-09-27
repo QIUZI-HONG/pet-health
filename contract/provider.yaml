@@ -1,0 +1,22 @@
+# 服务者后台接口契约 —— 路由前缀 /api/v1/provider/**
+#
+# 消费方：服务者后台（桌面 Web）。公共组件见 common.yaml。
+# 命名纪律：代码标识符一律用 provider，禁止出现 merchant。
+# 依据是 CONTEXT.md 的术语表（「服务者 ServiceProvider」条目），不是某份 ADR。
+#
+# 状态：**尚未定义任何业务接口。** 取决于：
+#   - 服务者入驻与资质审核 #78
+#   - 订单交易 #77、三道照片墙落地 #92、服务者考核 #58
+#   - 券管理 #53、结算与对账（ADR-0002 后只保留对账视图）
+
+openapi: 3.1.0
+
+info:
+  title: 宠物 AI 健康管理平台 · 服务者后台接口
+  version: 0.1.0
+  description: 路由前缀 `/api/v1/provider/**`。公共组件见 `common.yaml`。
+
+servers:
+  - url: /api/v1/provider
+
+paths: {}

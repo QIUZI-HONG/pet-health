@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <!-- 已实测：13 个模块编译与测试通过（见 README 的环境状态一节） -->
+    <version>3.5.15</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.pethealth</groupId>
+  <artifactId>pet-health-server</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>pet-health-server</name>
+  <description>宠物 AI 健康管理平台后端：按领域分模块、单进程部署（ADR-0006）</description>
+
+  <properties>
+    <java.version>17</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+  </properties>
+
+  <modules>
+    <module>ph-common</module>
+    <module>ph-api</module>
+    <module>ph-account</module>
+    <module>ph-provider</module>
+    <module>ph-catalog</module>
+    <module>ph-order</module>
+    <module>ph-record</module>
+    <module>ph-ai</module>
+    <module>ph-reminder</module>
+    <module>ph-privilege</module>
+    <module>ph-content</module>
+    <module>ph-boot</module>
+  </modules>
+
+  <build>
+    <plugins>
+      <!--
+        在父工程里声明并 `skip=true`，所有子模块默认继承（即跳过），只有 ph-boot 覆盖成 false。
+
+        为什么必须这样：`./mvnw -pl ph-boot -am spring-boot:run` 是启动后端的标准命令，但
+        `-am` 会把父工程一并拉进 reactor，Maven 对 reactor 里每个工程都执行 `spring-boot:run`
+        ——父工程没有主类，于是整条命令以 "Unable to find a suitable main class" 失败。
+        （这是实测踩出来的，不是理论问题。）
+      -->
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <skip>true</skip>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

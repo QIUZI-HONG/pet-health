@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.pethealth</groupId>
+    <artifactId>pet-health-server</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>ph-ai</artifactId>
+  <name>ph-ai</name>
+  <description>AI 服务的客户端：调用 / 配额 / 熔断 / 留痕（提示词编排与风险分级在 ai/ 服务里，ADR-0009）</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-common</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+  </dependencies>
+</project>

@@ -1,0 +1,66 @@
+/* 设计 token
+ *
+ * ⚠️ 来源说明（重要）
+ *
+ * 交付文档 4.2 的「色彩规范」表与 4.16 的视觉稿**互相矛盾**——是两套完全不同的配色。
+ * 文档 4.16 自己声明「以本节图片为最终视觉定义」，因此这里全部采用**从视觉稿实际取色**
+ * 得到的值，并注明 4.2 表中对应的（已失效的）旧值。
+ *
+ * 取色方法：直接解码交付文档 4.16 节的原始 PNG，统计像素频次。
+ * 主色 #0EA382 在五张主页面截图中共出现 29 万像素，是唯一的品牌主色；
+ * 4.2 表中的 #2EAD6B 在**任何一张视觉稿里都没有出现过**。
+ *
+ * 标注含义：
+ *   [取色] = 从视觉稿像素中直接取到
+ *   [派生] = 视觉稿中不存在的状态（如按下态），由取色值推导
+ */
+:root {
+  /* ===== 品牌色 ===== */
+  --ph-color-primary: #0ea382;        /* [取色] 4.2 旧值 #2EAD6B 已失效 */
+  --ph-color-primary-dark: #0b8669;   /* [派生] 按下态；视觉稿是静态图，无按下态样本 */
+  --ph-color-primary-light: #e4f6f0;  /* [取色] 4.2 旧值 #E7F7EF 已失效 */
+
+  /* ===== 强调色 ===== */
+  --ph-color-orange: #ff8a3d;         /* [取色] 与 4.2 一致——这是唯一对得上的一条 */
+  --ph-color-orange-light: #fff1e6;   /* [取色] 券 / 邀请 / 福利 的浅底，4.2 未定义 */
+  --ph-color-purple: #8b5cf6;         /* [取色] 积分 / 知识 / 社群 */
+  --ph-color-purple-light: #f3eeff;   /* [取色] 4.2 未定义 */
+  --ph-color-blue: #3b82f6;           /* [取色] 链接 / AI 信息，4.2 旧值 #4A9EF7 已失效 */
+
+  /* ===== 语义色 ===== */
+  --ph-color-success: #22c55e;        /* [取色] 4.2 旧值 #2EAD6B 已失效 */
+  --ph-color-warning: #f59e0b;        /* [取色] 4.2 旧值 #F5A623 已失效 */
+  --ph-color-danger: #ef4444;         /* [取色] 4.2 旧值 #F0483E 已失效 */
+  --ph-color-danger-light: #fef2f2;   /* [取色] 4.2 未定义 */
+
+  /* ===== 文本 ===== */
+  --ph-color-text: #18202a;           /* [取色] 4.2 旧值 #1A1A1A 已失效 */
+  --ph-color-text-sub: #6b7280;       /* [派生] 取色时未能与描边分离，待逐块核对视觉稿 */
+  --ph-color-text-weak: #9ca3af;      /* [取色] 4.2 旧值 #999999 已失效 */
+
+  /* ===== 背景与线条 ===== */
+  --ph-color-bg: #f5f7fa;             /* [取色] 4.2 旧值 #F5F6F8 已失效 */
+  --ph-color-surface: #ffffff;        /* [取色] 与 4.2 一致 */
+  --ph-color-border: #dce1e8;         /* [取色] 卡片描边，4.2 未定义 */
+  --ph-color-divider: #ebeef2;        /* [取色] 列表分隔线，4.2 旧值 #EBEDF0 已失效 */
+
+  /* ===== 间距（4px 基线，沿用 4.4 节，未见矛盾）===== */
+  --ph-space-1: 4px;
+  --ph-space-2: 8px;
+  --ph-space-3: 12px;
+  --ph-space-4: 16px;
+  --ph-space-5: 20px;
+  --ph-space-6: 24px;
+  --ph-space-8: 32px;
+  --ph-space-10: 40px;
+
+  /* ===== 圆角（沿用 4.5 节，未见矛盾）===== */
+  --ph-radius-input: 12px;
+  --ph-radius-button: 12px;
+  --ph-radius-card: 16px;
+  --ph-radius-modal: 20px;
+
+  /* ===== 字体（沿用 4.3 节）===== */
+  --ph-font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --ph-font-numeric: "DIN Alternate", "SF Pro Display", -apple-system, sans-serif;
+}

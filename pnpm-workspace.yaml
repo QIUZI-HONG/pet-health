@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm 12 起默认不执行依赖的构建脚本，放行清单写在 allowBuilds 里。
+# esbuild 需要执行构建脚本才能装/校验原生二进制；不放行则每次 install
+# 都报 Ignored build scripts: esbuild。
+allowBuilds:
+  esbuild: true

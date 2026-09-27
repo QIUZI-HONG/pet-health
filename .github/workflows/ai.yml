@@ -1,0 +1,37 @@
+name: AI Service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/**"
+      - ".github/workflows/ai.yml"
+  pull_request:
+    paths:
+      - "ai/**"
+      - ".github/workflows/ai.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # 与本机开发环境同版本（3.14），避免"本地能跑 CI 挂"
+          python-version: "3.14"
+
+      - name: Install
+        working-directory: ai
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        working-directory: ai
+        run: ruff check .
+
+      - name: Smoke test
+        working-directory: ai
+        run: python -c "from app.main import app; assert app.title == 'pet-health-ai'"

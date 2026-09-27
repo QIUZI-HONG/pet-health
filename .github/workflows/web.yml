@@ -1,0 +1,45 @@
+name: Web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/web.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      # 需要提交 pnpm-lock.yaml，否则这一步会失败——锁文件是构建可复现的前提
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # 契约是唯一源头（ADR-0005）：生成的前端类型必须与 contract/*.yaml 同步。
+      # 改了契约却忘了跑 gen:api，这里会红。
+      - name: Contract types are in sync
+        run: pnpm --filter @pet-health/shared gen:api:check
+
+      - name: Build
+        run: pnpm -r build

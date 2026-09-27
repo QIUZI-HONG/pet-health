@@ -1,0 +1,22 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{java,xml}]
+indent_style = space
+indent_size = 4
+
+[*.{ts,vue,js,json,css,html,yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+# 中文文档里行尾两空格是有意的硬换行，不要自动去掉
+trim_trailing_whitespace = false
+
+[*.{bat,cmd}]
+end_of_line = crlf

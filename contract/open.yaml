@@ -1,0 +1,18 @@
+# 对外回调与第三方通知契约 —— 路由前缀 /api/v1/open/**
+#
+# 消费方：外部系统（对象存储上传回调等）。公共组件见 common.yaml。
+#
+# 状态：**尚未定义。** 取决于 #84（文件与对象存储）——上传回调是这个前缀下的第一个接口。
+# 注意：ADR-0002 之后没有支付通道，所以不存在支付回调。
+
+openapi: 3.1.0
+
+info:
+  title: 宠物 AI 健康管理平台 · 对外回调
+  version: 0.1.0
+  description: 路由前缀 `/api/v1/open/**`。公共组件见 `common.yaml`。
+
+servers:
+  - url: /api/v1/open
+
+paths: {}

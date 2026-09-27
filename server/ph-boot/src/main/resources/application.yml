@@ -1,0 +1,45 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: pet-health-server
+  # 持久层尚未接线：ORM/数据访问方案还没定（见地图 #76），所以 pom 里没有引持久化依赖，
+  # 下面这段 datasource 目前是**惰性的**——它声明了目标连接，但没有任何东西消费它。
+  datasource:
+    # 端口是 3307 不是 3306：本机装了原生的 Windows MySQL，3306 被它占着。
+    # 见 deploy/docker-compose.dev.yml 的说明。
+    url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3307/pet_health?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai}
+    username: ${MYSQL_USER:root}
+    # 默认值只用于本地开发，与 deploy/docker-compose.dev.yml 一致；不要用于任何真实环境
+    password: ${MYSQL_PASSWORD:devroot}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+# ---- AI 服务（ADR-0009：模型调用在独立的 ai/ 服务里，本后端只是它的客户端）----
+# 完整设计见 docs/design/ai-service.md。这些是**技术参数**，改要重启；
+# 业务可调项（提示词/红线词/分级规则/降级开关）在数据库里，运营后台改（ADR-0010）。
+ai:
+  service:
+    base-url: ${AI_SERVICE_BASE_URL:http://127.0.0.1:8000}
+    # 必须与 ai/.env 的 INTERNAL_TOKEN 一致
+    token: ${AI_SERVICE_TOKEN:dev-internal-token}
+    # 交付文档说前端 10 秒提示重试，这里留 2 秒余量做降级
+    timeout-ms: ${AI_TIMEOUT_MS:8000}
+  quota:
+    # 交付文档 F006：免费用户每日 3 次
+    free-per-day: ${AI_FREE_QUOTA_PER_DAY:3}
+  budget:
+    # 日预算熔断：超限转纯规则通道 + 告警。默认 50 元是占位值，需按真实用户量校准
+    daily-cny: ${AI_DAILY_BUDGET_CNY:50}
