@@ -8,15 +8,16 @@
 const ACCESS_KEY = "ph.c.access_token";
 const REFRESH_KEY = "ph.c.refresh_token";
 
-export interface TokenPair {
+/** 本地存放的形状（camelCase）；契约里的 TokenPair 是接口返回的形状（snake_case），别混。 */
+export interface SessionTokens {
   accessToken: string;
   refreshToken: string;
 }
 
 /** 内存里再存一份：避免每次请求都读一遍 localStorage。 */
-let cached: TokenPair | null = null;
+let cached: SessionTokens | null = null;
 
-function read(): TokenPair | null {
+function read(): SessionTokens | null {
   if (cached) return cached;
   const accessToken = localStorage.getItem(ACCESS_KEY);
   const refreshToken = localStorage.getItem(REFRESH_KEY);
@@ -25,7 +26,7 @@ function read(): TokenPair | null {
 }
 
 export const tokenStore = {
-  get(): TokenPair | null {
+  get(): SessionTokens | null {
     return read();
   },
 
@@ -37,7 +38,7 @@ export const tokenStore = {
     return read()?.refreshToken ?? null;
   },
 
-  save(pair: TokenPair): void {
+  save(pair: SessionTokens): void {
     cached = pair;
     localStorage.setItem(ACCESS_KEY, pair.accessToken);
     localStorage.setItem(REFRESH_KEY, pair.refreshToken);

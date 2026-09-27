@@ -23,7 +23,7 @@
 | 主键 | `BIGINT AUTO_INCREMENT`（交付文档 7.2 的写法） | JSON 里是数字。自增不会到 2^53，JS 精度安全；将来若改雪花号，契约里的 id 必须改成字符串——那是一次破坏性变更，届时单独立 ADR |
 | 软删除 | `is_deleted TINYINT DEFAULT 0` | MyBatis-Plus `@TableLogic` 自动过滤；**手写 SQL 必须自己带 `is_deleted = 0`** |
 | 审计字段 | `created_at` / `updated_at` / `created_by` / `updated_by` / `trace_id` | `MetaObjectHandler` 自动填充；`created_by=0` 表示系统写入（定时任务、AI 侧回流），非 0 一律是 `operator_id` |
-| 分页 | `page` / `page_size`，默认 20、上限 100 | `PaginationInnerInterceptor`；返回结构见 `contract/common.yaml` 的 `PageResult` |
+| 分页 | `page` / `page_size`，默认 20、上限 100 | 拦截器保证**上限** 100（`setMaxLimit`）；**默认 20 由各接口显式传入**——契约里 `page_size` 的默认值就是 20，别指望框架兜底（MyBatis-Plus 的 `Page` 默认是 10，不传就会差一倍） |
 | 时间 | `DATETIME`，库、应用、展示三处都是 `Asia/Shanghai` | 连接串 `serverTimezone`、Jackson `time-zone`、容器 `TZ` 一致 |
 | 金额 / 小数 | `decimal`，**禁止浮点**；JSON 里序列化为字符串 | 交付文档 8.4 的订单示例就是 `"total_amount": "128.00"`——字符串才不会在 JS 里丢精度 |
 | 命名 | 表 / 字段 snake_case，Java camelCase，JSON snake_case | Jackson 全局 `SNAKE_CASE`，与契约一致 |

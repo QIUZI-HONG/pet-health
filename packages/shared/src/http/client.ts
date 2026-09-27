@@ -18,15 +18,11 @@ import type { components } from "../api/common";
 import { ApiError } from "./errors";
 import { tokenStore } from "./tokenStore";
 
+/**
+ * 统一响应的信封类型——**直接来自契约生成物**（contract/common.yaml 的 ApiResponse），
+ * 前端不手写接口类型（AGENTS.md / ADR-0005）。
+ */
 type Envelope = components["schemas"]["ApiResponse"];
-
-/** 契约里定义的统一响应信封。前端其余部分不该看见它——见下面的解包。 */
-interface RawEnvelope {
-  code: number;
-  message: string;
-  data?: unknown;
-  request_id?: string;
-}
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const TRACE_HEADER = "X-Request-Id";
@@ -59,7 +55,7 @@ async function refreshSession(): Promise<boolean> {
       return false;
     }
     try {
-      const response = await refreshClient.post<RawEnvelope>("/api/v1/app/auth/refresh", {
+      const response = await refreshClient.post<Envelope>("/api/v1/app/auth/refresh", {
         refresh_token: refreshToken,
       });
       const payload = response.data?.data as
@@ -70,7 +66,9 @@ async function refreshSession(): Promise<boolean> {
       }
       tokenStore.save({ accessToken: payload.access_token, refreshToken: payload.refresh_token });
       return true;
-    } catch {
+    } catch (error) {
+      // 不吞异常：换令牌失败会直接导致用户被登出，日志里必须留下原因
+      console.warn("[auth] 刷新令牌失败，本次会话将结束", error);
       return false;
     } finally {
       // 交回给下一个调用者前先清空，保证「单飞」只覆盖同一批并发请求
@@ -82,7 +80,7 @@ async function refreshSession(): Promise<boolean> {
   return refreshing;
 }
 
-function toApiError(error: AxiosError<RawEnvelope>): ApiError {
+function toApiError(error: AxiosError<Envelope>): ApiError {
   const body = error.response?.data;
   if (body && typeof body.code === "number") {
     return new ApiError(body.message || "请求失败", {
@@ -107,7 +105,7 @@ function isRetryable(error: ApiError): boolean {
 
 async function send<T>(config: AxiosRequestConfig, attempt = 0): Promise<T> {
   try {
-    const response = await client.request<RawEnvelope>(config);
+    const response = await client.request<Envelope>(config);
     const envelope = response.data;
     if (!envelope || typeof envelope.code !== "number") {
       throw new ApiError("响应结构不符合契约（缺少 code 字段）", { code: -1 });
@@ -135,7 +133,7 @@ async function send<T>(config: AxiosRequestConfig, attempt = 0): Promise<T> {
       }
       throw error;
     }
-    const apiError = toApiError(error as AxiosError<RawEnvelope>);
+    const apiError = toApiError(error as AxiosError<Envelope>);
     if (apiError.isTokenExpired && attempt === 0 && (await refreshSession())) {
       return send<T>(config, attempt + 1);
     }

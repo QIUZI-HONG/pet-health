@@ -20,4 +20,6 @@
 
 **C 端的自动检查**：`apps/c-web/scripts/check-tokens.mjs` 在构建前扫描源码，发现硬编码色值（`#RGB` / `rgb()` / `hsl()`）即失败——「无硬编码色值」这条验收标准不靠自觉。它已经挂在 `c-web` 的 `build` 里，CI 会跑。
 
+**Token 存放位置（ADR-0012 把这条指给了本票）：放 `localStorage`。** 放内存的话桌面 Web 一刷新就要重新登录；放 Cookie 则违背「JWT 不依赖 Cookie」那条（ADR-0012）。代价是 XSS 能读到令牌——所以 C 端**不许用 `v-html` 渲染任何用户输入**（这条已写进 `apps/c-web/src/components/README.md` 的规矩里）。要更强的话是 httpOnly Cookie + CSRF 令牌，但那要改后端的会话传递方式，等有明确威胁模型再说。
+
 **没有移动端适配。** 不做 uni-app、不做小程序（[ADR-0001](0001-all-web-clients.md)），所以不引移动端组件库；窗口收窄时按断点收敛栏数即可，不追求手机上的可用性。

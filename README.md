@@ -13,7 +13,7 @@
 开工前先读四样：
 
 1. **[CONTEXT.md](CONTEXT.md)** —— 领域术语表。**命名以它为准**；「商家」「商户」「店铺」「merchant」是禁用词，统一说「服务者」。
-2. **[docs/adr/](docs/adr/)** —— 已定的架构决策（当前 14 条）。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
+2. **[docs/adr/](docs/adr/)** —— 已定的架构决策（当前 16 条）。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
 3. **[地图 #52](https://github.com/QIUZI-HONG/pet-health/issues/52)** —— 哪些决策已定、哪些还没定、下一步该做什么。
 4. **[docs/conventions.md](docs/conventions.md)** —— 实现级约定（分页 / 脱敏 / 加密 / 迁移 / 越权口径），以及每条约定落在哪个 ADR。
 
@@ -23,7 +23,7 @@
 pet-health/
 ├── CONTEXT.md              领域术语表（命名以它为准）
 ├── docs/
-│   ├── adr/                架构决策记录（当前 10 条）
+│   ├── adr/                架构决策记录（当前 16 条）
 │   ├── agents/             工程技能配置（issue tracker / 领域文档规则 / triage 标签）
 │   ├── design/             AI 层的完整方案（ai-service.md）
 │   ├── conventions.md      项目级约定：分页 / 脱敏 / 缓存 / 重试 / 金额精度…
@@ -128,8 +128,10 @@ cd server && ./mvnw -B verify
 
 已验证：
 
-- `cd server && ./mvnw -B verify` —— **12 个 Maven 模块**（另有 1 个聚合 POM）全部编译通过；**47 个测试全绿**
-  （10 个纯单元测试 + 37 个跑在 Testcontainers 起的真实 MySQL 8.4 / Redis 8 上的接口测试，见 ADR-0014）
+- `cd server && ./mvnw -B verify` —— **12 个 Maven 模块**（另有 1 个聚合 POM）全部编译通过；**51 个测试全绿**
+  （12 个纯单元测试 + 39 个跑在 Testcontainers 起的真实 MySQL 8.4 / Redis 8 上的接口测试，见 ADR-0014）
+- `pnpm -r test && pnpm -r build` —— C 端 14 个组件测试（导航与四态组件）通过；三个 Web 端构建通过，
+  其中 C 端的构建会先跑硬编码色值检查（ADR-0015）
 - `pnpm install && pnpm -r build` —— 三个 Web 端全部构建通过（vite 7.3.6）
 - `cd ai && ruff check . && uvicorn app.main:app` —— 静态检查通过；健康检查、内部鉴权（无 token 返回 401）、契约校验（缺 `text` 返回 422）均已实测
 - **2026-09-27 Docker 端到端实测**：

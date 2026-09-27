@@ -26,17 +26,8 @@ export class ApiError extends Error {
     this.httpStatus = options.httpStatus;
   }
 
-  /** 未登录 / Token 无效。 */
-  get isUnauthorized(): boolean {
-    return this.code === 40100;
-  }
-
-  /** Token 已过期——前端应当拿去换新令牌，而不是跳登录。 */
+  /** Token 已过期——前端应当拿去换新令牌，而不是跳登录。请求层用它触发静默刷新。 */
   get isTokenExpired(): boolean {
     return this.code === 40101;
-  }
-
-  get isNotFound(): boolean {
-    return this.code === 40400;
   }
 }

@@ -731,7 +731,9 @@ export interface components {
         };
         /**
          * @description 「不改」与「清空」是两件事：字段不传或传 `null` = 不改；
-         *     `breed` / `avatar` / `chronic_desc` 传空串 = 清空。
+         *     `breed` / `avatar` 传空串 = 清空。
+         *     `chronic_desc` 传空串同样表示清空，但**只在 `is_chronic=false` 时成立**——
+         *     标记为慢病时它是必填项，传空会返回 40001。
          *     `name` 传空串返回 40001；`weight` / `birthday` 不接受空串（要改就得给合法值）。
          */
         PetUpdateRequest: {
