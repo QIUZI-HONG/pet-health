@@ -573,6 +573,248 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pets/{pet_id}/check-ins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pet_id: components["parameters"]["PetId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 某一天的打卡状态
+         * @description 返回六项打卡各自的状态；不传 `date` 时按服务器当天（Asia/Shanghai）。
+         *
+         *     **任一项有记录即算当日已打卡**；不必凑齐六项（ADR-0018：桌面 Web 上强制六项会让人放弃）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 业务日期 `YYYY-MM-DD`；只能查过去 7 天到今天，更早的返回 40001 */
+                    date?: string;
+                };
+                header?: never;
+                path: {
+                    pet_id: components["parameters"]["PetId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CheckInDay"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * 提交打卡（幂等）
+         * @description 重复提交同「宠物 + 日期 + 分项」是**更新**而不是新增——用户改主意（饮食从「正常」改成「食欲差」）
+         *     就是改这一条。可以一次提交多项（「全部正常」按钮即六项一起提交）。
+         *
+         *     补录：`date` 传过去 7 天内的日期即可，记录上会标 `backfilled=true`，不冒充当场录入。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pet_id: components["parameters"]["PetId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CheckInSubmitRequest"];
+                };
+            };
+            responses: {
+                /** @description 提交后的当日状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CheckInDay"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001），含日期超出可补录窗口 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pets/{pet_id}/check-ins/item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pet_id: components["parameters"]["PetId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * 撤销某一项打卡
+         * @description 填错了可以撤掉（幂等：本来就没有也返回成功）。只允许撤销可补录窗口内的记录。
+         */
+        delete: {
+            parameters: {
+                query: {
+                    date: string;
+                    /** @description 分项编号 1体重2饮食3排泄4行为5情绪6卫生 */
+                    category: number;
+                };
+                header?: never;
+                path: {
+                    pet_id: components["parameters"]["PetId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 撤销后的当日状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CheckInDay"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pets/{pet_id}/check-ins/streak": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pet_id: components["parameters"]["PetId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 连续打卡天数
+         * @description 按「有记录的连续自然日」计算，**补录计入**（ADR-0018）；今天还没打卡不算断签
+         *     （昨天有就算连续，今天补上即可）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pet_id: components["parameters"]["PetId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CheckInStreak"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pets/{pet_id}/health-score": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pet_id: components["parameters"]["PetId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 当日健康评分与近 7 天趋势
+         * @description 五维 = 生理 / 行为 / 卫生 / 防疫 / 老年。**评分口径是「被观察到的健康」，不是医学评估**：
+         *
+         *     - 每维 = 70 × 近 7 天记录完整度 + 30 × (1 − 0.1 × 异常项数)；
+         *     - 总分 = 已计入维度的等权平均；
+         *     - **防疫**在没有疫苗/驱虫记录时不计入（`score: null`，前端显示「待录入」）；
+         *     - **老年**专项未开启（年龄 < 7 岁且无慢病）时不计入（显示「未开启」）；
+         *     - 一条记录都没有时 `total_score` 为 null，前端显示「还没有评分」而不是 0 分。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pet_id: components["parameters"]["PetId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["HealthScore"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -751,6 +993,102 @@ export interface components {
             is_sterilized?: boolean;
             is_chronic?: boolean;
             chronic_desc?: string;
+        };
+        CheckInSubmitRequest: {
+            /**
+             * @description 业务日期 `YYYY-MM-DD`。传今天=当场录入；传过去 7 天内=补录（记录标 `backfilled`）
+             * @example 2026-09-27
+             */
+            date: string;
+            /** @description 本次提交的分项；同一个日期可以分多次提交（例如先记体重，晚上再补其他的） */
+            items: components["schemas"]["CheckInItemInput"][];
+        };
+        CheckInItemInput: {
+            /**
+             * @description 1 体重 / 2 饮食 / 3 排泄 / 4 行为 / 5 情绪 / 6 卫生
+             * @enum {integer}
+             */
+            category: 1 | 2 | 3 | 4 | 5 | 6;
+            /**
+             * @description 用户是否标注为异常。**评分按它扣分**，所以是打卡里最有信息量的一个字段
+             * @default false
+             */
+            abnormal: boolean;
+            /**
+             * @description 结构化取值：体重是数字字符串（kg），其余是选项值（如 normal / low / high）
+             * @example 12.50
+             */
+            value?: string;
+            /** @description 补充说明（异常时建议填写） */
+            note?: string;
+        };
+        CheckInItem: {
+            /** @enum {integer} */
+            category: 1 | 2 | 3 | 4 | 5 | 6;
+            /** @example 体重 */
+            name: string;
+            /** @description 该分项当天是否已有记录 */
+            filled?: boolean;
+            abnormal: boolean;
+            value?: string;
+            note?: string;
+            /** @description 该条是否为补录 */
+            backfilled?: boolean;
+        };
+        CheckInDay: {
+            /** @example 2026-09-27 */
+            date: string;
+            items: components["schemas"]["CheckInItem"][];
+            /** @description 已填分项数（进度 n/6） */
+            completed_count: number;
+            /** @example 6 */
+            total_count: number;
+            /** @description 当日是否已打卡——**任一项有记录即为 true**（ADR-0018），不要求凑齐六项 */
+            done: boolean;
+            /** @description 本次查询的日期是否为补录（今天之前的日期） */
+            backfilled?: boolean;
+        };
+        CheckInStreak: {
+            /** @description 连续打卡天数（有记录的连续自然日；补录计入；断签归零） */
+            streak_days: number;
+            /** @description 今天是否已经有记录。今天未打卡不算断签——昨天有记录就仍算连续 */
+            checked_today: boolean;
+            /**
+             * @description 最长连续段，**按现有记录计算**（不是历史峰值）：删掉某天的记录，那段也就不存在了。
+             *     权益若要按连续天数发奖（#113），需要单独存历史峰值。
+             */
+            longest_streak_days?: number;
+        };
+        HealthScoreDimension: {
+            /** @enum {string} */
+            key: "physiology" | "behavior" | "hygiene" | "epidemic" | "elderly";
+            /** @example 生理 */
+            name: string;
+            /** @description 该维得分；为 null 表示未计入（见 `excluded_reason`） */
+            score?: number;
+            /** @description 是否计入了总分 */
+            included: boolean;
+            /** @description 未计入的原因，前端直接展示：「待录入」（防疫无数据）/「未开启」（老年专项）/「暂无记录」 */
+            excluded_reason?: string;
+            /** @description 一句话说明分数怎么来的，例如「近 7 天记录 4 天，异常 1 次」——评分必须可解释 */
+            detail?: string;
+        };
+        HealthScore: {
+            /** @description 总分；一条记录都没有时为 null（前端显示「还没有评分」，不要显示 0 分） */
+            total_score?: number;
+            /** @description 中性档位文案：良好 / 尚可 / 需关注 / 暂无数据 */
+            grade: string;
+            dimensions: components["schemas"]["HealthScoreDimension"][];
+            /** @description 近 7 天总分序列（缺失的日期不出现），供首页趋势展示 */
+            trend?: {
+                /** @example 2026-09-27 */
+                date?: string;
+                total_score?: number;
+            }[];
+            /** @example 2026-09-27 */
+            calc_date?: string;
+            /** @description 口径声明，前端必须展示：评分是「被观察到的健康」，不是医学评估 */
+            disclaimer?: string;
         };
         ApiResponse: {
             /** @description 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes） */
