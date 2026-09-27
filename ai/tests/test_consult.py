@@ -39,7 +39,8 @@ def make_request(text: str = "今天吐了两次，精神还行", media_urls: li
 def test_health_reports_capabilities():
     body = client.get("/internal/health").json()
     assert body["status"] == "ok"
-    assert body["prompt_version"] == prompts.PROMPT_VERSION
+    # 版本号唯一来源是 settings（prompts.py 不再维护第二份）
+    assert body["prompt_version"] == settings.prompt_version
     # 能力矩阵要如实报出来，别让调用方猜（当前供应商没有图片/语音/向量）
     # 图片能力实测为真（flash 能读图，pro 不能），所以这里是 True 而不是 False——
     # 我最初把它写成 False 是因为预算被 reasoning 吃光后得到空 content，那是误判（见 ADR-0017）

@@ -36,7 +36,7 @@ const categories = [
         <StateEmpty
           icon="🩺"
           title="服务目录还在路上"
-          description="平台统一的标准服务目录与定价区间在 #75 决策、#104 实现；服务者选品定价在 #105，下单与核销在 #109。目录一上线，这里就换成可筛选的服务列表。"
+          description="平台正在接入服务者与标准服务目录，上线后这里可以按分类浏览、比价和预约。"
         />
       </article>
     </SessionGate>

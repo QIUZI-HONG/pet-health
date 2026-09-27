@@ -8,8 +8,9 @@
 `prompts.py` 顶部的说明，等 #103 建表后搬走）。
 
 供应商与模型的选择见 [ADR-0017](../../docs/adr/0017-model-provider-deepseek.md)：
-当前接的是 DeepSeek，**只有文本能力**。下面几个 `ai_supports_*` 开关不是配置花样，
-是把「这家没有这个能力」写进代码——否则总有人以为 `ai_model_asr` 只是没填。
+当前接的是 DeepSeek，**文本与图片可用**（图片只有 flash 看得见，pro 看不见），
+没有语音转写、没有向量。下面几个 `ai_supports_*` 开关不是配置花样，
+是把「这家有/没有这个能力」写进代码——**请求路径也读它们**，不是只给健康检查看。
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,7 +24,11 @@ class Settings(BaseSettings):
     ai_base_url: str = "https://api.deepseek.com"
     # 分级默认用 flash：实测 pro 延迟跨到 20 秒并超时（5.6/11.3/20.3s），
     # flash 稳定 5~7 秒（ADR-0017 有数据）。**而且只有 flash 看得见图片**（pro 看图和
-    # 不看图都答「无法确定」），所以图片也走它。分级质量该由 #62 的评测集用漏判率判断。
+    # 不看图都答「无法确定」），所以图片也走它。分级质量该由 #62 的评测集用漏判率判断
+    # （漏判率比准确率重要：红判绿比绿判红代价高得多）。
+    #
+    # ai_model_fast 是两级分工里给「常规问答」留的位置，目前分级与问答共用 flash，
+    # 等 #98 定了意图路由再用起来。
     ai_model_grading: str = "deepseek-flash"
     ai_model_fast: str = "deepseek-flash"
     # 支持图片输入的模型。留空 = 当前供应商不支持图片，带图请求会被明确降级。
@@ -47,7 +52,8 @@ class Settings(BaseSettings):
     ai_supports_embedding: bool = False
 
     # ---- 留痕 ----
-    # 提示词版本号随调用结果落库，用于事后归因分级漂移。提示词入 DB 之前先手工维护这个值。
+    # 提示词版本号随调用结果落库，用于事后归因分级漂移（提示词改了还是模型改了）。
+    # **唯一来源就是这里**：提示词入 DB（#103）之前，改提示词时必须手工把这里 +1。
     prompt_version: str = "p0-code"
 
     # ---- 基础设施：对知识域只读（ADR-0009 的边界）----
@@ -61,7 +67,9 @@ class Settings(BaseSettings):
     redis_port: int = 6379
 
     # ---- 内部鉴权：与后端 AI_SERVICE_TOKEN 一致 ----
-    internal_token: str = "dev-internal-token"
+    # **没有默认值**：与仓库里不放 JWT/AES 默认密钥同一个道理——漏配时不能静默放行。
+    # 未配置时所有 /internal/* 调用都会被拒（fail closed），启动日志里也会有一条警告。
+    internal_token: str = ""
 
 
 settings = Settings()

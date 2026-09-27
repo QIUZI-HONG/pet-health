@@ -152,8 +152,10 @@ async def assess(
     """
     images = (images or [])[: settings.ai_max_images]
     if images:
-        if not settings.ai_vision_model:
-            raise VisionUnavailable("当前没有配置支持图片的模型")
+        # 两个条件都要看：能力开关（这家有没有视觉能力）+ 具体用哪个模型。
+        # 只看模型名的话，换成一家没有视觉能力的供应商时会在运行期才炸（得到「无法确定」这种假答案）。
+        if not settings.ai_supports_image or not settings.ai_vision_model:
+            raise VisionUnavailable("当前供应商/模型不支持图片输入")
         model = settings.ai_vision_model
     model = model or settings.ai_model_grading
     messages = [

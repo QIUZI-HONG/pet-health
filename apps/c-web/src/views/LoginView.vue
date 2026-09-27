@@ -136,7 +136,7 @@ async function submit(): Promise<void> {
       </button>
 
       <p class="ph-login__note">
-        接口是切片 #94 的注册 / 登录（bcrypt + JWT Access 2h + Redis Refresh 7d，ADR-0012）。
+        {{ isRegister ? "注册即表示同意《用户协议》与《隐私政策》" : "登录后可管理宠物档案与健康记录" }}
       </p>
     </div>
   </div>

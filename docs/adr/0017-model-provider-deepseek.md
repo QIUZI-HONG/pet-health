@@ -58,6 +58,6 @@ AI 服务的供应商换成 **DeepSeek（OpenAI 兼容接口）**，模型用 `d
 
 **超时预算必须重算。** 后端 `ai.service.timeout-ms` 的默认值已按实测从 8 秒调到 20 秒：一个中位数 5.3 秒、偶发 20 秒的供应商，配 8 秒超时等于常态化降级。前端那句「10 秒提示重试」也要跟着重新定（交付文档的假设建立在「没有厂商 P95 数据」之上，现在有数据了）。
 
-**推理型模型有个坑写进了配置注释**：输出预算被 reasoning 吃掉时返回的是 `finish_reason=length` + 空 `content`（40 / 120 / 900 token 都踩过），看起来像「模型不说话」。所以 `ai_max_output_tokens` 默认 1500，别按普通模型的习惯写 256。
+**推理型模型有个坑写进了配置注释**：输出预算被 reasoning 吃掉时返回的是 `finish_reason=length` + 空 `content`（40 / 120 / 900 token 都踩过），看起来像「模型不说话」。所以 `ai_max_output_tokens` 默认 3000（一次带图分级实测用了 1083 个输出 token），别按普通模型的习惯写 256。
 
 **密钥**：`AI_API_KEY` 只进本地 `ai/.env`（已 gitignore）。变量名从 `DASHSCOPE_API_KEY` 改成供应商中立的名字——换供应商时不用再改一遍代码与文档。

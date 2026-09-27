@@ -100,7 +100,8 @@ function toApiError(error: AxiosError<Envelope>): ApiError {
   });
 }
 
-/** 网络类失败才值得自动重试一次；业务错误重试只会重复同样的失败。 */
+/** 可重试的是「这次没成，下次可能成」的失败：网络类，以及 50000/50300 这种服务端临时故障。
+ *  参数错误、越权、冲突这些业务错误重试只会重复同样的失败，所以不重试。 */
 function isRetryable(error: ApiError): boolean {
   return error.network || error.code === 50000 || error.code === 50300;
 }

@@ -29,7 +29,7 @@ const draft = ref("");
         <StateEmpty
           icon="💬"
           title="还没有对话"
-          description="AI 咨询链路（#98 决策、#101 接真知识库）落地后，这里会显示分级结论、可能原因与建议行动。"
+          description="描述症状、补一张照片，就能拿到风险分级与下一步该做什么。功能正在接入。"
         />
         <div class="ph-ai__composer">
           <textarea
@@ -41,10 +41,8 @@ const draft = ref("");
           />
           <button type="button" class="ph-button ph-button--primary" disabled>发送</button>
         </div>
-        <p class="ph-note">
-          输入框先禁用：纯图片分诊准确率只有 33%，因此接口层要求必须带一句症状描述（#61 的结论）；
-          这条链路还没接上，先不放一个点了没反应的按钮。
-        </p>
+        <!-- 输入框禁用中：C 端到 AI 的链路（#98/#101）还没接；空按钮点了没反应比禁用更糟 -->
+        <p class="ph-note">咨询功能即将开放。为了判断更准，届时需要补一句症状描述（宠物皮肤问题只看照片只有三成把握）。</p>
       </div>
 
       <!-- 右侧信息栏：宠物摘要 + 风险提示 -->
@@ -67,14 +65,13 @@ const draft = ref("");
           <StateEmpty v-else icon="🐾" title="还没有宠物" description="先建档，AI 才能结合它的档案判断。" />
         </article>
 
+        <!-- 这里曾经常驻显示「🟢 绿」：没有任何咨询时就说「绿灯」是无依据的乐观暗示，
+             医疗场景宁严勿松（docs/conventions.md），所以改成中性的「尚未咨询」 -->
         <article class="ph-card">
           <h3 class="ph-card__title">风险提示</h3>
-          <p class="ph-risk ph-risk--green">🟢 绿</p>
-          <p class="ph-text-sub">目前没有进行中的咨询。</p>
-          <p class="ph-note">
-            红色风险会在这里直接给出最近 24 小时医院的入口——医疗场景宁严勿松
-            （docs/conventions.md）。
-          </p>
+          <p class="ph-risk">尚未咨询</p>
+          <p class="ph-text-sub">发起一次咨询后，这里会显示风险等级与建议行动。</p>
+          <p class="ph-note">红色风险会直接给出最近 24 小时医院的入口。</p>
         </article>
         </aside>
       </div>
@@ -135,10 +132,6 @@ const draft = ref("");
   margin: 0 0 var(--ph-space-2);
   font-size: 18px;
   font-weight: 600;
-}
-
-.ph-risk--green {
-  color: var(--ph-color-success);
 }
 
 .ph-note {

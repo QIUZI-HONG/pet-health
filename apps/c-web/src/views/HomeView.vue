@@ -54,7 +54,8 @@ const quickEntries = [
             title="还没有宠物"
             description="先建一份档案，评分和提醒才有对象。"
           />
-          <p class="ph-note">评分算法与打卡形态在 #57 决策、#97 实现，所以这里先不显示数字。</p>
+          <!-- 评分算法与打卡形态待 #57 决策、#97 实现；在实现之前不显示任何数字，免得像真的 -->
+          <p class="ph-note">健康评分即将上线，先把宠物档案补全，评分才有依据。</p>
         </article>
 
         <article class="ph-card">
@@ -73,7 +74,7 @@ const quickEntries = [
           <StateEmpty
             icon="📝"
             title="任务体系还没上线"
-            description="每日任务与积分在 #113 落地，届时这里显示今天能拿的奖励。"
+            description="每天完成任务可以攒积分、换券。任务中心即将上线。"
           />
         </article>
       </div>
@@ -85,7 +86,7 @@ const quickEntries = [
           <StateEmpty
             icon="🔔"
             title="暂时没有异常"
-            description="疫苗到期、指标异常这类提醒在 #56 决策、#99 实现后出现在这里。"
+            description="疫苗到期、饮水异常这些提醒会出现在这里。暂时一切正常。"
           />
         </article>
 

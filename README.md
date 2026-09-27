@@ -13,7 +13,7 @@
 开工前先读四样：
 
 1. **[CONTEXT.md](CONTEXT.md)** —— 领域术语表。**命名以它为准**；「商家」「商户」「店铺」「merchant」是禁用词，统一说「服务者」。
-2. **[docs/adr/](docs/adr/)** —— 已定的架构决策（当前 16 条）。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
+2. **[docs/adr/](docs/adr/)** —— 已定的架构决策（当前 17 条）。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
 3. **[地图 #52](https://github.com/QIUZI-HONG/pet-health/issues/52)** —— 哪些决策已定、哪些还没定、下一步该做什么。
 4. **[docs/conventions.md](docs/conventions.md)** —— 实现级约定（分页 / 脱敏 / 加密 / 迁移 / 越权口径），以及每条约定落在哪个 ADR。
 
@@ -23,7 +23,7 @@
 pet-health/
 ├── CONTEXT.md              领域术语表（命名以它为准）
 ├── docs/
-│   ├── adr/                架构决策记录（当前 16 条）
+│   ├── adr/                架构决策记录（当前 17 条）
 │   ├── agents/             工程技能配置（issue tracker / 领域文档规则 / triage 标签）
 │   ├── design/             AI 层的完整方案（ai-service.md）
 │   ├── conventions.md      项目级约定：分页 / 脱敏 / 缓存 / 重试 / 金额精度…
@@ -50,7 +50,9 @@ pet-health/
 ├── ai/                     AI 服务：Python + FastAPI（ADR-0009）
 │   ├── app/config.py       全部可配项（配置分层见 ADR-0010）
 │   ├── app/models.py       与 Java 的内部契约
-│   └── app/main.py         入口（目前是骨架）
+│   ├── app/prompts.py      提示词与工具定义（待 #103 入库）
+│   ├── app/model_client.py 模型调用的唯一出口
+│   └── app/main.py         入口（文本 + 图片分级已接真模型）
 ├── apps/                   三个 Web 端（pnpm workspace）
 │   ├── c-web/              C 端
 │   ├── provider-web/       服务者后台
@@ -109,7 +111,7 @@ cd server && ./mvnw -B verify
 
 - `AI_SERVICE_BASE_URL`（`http://127.0.0.1:8000`）
 - `AI_SERVICE_TOKEN`（`dev-internal-token`）——**必须与 `ai/.env` 的 `INTERNAL_TOKEN` 一致**
-- `AI_TIMEOUT_MS`（`8000`）、`AI_FREE_QUOTA_PER_DAY`（`3`）、`AI_DAILY_BUDGET_CNY`（`50`）
+- `AI_TIMEOUT_MS`（`20000`；实测模型偶发 20 秒，配 8 秒等于常态化降级，见 ADR-0017）、`AI_FREE_QUOTA_PER_DAY`（`3`）、`AI_DAILY_BUDGET_CNY`（`50`）
 - `MYSQL_URL` / `MYSQL_USER` / `MYSQL_PASSWORD`、`REDIS_HOST` / `REDIS_PORT`（默认值与 `deploy/docker-compose.dev.yml` 一致）
 
 **密钥纪律**：`AI_API_KEY` 这类真实密钥只写在本地 `.env` 里（已 gitignore）——不提交、不贴进对话、不写进任何文档。

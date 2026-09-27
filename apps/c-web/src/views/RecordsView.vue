@@ -2,8 +2,8 @@
 /**
  * 健康档案：宠物信息 + 时间轴。
  *
- * 宠物基础信息是真的（切片 #94 的接口），档案记录与时间轴要到 #102 才有数据源，
- * 所以那两块显示空态并注明依赖。
+ * 宠物基础信息是真的（切片 #94 的接口）；档案记录与时间轴要等 #102 才有数据源，
+ * 所以那一块如实显示空态，不编内容。
  */
 import { formatDate, genderLabel, speciesLabel } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
@@ -26,7 +26,7 @@ const session = useSessionStore();
           <StateEmpty
             icon="📋"
             title="还没有记录"
-            description="档案分项与时间轴在 #102 落地；打卡（#97）与服务报工（#107）的记录都会汇到这里。"
+            description="打卡记录、就医记录、服务报工都会汇到这条时间轴上。"
           />
         </article>
       </div>

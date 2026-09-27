@@ -21,6 +21,7 @@
 | `states/StateEmpty` | 空态 |
 | `states/StateError` | 错误态（带重试） |
 | `states/StateForbidden` | 无权限 / 未登录态（带去登录） |
+| `SessionGate` | 四态的统一入口：加载中 / 服务异常 / 未登录 / 正常内容（页面用它包内容，别自己写 if 链） |
 
 按钮、卡片、表单字段这些**没有做成组件，是 `styles/app.css` 里的基类**（`.ph-button` / `.ph-card` /
 `.ph-field`）：它们只差样式、没有行为，做成 Vue 组件只是多一层包装。四态的公共骨架也在那里
@@ -30,10 +31,16 @@
 
 拿数据的页面按这个顺序判断，四种状态就是「数据还没来 / 没有数据 / 拿失败 / 没资格拿」：
 
+**页面不要再手写这串 if——用 `SessionGate`**（它把顺序固定住，顺序错了就是 bug）：
+
 ```vue
-<StateLoading v-if="session.status === 'loading'" />
-<StateForbidden v-else-if="!session.isLoggedIn" />
-<StateError v-else-if="error" :message="error" @retry="reload" />
-<StateEmpty v-else-if="items.length === 0" title="还没有记录" />
-<template v-else> …正常内容… </template>
+<SessionGate forbidden-description="登录后查看你的记录。">
+  <StateLoading v-if="loading" />
+  <StateError v-else-if="error" :message="error" @retry="reload" />
+  <StateEmpty v-else-if="items.length === 0" title="还没有记录" />
+  <template v-else> …正常内容… </template>
+</SessionGate>
 ```
+
+⚠️ **顺序不能反**：`服务异常` 必须排在 `未登录` 前面。反过来写，后端一抖就会骗用户「请登录」，
+而且会话会被清掉（这个 bug 真出现过，见 `stores/session.ts` 的注释与 `session-failure.spec.ts`）。

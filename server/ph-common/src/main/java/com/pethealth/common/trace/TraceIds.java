@@ -11,9 +11,9 @@ import org.slf4j.MDC;
  */
 public final class TraceIds {
 
-    /** 请求头名：调用方可以带自己的 ID 进来，便于跨系统串联。 */
+    /** 请求头与响应头用同一个名字：调用方带自己的 ID 进来，响应里再回带，便于跨系统串联。 */
     public static final String HEADER = "X-Request-Id";
-    public static final String RESPONSE_HEADER = "X-Request-Id";
+    public static final String RESPONSE_HEADER = HEADER;
 
     private static final String TRACE_KEY = "traceId";
     private static final String OPERATOR_KEY = "operatorId";

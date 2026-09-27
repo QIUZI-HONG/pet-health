@@ -279,7 +279,7 @@ function restorableUntil(pet: Pet): string {
         <!-- 回收站 -->
         <article class="ph-card">
           <h3 class="ph-card__title">回收站</h3>
-          <p class="ph-text-sub ph-card__note">删除的宠物 30 天内可以恢复（对照切片 #94 的验收标准）。</p>
+          <p class="ph-text-sub ph-card__note">删除的宠物 30 天内可以恢复。</p>
           <ul v-if="recycleBin.length" class="ph-pets">
             <li v-for="pet in recycleBin" :key="pet.id" class="ph-pets__row">
               <div class="ph-pets__info">
@@ -307,7 +307,7 @@ function restorableUntil(pet: Pet): string {
             </li>
           </ul>
           <p class="ph-note">
-            资料编辑、数据导出与账号注销分别在 #120（合规）与资料接口的后续迭代里，
+          <p class="ph-note">手机号与昵称暂时只读展示；资料编辑、数据导出与账号注销正在开发。</p>
             这里先只读展示。
           </p>
         </article>

@@ -12,16 +12,25 @@
 链路设计见 `docs/design/ai-service.md` 第 3 节；护栏与留痕字段见同文第 5 节。
 """
 
+import logging
+
 from fastapi import Depends, FastAPI, Header, HTTPException
 
 from . import model_client, prompts
 from .config import settings
 from .models import ConsultRequest, ConsultResponse
 
-app = FastAPI(title="pet-health-ai", version="0.2.0")
+app = FastAPI(title="pet-health-ai", version="0.3.0")
+
+logger = logging.getLogger("pet_health_ai")
 
 #: 模型不可用时的保守建议：不分级、直接建议就医。医疗场景宁严勿松（docs/conventions.md）。
 DEGRADED_SUGGESTION = "AI 服务暂时不可用，为避免耽误，建议尽快咨询兽医；情况紧急请直接送医。"
+
+
+def _log_degraded(reason: str, trace_id: str, detail: object) -> None:
+    """降级一律留痕：降级率是判断「这个模型好不好用」最直接的指标。"""
+    logger.warning("consult degraded reason=%s trace_id=%s detail=%s", reason, trace_id, detail)
 
 
 def require_internal_token(x_internal_token: str | None = Header(default=None)) -> None:
@@ -29,7 +38,8 @@ def require_internal_token(x_internal_token: str | None = Header(default=None)) 
     写在函数里会导致「无令牌 + 请求体不合法」先返回 422 —— 等于让未鉴权的调用方
     探查请求结构。挂在 dependencies 上，鉴权先跑（联调时实测过这两种行为）。
     """
-    if x_internal_token != settings.internal_token:
+    # 未配置令牌时一律拒绝（fail closed）：漏配不能让接口变成对所有人开放
+    if not settings.internal_token or x_internal_token != settings.internal_token:
         raise HTTPException(status_code=401, detail="invalid internal token")
 
 
@@ -40,7 +50,7 @@ def health() -> dict[str, object]:
         "status": "ok",
         "model_configured": bool(settings.ai_api_key),
         "model_grading": settings.ai_model_grading,
-        "prompt_version": prompts.PROMPT_VERSION,
+        "prompt_version": settings.prompt_version,
         "capabilities": {
             "text": True,
             "image": settings.ai_supports_image,
@@ -75,6 +85,7 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
     except model_client.VisionUnavailable as exc:
         # 有图但当前没有能看图的模型。**明确告知**，不做静默忽略——
         # 用户以为模型看过照片、其实没看，比直接说不支持危险得多。
+        _log_degraded("image_not_supported", req.trace_id, exc)
         return ConsultResponse(
             risk_level=2,
             action_suggestion="暂时无法分析图片，请把症状用文字补充清楚（部位、多久、有没有变化）；"
@@ -85,10 +96,11 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             care_tips=[f"已收到 {image_count} 张图片，但本轮没有分析它们。"],
             images_used=0,
             model_name=settings.ai_model_grading,
-            prompt_version=prompts.PROMPT_VERSION,
+            prompt_version=settings.prompt_version,
         )
     except model_client.ModelUnavailable as exc:
         # 传输层挂了：降级成保守建议，不向用户报错（设计文档第 5 节的硬要求）
+        _log_degraded("model_unavailable", req.trace_id, exc)
         return ConsultResponse(
             risk_level=2,
             action_suggestion=DEGRADED_SUGGESTION,
@@ -97,10 +109,11 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             degrade_reason=f"model_unavailable: {exc}",
             images_used=0,
             model_name=settings.ai_model_grading,
-            prompt_version=prompts.PROMPT_VERSION,
+            prompt_version=settings.prompt_version,
         )
     except model_client.ModelOutputInvalid as exc:
         # 模型答了但没法用（没调工具、参数越界）。按设计：风险拔高一档更安全
+        _log_degraded("model_output_invalid", req.trace_id, exc)
         return ConsultResponse(
             risk_level=3,
             action_suggestion=DEGRADED_SUGGESTION,
@@ -109,8 +122,15 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             degrade_reason=f"model_output_invalid: {exc}",
             images_used=0,
             model_name=settings.ai_model_grading,
-            prompt_version=prompts.PROMPT_VERSION,
+            prompt_version=settings.prompt_version,
         )
+
+    # 留痕：trace_id 从 Java 一路带过来，这里落日志，模型侧出问题才追得回去（ADR-0009）
+    logger.info(
+        "consult trace_id=%s user_id=%s model=%s risk=%s images=%s degraded=false latency_ms=%s prompt=%s",
+        req.trace_id, req.user_id, result.model_name, result.risk_level,
+        image_count, result.latency_ms, settings.prompt_version,
+    )
 
     return ConsultResponse(
         risk_level=result.risk_level,
@@ -125,6 +145,6 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
         degraded=False,
         model_name=result.model_name,
         model_version=result.model_version,
-        prompt_version=prompts.PROMPT_VERSION,
+        prompt_version=settings.prompt_version,
         latency_ms=result.latency_ms,
     )
