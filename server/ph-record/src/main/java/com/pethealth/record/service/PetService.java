@@ -160,7 +160,13 @@ public class PetService implements PetQueryApi {
                 .eq(Pet::getUserId, userId));
     }
 
-    private Pet requireOwned(long userId, long petId) {
+    /**
+     * 归属校验：不存在与越权都抛 40400（契约里写明了，别改成 403）。
+     *
+     * <p>public 是给同模块的其它服务与控制器用的（例如评分要拿到宠物算年龄、打卡要校验归属），
+     * 本模块之外不要用——跨模块要走 {@link PetQueryApi}。
+     */
+    public Pet requireOwned(long userId, long petId) {
         Pet pet = petMapper.selectOne(Wrappers.<Pet>lambdaQuery()
                 .eq(Pet::getId, petId)
                 .eq(Pet::getUserId, userId));

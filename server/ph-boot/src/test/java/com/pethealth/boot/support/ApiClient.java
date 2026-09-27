@@ -68,6 +68,18 @@ public final class ApiClient {
         return register(phone).data().path("refresh_token").asText();
     }
 
+    /** 建一只有指定生日与慢病标记的宠物（评分测试要用年龄/慢病触发老年专项）。 */
+    public long createPetDetailed(String accessToken, String name, java.time.LocalDate birthday, boolean chronic) {
+        ApiCall call = post("/api/v1/app/pets",
+                new com.pethealth.api.app.PetCreateRequest(name, 1, "柯基", 0, birthday, null, null,
+                        null, chronic, chronic ? "慢病照护" : null),
+                accessToken);
+        if (call.code() != 0) {
+            throw new AssertionError("建档应当成功，实际：" + call.body());
+        }
+        return call.data().path("id").asLong();
+    }
+
     /** 建一只最小的宠物（只有昵称与物种），返回 id。 */
     public long createPet(String accessToken, String name) {
         ApiCall call = post("/api/v1/app/pets",

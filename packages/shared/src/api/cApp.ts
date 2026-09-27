@@ -16,6 +16,13 @@ export type LoginRequest = Schemas["LoginRequest"];
 export type UpdateProfileRequest = Schemas["UpdateProfileRequest"];
 export type PetCreateRequest = Schemas["PetCreateRequest"];
 export type PetUpdateRequest = Schemas["PetUpdateRequest"];
+export type CheckInDay = Schemas["CheckInDay"];
+export type CheckInItem = Schemas["CheckInItem"];
+export type CheckInItemInput = Schemas["CheckInItemInput"];
+export type CheckInSubmitRequest = Schemas["CheckInSubmitRequest"];
+export type CheckInStreak = Schemas["CheckInStreak"];
+export type HealthScore = Schemas["HealthScore"];
+export type HealthScoreDimension = Schemas["HealthScoreDimension"];
 
 const BASE = "/api/v1/app";
 
@@ -60,5 +67,25 @@ export const cApp = {
   },
   restorePet(petId: number): Promise<Pet> {
     return http.post<Pet>(`${BASE}/pets/${petId}/restore`);
+  },
+
+  // ---- 打卡（切片 #97，规则见 ADR-0018）----
+  // date 是**业务日期**：省略=今天（当场录入），传过去 7 天内=补录。
+  getCheckInDay(petId: number, date?: string): Promise<CheckInDay> {
+    return http.get<CheckInDay>(`${BASE}/pets/${petId}/check-ins`, date ? { date } : undefined);
+  },
+  submitCheckIn(petId: number, body: CheckInSubmitRequest): Promise<CheckInDay> {
+    return http.post<CheckInDay>(`${BASE}/pets/${petId}/check-ins`, body);
+  },
+  undoCheckIn(petId: number, date: string, category: number): Promise<CheckInDay> {
+    return http.delete<CheckInDay>(`${BASE}/pets/${petId}/check-ins/item?date=${date}&category=${category}`);
+  },
+  getCheckInStreak(petId: number): Promise<CheckInStreak> {
+    return http.get<CheckInStreak>(`${BASE}/pets/${petId}/check-ins/streak`);
+  },
+
+  // ---- 健康评分（切片 #97，算法见 ADR-0018）----
+  getHealthScore(petId: number): Promise<HealthScore> {
+    return http.get<HealthScore>(`${BASE}/pets/${petId}/health-score`);
   },
 };
