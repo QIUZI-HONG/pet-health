@@ -120,6 +120,20 @@ pnpm --filter c-web dev
   - 后端 `spring-boot:run` 启动成功、`/actuator/health` 返回 `UP`；前端 dev server 起得来，且 `/api/v1/app/**` 的代理**确实打到后端**（两边返回同一个 Spring 404）；AI 服务 `/internal/health` 正常
   - **Redis 8 实测通过**：`redis:8-alpine` 里带 RediSearch（Query Engine）/ vectorset / bf / ReJSON，版本 8.10.2；用 Python 客户端建 `FLAT + COSINE` 索引并跑通 KNN 往返
   - **一条要记住的结论**：RediSearch 的中文分词**不支持子串检索**（查「犬瘟」命中不了「犬瘟热」），所以关键词检索走 MySQL ngram——两条路径都实测过，依据见 [#63](https://github.com/QIUZI-HONG/pet-health/issues/63)
+  - **三条 CI 流水线全部实测通过**（首次推送时触发）：[Server](https://github.com/QIUZI-HONG/pet-health/actions) · [Web](https://github.com/QIUZI-HONG/pet-health/actions) · [AI Service](https://github.com/QIUZI-HONG/pet-health/actions)。其中 AI 那条确认了 Python 3.14 在 GitHub runner 上可用。
+
+### 本机特有的两件事
+
+**1. GitHub 的 `github.com:443` 在本机被阻断（SNI 层），`api.github.com` 与 `ssh.github.com:443` 可用。** 所以 `git push` 走 SSH over 443。本仓库的 `.git/config` 已配好（**只在本机生效，不进提交**）：
+
+```
+core.sshCommand = /mnt/c/Windows/System32/OpenSSH/ssh.exe -i C:/Users/22724/.ssh/id_ed25519_github -o IdentitiesOnly=yes -p 443
+remote.origin.url = ssh://git@ssh.github.com:443/QIUZI-HONG/pet-health.git
+```
+
+用的是 Windows 侧那把 `id_ed25519_github`，**没有把私钥复制进 WSL**。换机器或被重置时，照上面两行重配即可。
+
+**2. Docker 镜像源**已配在 Docker Desktop 的 `daemon.json`（`docker.1ms.run` → `hub.rat.dev` → `docker.m.daocloud.io`，按实测速度排序），直接 `docker pull` 即可。
 
 ### pnpm 12 的一个坑
 
