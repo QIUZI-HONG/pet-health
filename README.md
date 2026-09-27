@@ -146,5 +146,5 @@ esbuild 需要执行构建脚本才能装原生二进制，不放行则 `pnpm in
 - 领域命名遵循 `CONTEXT.md`；代码标识符用 `provider`，不用 `merchant`
 - 接口先写 `contract/` 的 YAML，再生成两端代码；前端不手写接口类型
 - 模块间只能走接口，不能 join 对方的表
-- 金额用 `decimal(12,2)` 或以「分」为单位的整型，禁止浮点
+- 金额用 `decimal(10,2)`（与交付文档的 DDL 示例一致），禁止浮点
 - 所有写操作留 `operator_id` 与 `trace_id`

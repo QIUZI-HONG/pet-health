@@ -18,7 +18,7 @@
 - 领域命名遵循 `CONTEXT.md`；代码标识符用 `provider`
 - 模块间只能走接口或领域事件，**禁止 join 其它模块的表**（ADR-0006；**唯一例外**见 ADR-0009——AI 服务只读 `knowledge_*`）
 - 接口先写 `contract/` 的 YAML。**前端不手写接口类型**（由契约生成）；**后端 DTO 手写，但要与契约对齐**
-- 金额用 `decimal(12,2)` 或以「分」为单位的整型，**禁止浮点**
+- 金额用 `decimal(10,2)`（与交付文档的 DDL 示例一致），**禁止浮点**
 - 所有写操作留 `operator_id` 与 `trace_id`
 - **提交信息**用 `feat/fix/refactor/docs: 描述`；每个功能自测通过后再提交
 - **AI 调用的唯一边界**：模型调用与知识检索都在 `ai/`（Python），后端一律经 `ph-ai` 走 HTTP。`ai/` 对数据库**只读 `knowledge_*` 表**，其余数据读写走 Java 接口（ADR-0009）
