@@ -5,19 +5,12 @@
  * 宠物基础信息是真的（切片 #94 的接口），档案记录与时间轴要到 #102 才有数据源，
  * 所以那两块显示空态并注明依赖。
  */
+import { formatDate, genderLabel, speciesLabel } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import StateForbidden from "../components/states/StateForbidden.vue";
 
 const session = useSessionStore();
-
-function speciesLabel(species: number): string {
-  return species === 2 ? "猫" : "犬";
-}
-
-function genderLabel(gender: number): string {
-  return gender === 1 ? "公" : gender === 2 ? "母" : "未知";
-}
 </script>
 
 <template>
@@ -52,7 +45,7 @@ function genderLabel(gender: number): string {
                 <div><dt>物种</dt><dd>{{ speciesLabel(pet.species) }}</dd></div>
                 <div><dt>品种</dt><dd>{{ pet.breed ?? "未填" }}</dd></div>
                 <div><dt>性别</dt><dd>{{ genderLabel(pet.gender) }}</dd></div>
-                <div><dt>生日</dt><dd>{{ pet.birthday ?? "未填" }}</dd></div>
+                <div><dt>生日</dt><dd>{{ pet.birthday ? formatDate(pet.birthday) : "未填" }}</dd></div>
                 <div><dt>体重</dt><dd>{{ pet.weight ? `${pet.weight} kg` : "未填" }}</dd></div>
                 <div><dt>绝育</dt><dd>{{ pet.is_sterilized ? "已绝育" : "未绝育" }}</dd></div>
                 <div>

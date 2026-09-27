@@ -18,10 +18,9 @@ withDefaults(defineProps<{ rows?: number; title?: string }>(), {
 </template>
 
 <style scoped>
+/* 加载态独有的部分：左对齐的骨架条；居中、间距那些骨架见 styles/app.css */
 .ph-state--loading {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ph-space-3);
+  align-items: stretch;
   padding: var(--ph-space-6);
 }
 
@@ -39,11 +38,7 @@ withDefaults(defineProps<{ rows?: number; title?: string }>(), {
 }
 
 @keyframes ph-skeleton {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
 }
 </style>

@@ -17,12 +17,14 @@
 | `AppSidebar` | 左侧主导航（5 个主页面） |
 | `AppTopbar` | 顶栏：当前宠物、通知、账号 |
 | `PetSwitcher` | 宠物切换下拉（多宠家庭） |
-| `PhButton` | 按钮（主/次/文字三种，带禁用与加载态） |
-| `PhCard` | 内容卡片（首页各区块的容器） |
 | `states/StateLoading` | 加载态 |
 | `states/StateEmpty` | 空态 |
 | `states/StateError` | 错误态（带重试） |
 | `states/StateForbidden` | 无权限 / 未登录态（带去登录） |
+
+按钮、卡片、表单字段这些**没有做成组件，是 `styles/app.css` 里的基类**（`.ph-button` / `.ph-card` /
+`.ph-field`）：它们只差样式、没有行为，做成 Vue 组件只是多一层包装。四态的公共骨架也在那里
+（`.ph-state*`），组件里只留各自的差异。
 
 ## 四态组件怎么用
 

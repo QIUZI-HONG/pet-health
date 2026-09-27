@@ -12,6 +12,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createRouter, createMemoryHistory, type Router } from "vue-router";
+// 真路由表：测试与实现共用一份，页面被删掉测试就红（见下方说明）
+import { routes as realRoutes } from "../router";
 import { createPinia, setActivePinia } from "pinia";
 
 vi.mock("@pet-health/shared", () => ({
@@ -34,24 +36,11 @@ vi.mock("@pet-health/shared", () => ({
   http: {},
 }));
 
-const routes = [
-  {
-    path: "/",
-    component: () => import("../layouts/AppShell.vue"),
-    children: [
-      { path: "", name: "home", component: () => import("../views/HomeView.vue"), meta: { title: "首页" } },
-      { path: "services", name: "services", component: () => import("../views/ServicesView.vue"), meta: { title: "服务" } },
-      { path: "ai", name: "ai", component: () => import("../views/AiConsultView.vue"), meta: { title: "AI 管家" } },
-      { path: "records", name: "records", component: () => import("../views/RecordsView.vue"), meta: { title: "健康档案" } },
-      { path: "profile", name: "profile", component: () => import("../views/ProfileView.vue"), meta: { title: "我的" } },
-    ],
-  },
-  { path: "/login", name: "login", component: () => import("../views/LoginView.vue"), meta: { title: "登录" } },
-];
-
 async function mountShell(path: string): Promise<{ router: Router; wrapper: ReturnType<typeof mount> }> {
   setActivePinia(createPinia());
-  const router = createRouter({ history: createMemoryHistory(), routes });
+  // **必须用真路由表**：早先这里复制了一份 routes，结果从真路由里删掉一个主页面测试照样绿——
+  // 验收标准「五个主页面可导航」就守不住了。这里换成把 router/index.ts 的 routes 直接拿来用。
+  const router = createRouter({ history: createMemoryHistory(), routes: realRoutes });
   await router.push(path);
   await router.isReady();
   const wrapper = mount((await import("../App.vue")).default, { global: { plugins: [router] } });
@@ -66,11 +55,16 @@ describe("C 端框架与导航", () => {
     vi.clearAllMocks();
   });
 
-  it("左栏始终有五个主页面入口", async () => {
+  it("左栏入口与路由表里的主页面一一对应（漏一个就红）", async () => {
     const { wrapper } = await mountShell("/");
     const nav = wrapper.get('nav[aria-label="主导航"]');
     const labels = nav.findAll(".ph-sidebar__label").map((node) => node.text());
     expect(labels).toEqual(NAV_LABELS);
+
+    // 反向校验：真路由表里挂在框架下的子路由，必须都在左栏里
+    const shell = realRoutes.find((route) => route.path === "/");
+    const childTitles = (shell?.children ?? []).map((child) => (child.meta?.title as string) ?? "");
+    expect(childTitles).toEqual(NAV_LABELS);
   });
 
   it.each([

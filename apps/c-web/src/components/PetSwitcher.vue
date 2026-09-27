@@ -5,6 +5,7 @@
  */
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
+import { speciesLabel } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 
 const session = useSessionStore();
@@ -50,7 +51,7 @@ function goCreate(): void {
         @click="pick(pet.id)"
       >
         <span>{{ pet.name }}</span>
-        <span class="ph-text-weak">{{ pet.breed ?? (pet.species === 2 ? "猫" : "犬") }}</span>
+        <span class="ph-text-weak">{{ pet.breed ?? speciesLabel(pet.species) }}</span>
       </button>
       <button v-if="session.pets.length === 0" type="button" class="ph-switcher__item" @click="goCreate">
         还没有宠物，去建档

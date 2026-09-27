@@ -95,10 +95,6 @@ public final class ApiClient {
         return exchange(HttpMethod.DELETE, path, null, accessToken);
     }
 
-    public JsonNode toJson(Object value) {
-        return objectMapper.valueToTree(value);
-    }
-
     /** 发一个「字段名不会被 Jackson 改名」的原始 JSON，用来验证契约字段名。 */
     public ApiCall postRaw(String path, Map<String, Object> rawBody, String accessToken) {
         return exchange(HttpMethod.POST, path, rawBody, accessToken);

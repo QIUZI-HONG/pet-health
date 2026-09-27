@@ -77,7 +77,7 @@ async function submit(): Promise<void> {
           <span class="ph-field__label">手机号</span>
           <input
             v-model.trim="form.phone"
-            class="ph-field__input"
+            class="ph-field__input ph-field__input--lg"
             inputmode="numeric"
             maxlength="11"
             placeholder="13800138000"
@@ -88,7 +88,7 @@ async function submit(): Promise<void> {
           <span class="ph-field__label">密码</span>
           <input
             v-model="form.password"
-            class="ph-field__input"
+            class="ph-field__input ph-field__input--lg"
             type="password"
             placeholder="8–32 位，含字母与数字"
             :autocomplete="isRegister ? 'new-password' : 'current-password'"
@@ -96,7 +96,7 @@ async function submit(): Promise<void> {
         </label>
         <label v-if="isRegister" class="ph-field">
           <span class="ph-field__label">昵称（可选）</span>
-          <input v-model.trim="form.nickname" class="ph-field__input" maxlength="64" placeholder="怎么称呼你" />
+          <input v-model.trim="form.nickname" class="ph-field__input ph-field__input--lg" maxlength="64" placeholder="怎么称呼你" />
         </label>
 
         <p v-if="errorMessage" class="ph-login__error">
@@ -163,33 +163,6 @@ async function submit(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--ph-space-3);
-}
-
-.ph-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ph-space-1);
-}
-
-.ph-field__label {
-  font-size: 13px;
-  color: var(--ph-color-text-sub);
-}
-
-.ph-field__input {
-  height: 40px;
-  padding: 0 var(--ph-space-3);
-  background: var(--ph-color-surface);
-  border: 1px solid var(--ph-color-border);
-  border-radius: var(--ph-radius-input);
-  font-family: inherit;
-  font-size: 14px;
-  color: var(--ph-color-text);
-}
-
-.ph-field__input:focus {
-  outline: none;
-  border-color: var(--ph-color-primary);
 }
 
 .ph-login__error {

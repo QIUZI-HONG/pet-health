@@ -8,7 +8,7 @@
  * 权益、积分、券、社群这些入口先不放：它们还没有数据源，摆一排点不动的入口不如不摆。
  */
 import { computed, onMounted, reactive, ref } from "vue";
-import { ApiError, cApp, type Pet } from "@pet-health/shared";
+import { ApiError, cApp, formatDate, genderLabel, speciesLabel, type Pet } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import StateError from "../components/states/StateError.vue";
@@ -24,6 +24,9 @@ const requestId = ref("");
 const formError = ref("");
 const saving = ref(false);
 const showingForm = ref(false);
+
+/** 正在编辑的宠物 id；null 表示这是「新建」。 */
+const editingId = ref<number | null>(null);
 
 const form = reactive({
   name: "",
@@ -65,11 +68,30 @@ onMounted(() => {
 
 function openForm(): void {
   formError.value = "";
+  editingId.value = null;
+  showingForm.value = true;
+}
+
+/** 编辑：把现有值填进同一个表单，省得再写一套。 */
+function openEdit(pet: Pet): void {
+  formError.value = "";
+  editingId.value = pet.id;
+  form.name = pet.name;
+  form.species = pet.species;
+  form.breed = pet.breed ?? "";
+  form.gender = pet.gender;
+  form.birthday = pet.birthday ?? "";
+  form.weight = pet.weight ?? "";
+  // 契约里这两个字段是可选的（未填时不返回），表单里当 false 处理
+  form.isSterilized = pet.is_sterilized ?? false;
+  form.isChronic = pet.is_chronic ?? false;
+  form.chronicDesc = pet.chronic_desc ?? "";
   showingForm.value = true;
 }
 
 function closeForm(): void {
   showingForm.value = false;
+  editingId.value = null;
   form.name = "";
   form.breed = "";
   form.birthday = "";
@@ -84,23 +106,30 @@ async function submit(): Promise<void> {
   formError.value = "";
   saving.value = true;
   try {
-    await cApp.createPet({
+    const payload = {
       name: form.name.trim(),
       // 表单控件给回来的是 number，契约里 species 是 1|2、gender 是 0|1|2——
       // 在这里收窄一次，别把 any 撒进请求体
-      species: form.species === 2 ? 2 : 1,
-      breed: form.breed.trim() || undefined,
-      gender: form.gender === 1 ? 1 : form.gender === 2 ? 2 : 0,
+      species: (form.species === 2 ? 2 : 1) as 1 | 2,
+      breed: form.breed.trim(),
+      gender: (form.gender === 1 ? 1 : form.gender === 2 ? 2 : 0) as 0 | 1 | 2,
       birthday: form.birthday || undefined,
       weight: form.weight.trim() || undefined,
       is_sterilized: form.isSterilized,
       is_chronic: form.isChronic,
-      chronic_desc: form.isChronic ? form.chronicDesc.trim() : undefined,
-    });
+      chronic_desc: form.isChronic ? form.chronicDesc.trim() : "",
+    };
+    if (editingId.value === null) {
+      await cApp.createPet(payload);
+    } else {
+      await cApp.updatePet(editingId.value, payload);
+    }
     closeForm();
     await load();
   } catch (error) {
-    formError.value = error instanceof ApiError ? error.message : "建档失败，请稍后重试";
+    formError.value = error instanceof ApiError
+      ? error.message
+      : editingId.value === null ? "建档失败，请稍后重试" : "保存失败，请稍后重试";
   } finally {
     saving.value = false;
   }
@@ -127,7 +156,7 @@ async function activate(pet: Pet): Promise<void> {
 }
 
 function restorableUntil(pet: Pet): string {
-  return pet.restorable_until ? pet.restorable_until.slice(0, 10) : "";
+  return formatDate(pet.restorable_until);
 }
 </script>
 
@@ -163,15 +192,18 @@ function restorableUntil(pet: Pet): string {
               <div class="ph-pets__info">
                 <span class="ph-pets__name">{{ pet.name }}</span>
                 <span class="ph-text-weak">
-                  {{ pet.species === 2 ? "猫" : "犬" }}
+                  {{ speciesLabel(pet.species) }}
                   <template v-if="pet.breed"> · {{ pet.breed }}</template>
+                  <template v-if="pet.gender"> · {{ genderLabel(pet.gender) }}</template>
                   <template v-if="pet.weight"> · {{ pet.weight }} kg</template>
+                  <template v-if="pet.birthday"> · {{ formatDate(pet.birthday) }}</template>
                 </span>
                 <span v-if="pet.is_chronic" class="ph-pets__tag">慢病照护</span>
               </div>
               <div class="ph-pets__actions">
                 <span v-if="pet.id === session.activePet?.id" class="ph-text-sub">当前</span>
                 <button v-else type="button" class="ph-button ph-button--text" @click="activate(pet)">设为当前</button>
+                <button type="button" class="ph-button ph-button--text" @click="openEdit(pet)">编辑</button>
                 <button type="button" class="ph-button ph-button--text" @click="remove(pet)">删除</button>
               </div>
             </li>
@@ -229,7 +261,7 @@ function restorableUntil(pet: Pet): string {
             <p v-if="formError" class="ph-form__error">{{ formError }}</p>
             <div class="ph-form__actions">
               <button type="submit" class="ph-button ph-button--primary" :disabled="!canSubmit">
-                {{ saving ? "保存中…" : "建档" }}
+                {{ saving ? "保存中…" : editingId === null ? "建档" : "保存修改" }}
               </button>
               <button type="button" class="ph-button ph-button--secondary" @click="closeForm">取消</button>
             </div>
@@ -351,34 +383,6 @@ function restorableUntil(pet: Pet): string {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--ph-space-3);
-}
-
-.ph-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ph-space-1);
-}
-
-.ph-field--inline {
-  flex-direction: row;
-  align-items: center;
-  gap: var(--ph-space-2);
-}
-
-.ph-field__label {
-  font-size: 13px;
-  color: var(--ph-color-text-sub);
-}
-
-.ph-field__input {
-  height: 36px;
-  padding: 0 var(--ph-space-3);
-  background: var(--ph-color-surface);
-  border: 1px solid var(--ph-color-border);
-  border-radius: var(--ph-radius-input);
-  font-family: inherit;
-  font-size: 14px;
-  color: var(--ph-color-text);
 }
 
 .ph-form__error {

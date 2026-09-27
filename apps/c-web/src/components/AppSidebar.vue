@@ -106,15 +106,4 @@ const route = useRoute();
   font-size: 16px;
   line-height: 1;
 }
-
-@media (max-width: 1080px) {
-  .ph-sidebar__name,
-  .ph-sidebar__label {
-    display: none;
-  }
-
-  .ph-sidebar__item {
-    justify-content: center;
-  }
-}
 </style>

@@ -5,7 +5,11 @@
  */
 import { createRouter, createWebHistory, type RouteRecordRaw } from "vue-router";
 
-const routes: RouteRecordRaw[] = [
+/**
+ * 路由表。**导出是为了让测试直接用真表**——测试里复制一份路由，等于把「五个主页面可导航」
+ * 这条验收标准变成一句空话（从真表里删掉一个页面，复制的那份照样绿）。
+ */
+export const routes: RouteRecordRaw[] = [
   {
     path: "/",
     component: () => import("../layouts/AppShell.vue"),

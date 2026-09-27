@@ -8,6 +8,7 @@
  * AI 链路（#98）还没实现，所以输入框禁用并说明原因——不做假对话。
  */
 import { ref } from "vue";
+import { formatDate, speciesLabel } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import StateForbidden from "../components/states/StateForbidden.vue";
@@ -56,11 +57,11 @@ const draft = ref("");
           <h3 class="ph-card__title">本次咨询的对象</h3>
           <ul v-if="session.activePet" class="ph-summary">
             <li><span class="ph-text-sub">昵称</span><span>{{ session.activePet.name }}</span></li>
-            <li><span class="ph-text-sub">物种</span><span>{{ session.activePet.species === 2 ? "猫" : "犬" }}</span></li>
+            <li><span class="ph-text-sub">物种</span><span>{{ speciesLabel(session.activePet.species) }}</span></li>
             <li><span class="ph-text-sub">品种</span><span>{{ session.activePet.breed ?? "未填" }}</span></li>
             <li>
               <span class="ph-text-sub">生日</span>
-              <span>{{ session.activePet.birthday ?? "未填" }}</span>
+              <span>{{ session.activePet.birthday ? formatDate(session.activePet.birthday) : "未填" }}</span>
             </li>
             <li>
               <span class="ph-text-sub">慢病</span>

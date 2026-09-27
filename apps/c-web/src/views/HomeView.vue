@@ -8,6 +8,7 @@
  * 每个空态都写明它依赖哪张票，免得看的人以为是坏了。
  */
 import { computed } from "vue";
+import { formatDate, speciesLabel } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import StateForbidden from "../components/states/StateForbidden.vue";
@@ -98,8 +99,8 @@ const quickEntries = [
             <li v-for="item in session.pets" :key="item.id" class="ph-pet-list__row">
               <span>{{ item.name }}</span>
               <span class="ph-text-weak">
-                {{ item.breed ?? (item.species === 2 ? "猫" : "犬") }}
-                <template v-if="item.birthday"> · {{ item.birthday }}</template>
+                {{ item.breed ?? speciesLabel(item.species) }}
+                <template v-if="item.birthday"> · {{ formatDate(item.birthday) }}</template>
               </span>
             </li>
           </ul>

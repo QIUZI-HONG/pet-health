@@ -2,11 +2,6 @@ package com.pethealth.common.error;
 
 import org.springframework.http.HttpStatus;
 
-import java.util.Arrays;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
 /**
  * 业务错误码。数值与文案来自交付文档 8.2，契约里同步维护在 contract/common.yaml 的 {@code x-error-codes}。
  *
@@ -38,9 +33,6 @@ public enum ErrorCode {
     COUPON_REDEEMED(80002, "券已核销", HttpStatus.OK),
     PRICE_OUT_OF_RANGE(90001, "价格超出区间", HttpStatus.OK);
 
-    private static final Map<Integer, ErrorCode> BY_CODE = Arrays.stream(values())
-            .collect(Collectors.toUnmodifiableMap(ErrorCode::getCode, Function.identity()));
-
     private final int code;
     private final String defaultMessage;
     private final HttpStatus httpStatus;
@@ -62,13 +54,5 @@ public enum ErrorCode {
     /** 对应的 HTTP 状态码；异常处理器与过滤器共用这一份映射，不各写一套。 */
     public HttpStatus httpStatus() {
         return httpStatus;
-    }
-
-    public static ErrorCode fromCode(int code) {
-        ErrorCode found = BY_CODE.get(code);
-        if (found == null) {
-            throw new IllegalArgumentException("未定义的错误码: " + code);
-        }
-        return found;
     }
 }

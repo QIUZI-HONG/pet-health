@@ -14,6 +14,9 @@ app.use(router);
 // 失败不阻塞渲染——页面自己按状态显示空态 / 无权限态。
 void useSessionStore()
   .bootstrap()
-  .catch(() => undefined);
+  .catch((error: unknown) => {
+    // bootstrap 内部已经把失败收敛成匿名态，这里只是不让异常静默消失
+    console.warn("[session] 启动时恢复会话失败", error);
+  });
 
 app.mount("#app");

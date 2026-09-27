@@ -124,13 +124,34 @@ class AccountFlowTest extends IntegrationTestBase {
         String newRefresh = first.data().path("refresh_token").asText();
         assertThat(newRefresh).isNotEqualTo(refreshToken);
 
-        // 旧的再来一次：已经作废 → 40101（前端据此跳登录）
+        // 新的可以用（正常轮换路径）
+        assertThat(api.post("/api/v1/app/auth/refresh", java.util.Map.of("refresh_token", newRefresh)).code()).isZero();
+    }
+
+    @Test
+    @DisplayName("Refresh 被重复使用＝泄露信号：整个会话族一起吊销（ADR-0012）")
+    void replayedRefreshTokenRevokesWholeSession() {
+        String refreshToken = api.post("/api/v1/app/auth/register",
+                new RegisterRequest(PHONE, PASSWORD, null)).data().path("refresh_token").asText();
+
+        // 正常换发一次，拿到同一会话族里的新令牌
+        ApiClient.ApiCall rotated = api.post("/api/v1/app/auth/refresh", java.util.Map.of("refresh_token", refreshToken));
+        String newRefresh = rotated.data().path("refresh_token").asText();
+
+        // 攻击者拿着已经用过的旧令牌再来一次 → 40101
         ApiClient.ApiCall replay = api.post("/api/v1/app/auth/refresh", java.util.Map.of("refresh_token", refreshToken));
         assertThat(replay.status()).isEqualTo(401);
         assertThat(replay.code()).isEqualTo(40101);
 
-        // 新的仍然可用
-        assertThat(api.post("/api/v1/app/auth/refresh", java.util.Map.of("refresh_token", newRefresh)).code()).isZero();
+        // 关键：合法用户手里那个新令牌也一并失效——因为无法分辨谁是攻击者，
+        // 只能让这次登录整个作废，让用户重新登录（这正是 ADR-0012 说的「按吊销处理」）
+        ApiClient.ApiCall afterReplay = api.post("/api/v1/app/auth/refresh", java.util.Map.of("refresh_token", newRefresh));
+        assertThat(afterReplay.code()).isEqualTo(40101);
+
+        // 重新登录还能拿到可用的令牌
+        String freshRefresh = api.post("/api/v1/app/auth/login", new LoginRequest(PHONE, PASSWORD))
+                .data().path("refresh_token").asText();
+        assertThat(api.post("/api/v1/app/auth/refresh", java.util.Map.of("refresh_token", freshRefresh)).code()).isZero();
     }
 
     @Test

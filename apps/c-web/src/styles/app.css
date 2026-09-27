@@ -149,12 +149,107 @@ a {
   gap: var(--ph-space-4);
 }
 
-@media (max-width: 1080px) {
-  .ph-shell {
-    grid-template-columns: 72px minmax(0, 1fr);
+/* ===== 四态组件的公共骨架 =====
+ * 空/加载/错误/无权限四态只差中间那块内容，骨架（居中、图标、标题、说明、动作区）是一样的。
+ * 放在这里一份，四个组件里各留自己的差异——否则同一套 .ph-state__title 要维护四遍。
+ */
+.ph-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ph-space-2);
+  padding: var(--ph-space-10) var(--ph-space-6);
+  text-align: center;
+}
+
+.ph-state__icon {
+  font-size: 32px;
+  line-height: 1;
+  margin-bottom: var(--ph-space-2);
+}
+
+.ph-state__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ph-color-text);
+}
+
+.ph-state__desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ph-color-text-sub);
+  max-width: 420px;
+}
+
+.ph-state__actions {
+  display: flex;
+  gap: var(--ph-space-3);
+  margin-top: var(--ph-space-4);
+}
+
+/* ===== 基类：表单字段 =====
+ * 登录页与「我的」页共用一份，高度差异用 --lg 修饰符，不要各写一套（会悄悄分叉成 36/40 两种）。
+ */
+.ph-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ph-space-1);
+}
+
+.ph-field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--ph-space-2);
+}
+
+.ph-field__label {
+  font-size: 13px;
+  color: var(--ph-color-text-sub);
+}
+
+.ph-field__input {
+  height: 36px;
+  padding: 0 var(--ph-space-3);
+  background: var(--ph-color-surface);
+  border: 1px solid var(--ph-color-border);
+  border-radius: var(--ph-radius-input);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ph-color-text);
+}
+
+.ph-field__input:focus {
+  outline: none;
+  border-color: var(--ph-color-primary);
+}
+
+/* 独立整页表单（登录）用大一号的输入框 */
+.ph-field__input--lg {
+  height: 40px;
+}
+
+/* ===== 断点（ADR-0016）=====
+ * ≥1280：左栏 208px + 两栏内容；1080–1280：收窄留白与栏宽；<1080：内容并成一栏。
+ * **左栏宽度不随断点变**——ADR 写的是「208px 固定」，收窄靠留白而不是砍导航。
+ */
+@media (max-width: 1280px) {
+  .ph-shell__content {
+    padding: var(--ph-space-6) var(--ph-space-6) var(--ph-space-8);
   }
 
+  .ph-topbar {
+    padding: 0 var(--ph-space-6);
+  }
+}
+
+@media (max-width: 1080px) {
   .ph-columns {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ph-shell__content {
+    padding: var(--ph-space-5) var(--ph-space-5) var(--ph-space-8);
   }
 }

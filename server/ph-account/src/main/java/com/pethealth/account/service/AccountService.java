@@ -125,7 +125,11 @@ public class AccountService {
         if (!user.isActive()) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "账号已被禁用，请联系客服");
         }
-        return issueTokens(user);
+        // 换发的新令牌留在**同一个会话族**里：这样一旦检测到重放，整族一起吊销（ADR-0012）
+        JwtService.Issued access = jwtService.issue(user.getId(), LoginDomain.APP);
+        String refreshToken = refreshTokens.issueInFamily(session.familyId(), user.getId(), LoginDomain.APP);
+        return new TokenPair(access.token(), refreshToken,
+                Math.toIntExact(access.expiresInSeconds()), toProfile(user));
     }
 
     public void logout(LogoutRequest request) {

@@ -36,38 +36,11 @@ defineEmits<{ retry: [] }>();
 </template>
 
 <style scoped>
-.ph-state--error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--ph-space-2);
-  padding: var(--ph-space-10) var(--ph-space-6);
-  text-align: center;
-}
-
-.ph-state__icon {
-  font-size: 32px;
-  line-height: 1;
-  margin-bottom: var(--ph-space-2);
-}
-
-.ph-state__title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ph-color-text);
-}
-
+/* 只有「请求 ID」这一行是错误态独有的，其余骨架见 styles/app.css */
 .ph-state__trace {
   margin: 0;
   font-family: var(--ph-font-numeric);
   font-size: 12px;
   color: var(--ph-color-text-weak);
-}
-
-.ph-state__actions {
-  margin-top: var(--ph-space-4);
-  display: flex;
-  gap: var(--ph-space-3);
 }
 </style>
