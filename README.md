@@ -6,13 +6,16 @@
 
 ## 现在处于什么阶段
 
-**规划阶段。** 交付路线正在[地图 #52](https://github.com/QIUZI-HONG/pet-health/issues/52) 上逐张裁决，还没有开始写业务代码。仓库里目前是文档、结构骨架与接口契约的位置。
+**规划阶段收尾，第一个垂直切片已经跑通。** 交付路线在[地图 #52](https://github.com/QIUZI-HONG/pet-health/issues/52) 上逐张裁决；切片 [#94 账号与宠物档案](https://github.com/QIUZI-HONG/pet-health/issues/94) 已实现并有跑在真实 MySQL/Redis 上的接口测试——它是第一块打通「HTTP → 领域 → 数据库」的完整切片，顺带把持久层、鉴权、加密、测试脚手架立住了。
 
-开工前先读三样：
+切片落地时定的四条决策（[#76](https://github.com/QIUZI-HONG/pet-health/issues/76) 持久层、[#81](https://github.com/QIUZI-HONG/pet-health/issues/81) 会话与加密、[#82](https://github.com/QIUZI-HONG/pet-health/issues/82) 测试方式）记在 ADR-0011 ~ 0014。
+
+开工前先读四样：
 
 1. **[CONTEXT.md](CONTEXT.md)** —— 领域术语表。**命名以它为准**；「商家」「商户」「店铺」「merchant」是禁用词，统一说「服务者」。
-2. **[docs/adr/](docs/adr/)** —— 已定的架构决策。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
+2. **[docs/adr/](docs/adr/)** —— 已定的架构决策（当前 14 条）。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
 3. **[地图 #52](https://github.com/QIUZI-HONG/pet-health/issues/52)** —— 哪些决策已定、哪些还没定、下一步该做什么。
+4. **[docs/conventions.md](docs/conventions.md)** —— 实现级约定（分页 / 脱敏 / 加密 / 迁移 / 越权口径），以及每条约定落在哪个 ADR。
 
 ## 目录结构
 
@@ -29,20 +32,21 @@ pet-health/
 │   ├── prior-rounds/       已作废轮次的存档（那一轮的地图 / spec / 实现票）
 │   └── assets/mockups/     视觉稿原始 PNG（原链接 2026-12-26 过期）
 ├── contract/               接口契约（OpenAPI），前后端类型的唯一源头
-├── server/                 后端：Java 17 + Spring Boot 3
+│                              app.yaml 已定义账号与宠物档案（切片 #94）
+├── server/                 后端：Java 17 + Spring Boot 3（跑法与迁移规程见 server/README.md）
 │   ├── pom.xml             父 POM
-│   ├── ph-common/          统一响应 / 异常 / 工具
-│   ├── ph-api/             契约生成物（DTO）
-│   ├── ph-account/         账号 / RBAC / 数据域
+│   ├── ph-common/          统一响应 / 异常 / 追踪 / 加密 / 持久层约定
+│   ├── ph-api/             接口 DTO（手写，与契约对齐）
+│   ├── ph-account/         账号 / 登录会话 / RBAC / 数据域
 │   ├── ph-provider/        服务者 / 资质 / 门店
 │   ├── ph-catalog/         服务项 / 号源 / 档期
 │   ├── ph-order/           订单 / 状态机 / 核销 / 对账
-│   ├── ph-record/          宠物 / 档案 / 评分 / 打卡
+│   ├── ph-record/          宠物 / 档案 / 评分 / 打卡（宠物已实现）
 │   ├── ph-ai/              AI 服务的客户端 / 配额 / 熔断 / 留痕
 │   ├── ph-reminder/        提醒 / 消息中心
 │   ├── ph-privilege/       券池 / 邀请 / 积分
 │   ├── ph-content/         社区 / 审核
-│   └── ph-boot/            启动模块
+│   └── ph-boot/            启动模块 + 迁移脚本（db/migration，回滚脚本在 db/undo）+ 接口测试
 ├── ai/                     AI 服务：Python + FastAPI（ADR-0009）
 │   ├── app/config.py       全部可配项（配置分层见 ADR-0010）
 │   ├── app/models.py       与 Java 的内部契约
@@ -74,11 +78,18 @@ cp .env.example .env        # 填入 DASHSCOPE_API_KEY；.env 不会进版本库
 uvicorn app.main:app --reload --port 8000
 
 # 3. 后端（需要 JDK 17；./mvnw 自带 Maven，不必本机安装）
-cd server && ./mvnw -pl ph-boot -am spring-boot:run
+cd server && cp .env.example .env    # 至少填 JWT_SECRET / FIELD_ENC_KEY / FIELD_HMAC_KEY，见文件内的生成命令
+./mvnw -pl ph-boot -am spring-boot:run
 
 # 4. 前端
 pnpm install
 pnpm --filter c-web dev
+```
+
+跑后端测试（**需要 Docker**：测试自己用 Testcontainers 起 MySQL/Redis，不依赖上面那两个容器）：
+
+```bash
+cd server && ./mvnw -B verify
 ```
 
 **MySQL 端口是 3307，不是 3306。** 这台机器上装了原生的 Windows MySQL 服务，3306 被它占着。用 3307 也顺带把项目数据与本机其它库隔开，避免「拿生产库开发」这类事故。原因写在 `deploy/docker-compose.dev.yml` 的注释里。
@@ -88,7 +99,11 @@ pnpm --filter c-web dev
 | 位置 | 模板 | 说明 |
 | --- | --- | --- |
 | AI 服务 | [`ai/.env.example`](ai/.env.example) | 复制成 `ai/.env` 再填真实值；`.env` 已被 gitignore |
-| 后端 | 无独立模板 | 全部走 `application.yml` 里的 `${ENV:默认值}` 占位，本地不配也能用默认值起来 |
+| 后端 | [`server/.env.example`](server/.env.example) | 复制成 `server/.env` 再填；起后端时自动读（`spring.config.import`） |
+
+后端的 `JWT_SECRET`、`FIELD_ENC_KEY`、`FIELD_HMAC_KEY` **没有默认值，缺了启动即失败**——仓库里不放任何密钥值，
+免得「部署时忘了配」一直没人发现。生成方式在 `server/.env.example` 里（`openssl rand -base64 32`）。
+测试不需要配：集成测试自带测试专用密钥。
 
 后端会读这些（括号内是本地默认值）：
 
@@ -113,7 +128,8 @@ pnpm --filter c-web dev
 
 已验证：
 
-- `cd server && ./mvnw -B test` —— **12 个 Maven 模块**（另有 1 个聚合 POM）全部编译通过，`ph-boot` 的上下文冒烟测试通过（1 passed / 0 failed）
+- `cd server && ./mvnw -B verify` —— **12 个 Maven 模块**（另有 1 个聚合 POM）全部编译通过；**47 个测试全绿**
+  （10 个纯单元测试 + 37 个跑在 Testcontainers 起的真实 MySQL 8.4 / Redis 8 上的接口测试，见 ADR-0014）
 - `pnpm install && pnpm -r build` —— 三个 Web 端全部构建通过（vite 7.3.6）
 - `cd ai && ruff check . && uvicorn app.main:app` —— 静态检查通过；健康检查、内部鉴权（无 token 返回 401）、契约校验（缺 `text` 返回 422）均已实测
 - **2026-09-27 Docker 端到端实测**：

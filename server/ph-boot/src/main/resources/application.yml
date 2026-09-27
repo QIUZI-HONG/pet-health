@@ -4,8 +4,12 @@ server:
 spring:
   application:
     name: pet-health-server
-  # 持久层尚未接线：ORM/数据访问方案还没定（见地图 #76），所以 pom 里没有引持久化依赖，
-  # 下面这段 datasource 目前是**惰性的**——它声明了目标连接，但没有任何东西消费它。
+
+  # 本地密钥放 server/.env（照 server/.env.example 生成，已被 .gitignore 忽略）；
+  # CI 与生产直接给环境变量。**仓库里不存任何密钥值**（AGENTS.md 的硬约束）。
+  config:
+    import: optional:file:./.env[.properties]
+
   datasource:
     # 端口是 3307 不是 3306：本机装了原生的 Windows MySQL，3306 被它占着。
     # 见 deploy/docker-compose.dev.yml 的说明。
@@ -20,12 +24,54 @@ spring:
   jackson:
     time-zone: Asia/Shanghai
     date-format: yyyy-MM-dd HH:mm:ss
+    # 契约里是 request_id / access_token / page_size，全局统一 snake_case（ADR-0011）
+    property-naming-strategy: SNAKE_CASE
+
+  # DDL 只由迁移脚本产生，框架不许建表也不许改表（ADR-0011）。
+  # 回滚脚本在 classpath:db/undo/，人工执行步骤见 server/README.md。
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+mybatis-plus:
+  configuration:
+    # 表字段 snake_case ↔ Java camelCase
+    map-underscore-to-camel-case: true
+    # 开发期把 SQL 打出来；上线前按日志量再决定要不要降级
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    banner: false
+    db-config:
+      logic-delete-field: isDeleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+
+# ---- 会话与口令（ADR-0012）----
+app:
+  auth:
+    # 没有默认值，缺了直接启动失败（JwtService 会给出可读的错）——绝不在仓库里放假密钥，
+    # 那等于「部署时忘了配」也不会被发现。
+    jwt-secret: ${JWT_SECRET:}
+    access-ttl: ${JWT_ACCESS_TTL:2h}
+    refresh-ttl: ${JWT_REFRESH_TTL:7d}
+    # 同一手机号连续失败多少次后拒绝登录，以及这个计数保留多久
+    login-max-failures: ${LOGIN_MAX_FAILURES:10}
+    login-lock-window: ${LOGIN_LOCK_WINDOW:15m}
+
+  # ---- 敏感字段加密（ADR-0013）----
+  # 同样没有默认值：缺了启动即失败。生成方式见 server/.env.example。
+  crypto:
+    enc-key: ${FIELD_ENC_KEY:}
+    hmac-key: ${FIELD_HMAC_KEY:}
+    # 轮换期间才配：解密先试当前密钥，失败再试它（ADR-0013）
+    enc-key-previous: ${FIELD_ENC_KEY_PREVIOUS:}
 
 # ---- AI 服务（ADR-0009：模型调用在独立的 ai/ 服务里，本后端只是它的客户端）----
 # 完整设计见 docs/design/ai-service.md。这些是**技术参数**，改要重启；

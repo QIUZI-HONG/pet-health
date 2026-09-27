@@ -12,7 +12,7 @@
 
   <artifactId>ph-api</artifactId>
   <name>ph-api</name>
-  <description>接口契约生成物（DTO）——由 contract/ 的 OpenAPI 生成，不手写</description>
+  <description>接口 DTO——与 contract/ 的 OpenAPI 对齐，但**手写**（前端类型才是生成的，见 ADR-0005）</description>
 
   <dependencies>
     <dependency>
