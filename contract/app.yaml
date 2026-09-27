@@ -2,10 +2,9 @@
 #
 # 消费方：C 端（桌面 Web）。公共组件（统一响应 / 错误码 / 分页）见 common.yaml。
 #
-# 状态：**尚未定义任何业务接口。** 它们取决于地图上未裁决的决策：
-#   - 订单交易 #77（且卡在支付语义澄清）
-#   - 券池 #53、核销 #55、裂变 #54、提醒 #56
-#   - AI 对话与分诊（设计见 docs/design/ai-service.md）
+# 状态：**账号与宠物档案已定**（切片 #94，第一块打通 HTTP → 领域 → 数据库的接口）。
+# 其余业务接口待地图上未裁决的决策：订单交易 #77（且卡在支付语义澄清）、券池 #53、
+# 核销 #55、裂变 #54、提醒 #56；AI 对话与分诊见 docs/design/ai-service.md。
 #
 # 契约先于代码（ADR-0005）：**前端类型由契约生成**（pnpm --filter @pet-health/shared gen:api），
 # **后端 DTO 手写**但必须与契约对齐。改了这里就要重跑生成，CI 会检查生成物是否同步。
@@ -14,10 +13,531 @@ openapi: 3.1.0
 
 info:
   title: 宠物 AI 健康管理平台 · C 端接口
-  version: 0.1.0
-  description: 路由前缀 `/api/v1/app/**`。公共组件见 `common.yaml`。
+  version: 0.2.0
+  description: |
+    路由前缀 `/api/v1/app/**`。公共组件见 `common.yaml`。
+
+    两条贯穿全部接口的约定：
+
+    - **鉴权**：除 `/auth/**` 外都要求 `Authorization: Bearer <access_token>`，
+      Token 的登录域必须是 `app`（ADR-0012）。C 端 Token 调服务者后台接口一律 40100。
+    - **越权**：所有资源按归属校验（交付文档 6.3）。**别人的资源一律按不存在处理**（40400），
+      不返回 40300——40300 会泄露「这个 id 存在」这一事实。
 
 servers:
   - url: /api/v1/app
 
-paths: {}
+tags:
+  - name: auth
+    description: 注册 / 登录 / 刷新 / 退出
+  - name: user
+    description: 当前用户资料与当前宠物
+  - name: pet
+    description: 宠物档案（多宠、软删除与恢复）
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: 手机号 + 密码注册
+      description: |
+        注册成功直接返回令牌（不要求再登录一次）。
+        手机号在库中加密存储（ADR-0013），响应里一律脱敏。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "200":
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TokenPair" }
+        "400":
+          description: 参数错误（40001）
+        "409":
+          description: 手机号已被注册（40900）
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: 手机号 + 密码登录
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TokenPair" }
+        "401":
+          description: 手机号或密码不正确（40100）
+        "403":
+          description: 账号已被禁用（40300）
+        "429":
+          description: 尝试过于频繁（42900）
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: 用 Refresh Token 换新令牌
+      description: |
+        Refresh 一次性使用：换发新的一对令牌，旧 Refresh 立即作废（ADR-0012）。
+        过期或已作废的 Refresh 返回 40101，前端跳登录。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: 换发成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TokenPair" }
+        "401":
+          description: Refresh Token 无效或已过期（40101）
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: 退出登录
+      description: |
+        作废当前 Refresh Token。**已签发的 Access Token 在剩余有效期（≤2 小时）内仍有效**——
+        这是不引入 jti 黑名单的必然代价，见 ADR-0012。重复调用同样返回成功（幂等）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+      responses:
+        "200":
+          description: 已退出
+          content:
+            application/json:
+              schema:
+                $ref: "./common.yaml#/components/schemas/ApiResponse"
+
+  /users/me:
+    get:
+      tags: [user]
+      summary: 当前用户资料
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/UserProfile" }
+        "401":
+          $ref: "./common.yaml#/components/responses/Unauthorized"
+    put:
+      tags: [user]
+      summary: 更新当前用户资料
+      description: 只传要改的字段；不传或传 `null` 表示不改。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: 更新后的资料
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/UserProfile" }
+        "400":
+          description: 参数错误（40001）
+
+  /users/me/active-pet:
+    put:
+      tags: [user]
+      summary: 切换当前宠物
+      description: |
+        多宠家庭在这个账号上记住「当前在看谁」，跨浏览器一致。
+        切到不属于自己的宠物、或已被删除的宠物，返回 40400。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActivatePetRequest"
+      responses:
+        "200":
+          description: 切换后的资料
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/UserProfile" }
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+
+  /pets:
+    get:
+      tags: [pet]
+      summary: 我的宠物列表
+      description: |
+        默认只返回未删除的宠物。`deleted=true` 时返回**回收站**——软删除且仍在 30 天恢复期内的。
+        宠物按账号维度数量很小，不分页。
+
+        **当前选中哪只不在这里**：那是账号上的偏好（`UserProfile.active_pet_id`），
+        前端打开应用时读一次 `/users/me` 即可，不必让每个宠物都带一个 `is_active` 标记。
+      parameters:
+        - name: deleted
+          in: query
+          description: 是否查询回收站
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Pet" }
+    post:
+      tags: [pet]
+      summary: 添加宠物
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PetCreateRequest"
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Pet" }
+        "400":
+          description: 参数错误（40001）
+
+  /pets/{pet_id}:
+    parameters:
+      - $ref: "#/components/parameters/PetId"
+    get:
+      tags: [pet]
+      summary: 宠物详情
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Pet" }
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+    put:
+      tags: [pet]
+      summary: 编辑宠物
+      description: 只传要改的字段；不传或传 `null` 表示不改。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PetUpdateRequest"
+      responses:
+        "200":
+          description: 更新后的宠物
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Pet" }
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+    delete:
+      tags: [pet]
+      summary: 删除宠物（软删除）
+      description: |
+        软删除，30 天内可恢复（`POST /pets/{pet_id}/restore`）。
+        按 `docs/conventions.md`「物理删除仅限账号注销场景」，过期后记录仍保留，只是不再可恢复。
+      responses:
+        "200":
+          description: 已删除
+          content:
+            application/json:
+              schema:
+                $ref: "./common.yaml#/components/schemas/ApiResponse"
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+
+  /pets/{pet_id}/restore:
+    post:
+      tags: [pet]
+      summary: 恢复被删除的宠物
+      description: 超过 30 天恢复期后返回 40400（前端提示「已超过恢复期」，与「不存在」同一处理）。
+      parameters:
+        - $ref: "#/components/parameters/PetId"
+      responses:
+        "200":
+          description: 恢复后的宠物
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Pet" }
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PetId:
+      name: pet_id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [phone, password]
+      properties:
+        phone:
+          type: string
+          description: 中国大陆手机号
+          pattern: "^1[3-9]\\d{9}$"
+          example: "13800138000"
+        password:
+          type: string
+          description: 8–32 位，至少含一个字母与一个数字
+          minLength: 8
+          maxLength: 32
+        nickname:
+          type: string
+          description: 可选；不传时按「宠物主人」生成
+          maxLength: 64
+
+    LoginRequest:
+      type: object
+      required: [phone, password]
+      description: |
+        **登录不做口令格式校验**（不设 minLength 之类）：格式规则只属于注册，
+        登录只有「匹配 / 不匹配」两种结果，不匹配一律 40100。
+      properties:
+        phone: { type: string, example: "13800138000" }
+        password: { type: string, example: "pet12345" }
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+
+    LogoutRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token, expires_in, user]
+      properties:
+        access_token:
+          type: string
+          description: "JWT；请求时放 Authorization: Bearer 请求头"
+        refresh_token:
+          type: string
+          description: 不透明随机串，一次性使用（ADR-0012）
+        expires_in:
+          type: integer
+          description: Access Token 剩余秒数（7200）
+        user: { $ref: "#/components/schemas/UserProfile" }
+
+    UserProfile:
+      type: object
+      required: [id, phone, nickname, gender]
+      properties:
+        id: { type: integer, format: int64 }
+        phone:
+          type: string
+          description: 脱敏手机号，形如 `138****8000`
+          example: "138****8000"
+        nickname: { type: string }
+        avatar:
+          type: string
+          description: 头像 URL；未设置为 null
+        gender:
+          type: integer
+          description: "0 未知 / 1 男 / 2 女"
+          enum: [0, 1, 2]
+        active_pet_id:
+          type: integer
+          format: int64
+          description: |
+            最近一次显式切换到的宠物。没切换过、或那只宠物已被删除时为 null——
+            这时前端取宠物列表的第一只作为默认。
+        created_at: { type: string, example: "2026-09-27 10:00:00" }
+
+    UpdateProfileRequest:
+      type: object
+      description: |
+        「不改」与「清空」是两件事：字段不传或传 `null` = 不改；`avatar` 传空串 = 清空头像。
+        `nickname` 是必填性字段（库里 NOT NULL），传空串返回 40001。
+      properties:
+        nickname: { type: string, maxLength: 64 }
+        avatar: { type: string, maxLength: 512, description: 传空串表示清空 }
+        gender: { type: integer, enum: [0, 1, 2] }
+
+    ActivatePetRequest:
+      type: object
+      required: [pet_id]
+      properties:
+        pet_id: { type: integer, format: int64 }
+
+    Pet:
+      type: object
+      required: [id, name, species, gender]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, example: "豆豆" }
+        species:
+          type: integer
+          description: "1 犬 / 2 猫"
+          enum: [1, 2]
+        breed:
+          type: string
+          description: 品种；未填为 null
+          example: "柯基"
+        gender:
+          type: integer
+          description: "0 未知 / 1 公 / 2 母"
+          enum: [0, 1, 2]
+        birthday:
+          type: string
+          description: 生日 `YYYY-MM-DD`；未填为 null
+          example: "2023-05-01"
+        weight:
+          type: string
+          description: 体重 kg，两位小数。**字符串**——浮点在 JS 里会丢精度（ADR-0011）
+          example: "12.50"
+        avatar: { type: string }
+        is_sterilized:
+          type: boolean
+          description: 是否绝育
+        is_chronic:
+          type: boolean
+          description: 是否有慢病（触发专项照护，见 #92）
+        chronic_desc:
+          type: string
+          description: 慢病描述；`is_chronic=false` 时为 null
+        restorable_until:
+          type: string
+          description: 仅回收站里有值——可恢复的截止时间（删除后 30 天）
+          example: "2026-10-27 10:00:00"
+        created_at: { type: string, example: "2026-09-27 10:00:00" }
+        updated_at: { type: string, example: "2026-09-27 10:00:00" }
+
+    PetCreateRequest:
+      type: object
+      required: [name, species]
+      properties:
+        name: { type: string, maxLength: 64, example: "豆豆" }
+        species: { type: integer, enum: [1, 2] }
+        breed: { type: string, maxLength: 64 }
+        gender: { type: integer, enum: [0, 1, 2], default: 0 }
+        birthday:
+          type: string
+          description: "生日格式 YYYY-MM-DD，不得晚于今天"
+          example: "2023-05-01"
+        weight:
+          type: string
+          description: 体重 kg，两位小数；范围 0.01–999.99
+          example: "12.50"
+        avatar: { type: string, maxLength: 512 }
+        is_sterilized: { type: boolean, default: false }
+        is_chronic: { type: boolean, default: false }
+        chronic_desc:
+          type: string
+          maxLength: 512
+          description: 慢病描述；`is_chronic=true` 时必填
+
+    PetUpdateRequest:
+      type: object
+      description: |
+        「不改」与「清空」是两件事：字段不传或传 `null` = 不改；
+        `breed` / `avatar` / `chronic_desc` 传空串 = 清空。
+        `name` 传空串返回 40001；`weight` / `birthday` 不接受空串（要改就得给合法值）。
+      properties:
+        name: { type: string, maxLength: 64 }
+        species: { type: integer, enum: [1, 2] }
+        breed: { type: string, maxLength: 64 }
+        gender: { type: integer, enum: [0, 1, 2] }
+        birthday: { type: string, example: "2023-05-01" }
+        weight: { type: string, example: "12.50" }
+        avatar: { type: string, maxLength: 512 }
+        is_sterilized: { type: boolean }
+        is_chronic: { type: boolean }
+        chronic_desc: { type: string, maxLength: 512 }

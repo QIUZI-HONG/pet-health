@@ -3,12 +3,783 @@
  * Do not make direct changes to the file.
  */
 
-export type paths = Record<string, never>;
+export interface paths {
+    "/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 手机号 + 密码注册
+         * @description 注册成功直接返回令牌（不要求再登录一次）。
+         *     手机号在库中加密存储（ADR-0013），响应里一律脱敏。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RegisterRequest"];
+                };
+            };
+            responses: {
+                /** @description 注册成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["TokenPair"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 手机号已被注册（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 手机号 + 密码登录 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LoginRequest"];
+                };
+            };
+            responses: {
+                /** @description 登录成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["TokenPair"];
+                        };
+                    };
+                };
+                /** @description 手机号或密码不正确（40100） */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 账号已被禁用（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 尝试过于频繁（42900） */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 用 Refresh Token 换新令牌
+         * @description Refresh 一次性使用：换发新的一对令牌，旧 Refresh 立即作废（ADR-0012）。
+         *     过期或已作废的 Refresh 返回 40101，前端跳登录。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RefreshRequest"];
+                };
+            };
+            responses: {
+                /** @description 换发成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["TokenPair"];
+                        };
+                    };
+                };
+                /** @description Refresh Token 无效或已过期（40101） */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 退出登录
+         * @description 作废当前 Refresh Token。**已签发的 Access Token 在剩余有效期（≤2 小时）内仍有效**——
+         *     这是不引入 jti 黑名单的必然代价，见 ADR-0012。重复调用同样返回成功（幂等）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LogoutRequest"];
+                };
+            };
+            responses: {
+                /** @description 已退出 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前用户资料 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["UserProfile"];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        /**
+         * 更新当前用户资料
+         * @description 只传要改的字段；不传或传 `null` 表示不改。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateProfileRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的资料 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["UserProfile"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/active-pet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 切换当前宠物
+         * @description 多宠家庭在这个账号上记住「当前在看谁」，跨浏览器一致。
+         *     切到不属于自己的宠物、或已被删除的宠物，返回 40400。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ActivatePetRequest"];
+                };
+            };
+            responses: {
+                /** @description 切换后的资料 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["UserProfile"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的宠物列表
+         * @description 默认只返回未删除的宠物。`deleted=true` 时返回**回收站**——软删除且仍在 30 天恢复期内的。
+         *     宠物按账号维度数量很小，不分页。
+         *
+         *     **当前选中哪只不在这里**：那是账号上的偏好（`UserProfile.active_pet_id`），
+         *     前端打开应用时读一次 `/users/me` 即可，不必让每个宠物都带一个 `is_active` 标记。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 是否查询回收站 */
+                    deleted?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["Pet"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 添加宠物 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PetCreateRequest"];
+                };
+            };
+            responses: {
+                /** @description 创建成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["Pet"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pets/{pet_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pet_id: components["parameters"]["PetId"];
+            };
+            cookie?: never;
+        };
+        /** 宠物详情 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pet_id: components["parameters"]["PetId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["Pet"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        /**
+         * 编辑宠物
+         * @description 只传要改的字段；不传或传 `null` 表示不改。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pet_id: components["parameters"]["PetId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PetUpdateRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的宠物 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["Pet"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        post?: never;
+        /**
+         * 删除宠物（软删除）
+         * @description 软删除，30 天内可恢复（`POST /pets/{pet_id}/restore`）。
+         *     按 `docs/conventions.md`「物理删除仅限账号注销场景」，过期后记录仍保留，只是不再可恢复。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pet_id: components["parameters"]["PetId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pets/{pet_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 恢复被删除的宠物
+         * @description 超过 30 天恢复期后返回 40400（前端提示「已超过恢复期」，与「不存在」同一处理）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pet_id: components["parameters"]["PetId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 恢复后的宠物 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["Pet"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+}
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
-    responses: never;
-    parameters: never;
+    schemas: {
+        RegisterRequest: {
+            /**
+             * @description 中国大陆手机号
+             * @example 13800138000
+             */
+            phone: string;
+            /** @description 8–32 位，至少含一个字母与一个数字 */
+            password: string;
+            /** @description 可选；不传时按「宠物主人」生成 */
+            nickname?: string;
+        };
+        /**
+         * @description **登录不做口令格式校验**（不设 minLength 之类）：格式规则只属于注册，
+         *     登录只有「匹配 / 不匹配」两种结果，不匹配一律 40100。
+         */
+        LoginRequest: {
+            /** @example 13800138000 */
+            phone: string;
+            /** @example pet12345 */
+            password: string;
+        };
+        RefreshRequest: {
+            refresh_token: string;
+        };
+        LogoutRequest: {
+            refresh_token: string;
+        };
+        TokenPair: {
+            /** @description JWT；请求时放 Authorization: Bearer 请求头 */
+            access_token: string;
+            /** @description 不透明随机串，一次性使用（ADR-0012） */
+            refresh_token: string;
+            /** @description Access Token 剩余秒数（7200） */
+            expires_in: number;
+            user: components["schemas"]["UserProfile"];
+        };
+        UserProfile: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * @description 脱敏手机号，形如 `138****8000`
+             * @example 138****8000
+             */
+            phone: string;
+            nickname: string;
+            /** @description 头像 URL；未设置为 null */
+            avatar?: string;
+            /**
+             * @description 0 未知 / 1 男 / 2 女
+             * @enum {integer}
+             */
+            gender: 0 | 1 | 2;
+            /**
+             * Format: int64
+             * @description 最近一次显式切换到的宠物。没切换过、或那只宠物已被删除时为 null——
+             *     这时前端取宠物列表的第一只作为默认。
+             */
+            active_pet_id?: number;
+            /** @example 2026-09-27 10:00:00 */
+            created_at?: string;
+        };
+        /**
+         * @description 「不改」与「清空」是两件事：字段不传或传 `null` = 不改；`avatar` 传空串 = 清空头像。
+         *     `nickname` 是必填性字段（库里 NOT NULL），传空串返回 40001。
+         */
+        UpdateProfileRequest: {
+            nickname?: string;
+            /** @description 传空串表示清空 */
+            avatar?: string;
+            /** @enum {integer} */
+            gender?: 0 | 1 | 2;
+        };
+        ActivatePetRequest: {
+            /** Format: int64 */
+            pet_id: number;
+        };
+        Pet: {
+            /** Format: int64 */
+            id: number;
+            /** @example 豆豆 */
+            name: string;
+            /**
+             * @description 1 犬 / 2 猫
+             * @enum {integer}
+             */
+            species: 1 | 2;
+            /**
+             * @description 品种；未填为 null
+             * @example 柯基
+             */
+            breed?: string;
+            /**
+             * @description 0 未知 / 1 公 / 2 母
+             * @enum {integer}
+             */
+            gender: 0 | 1 | 2;
+            /**
+             * @description 生日 `YYYY-MM-DD`；未填为 null
+             * @example 2023-05-01
+             */
+            birthday?: string;
+            /**
+             * @description 体重 kg，两位小数。**字符串**——浮点在 JS 里会丢精度（ADR-0011）
+             * @example 12.50
+             */
+            weight?: string;
+            avatar?: string;
+            /** @description 是否绝育 */
+            is_sterilized?: boolean;
+            /** @description 是否有慢病（触发专项照护，见 */
+            is_chronic?: boolean;
+            /** @description 慢病描述；`is_chronic=false` 时为 null */
+            chronic_desc?: string;
+            /**
+             * @description 仅回收站里有值——可恢复的截止时间（删除后 30 天）
+             * @example 2026-10-27 10:00:00
+             */
+            restorable_until?: string;
+            /** @example 2026-09-27 10:00:00 */
+            created_at?: string;
+            /** @example 2026-09-27 10:00:00 */
+            updated_at?: string;
+        };
+        PetCreateRequest: {
+            /** @example 豆豆 */
+            name: string;
+            /** @enum {integer} */
+            species: 1 | 2;
+            breed?: string;
+            /**
+             * @default 0
+             * @enum {integer}
+             */
+            gender: 0 | 1 | 2;
+            /**
+             * @description 生日格式 YYYY-MM-DD，不得晚于今天
+             * @example 2023-05-01
+             */
+            birthday?: string;
+            /**
+             * @description 体重 kg，两位小数；范围 0.01–999.99
+             * @example 12.50
+             */
+            weight?: string;
+            avatar?: string;
+            /** @default false */
+            is_sterilized: boolean;
+            /** @default false */
+            is_chronic: boolean;
+            /** @description 慢病描述；`is_chronic=true` 时必填 */
+            chronic_desc?: string;
+        };
+        /**
+         * @description 「不改」与「清空」是两件事：字段不传或传 `null` = 不改；
+         *     `breed` / `avatar` / `chronic_desc` 传空串 = 清空。
+         *     `name` 传空串返回 40001；`weight` / `birthday` 不接受空串（要改就得给合法值）。
+         */
+        PetUpdateRequest: {
+            name?: string;
+            /** @enum {integer} */
+            species?: 1 | 2;
+            breed?: string;
+            /** @enum {integer} */
+            gender?: 0 | 1 | 2;
+            /** @example 2023-05-01 */
+            birthday?: string;
+            /** @example 12.50 */
+            weight?: string;
+            avatar?: string;
+            is_sterilized?: boolean;
+            is_chronic?: boolean;
+            chronic_desc?: string;
+        };
+        ApiResponse: {
+            /** @description 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes） */
+            code: number;
+            /** @description 提示文案，前端直接展示 */
+            message: string;
+            /** @description 业务数据，可为对象 / 数组 / null */
+            data?: unknown;
+            /** @description 全链路追踪 ID */
+            request_id?: string;
+        };
+    };
+    responses: {
+        /** @description 未登录或 Token 已过期（40100 / 40101） */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content?: never;
+        };
+        /** @description 资源不存在（40400） */
+        NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content?: never;
+        };
+    };
+    parameters: {
+        PetId: number;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;

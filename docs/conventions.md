@@ -43,6 +43,20 @@
 | 数据库变更 | 必须写迁移脚本，可回滚 |
 | 排序与索引 | 软删除字段默认过滤，且不影响索引使用 |
 
+**这几条已经落成机制，写代码时照做即可**（实现细节见对应的 ADR，别每处临时拍）：
+
+| 项 | 落点 |
+| --- | --- |
+| 主键、软删除、审计列、分页、小数与时间格式 | [ADR-0011](adr/0011-persistence-and-migrations.md) |
+| 会话与令牌（Access 2h / Refresh 7d 存 Redis 可吊销） | [ADR-0012](adr/0012-auth-and-session.md) |
+| 手机号等敏感字段的加密与等值查询 | [ADR-0013](adr/0013-field-encryption.md) |
+| 测试打在真实 MySQL / Redis 上 | [ADR-0014](adr/0014-backend-test-strategy.md) |
+
+两条最容易踩的：
+
+- **取当前时间用 `AppTime.now()`**，不要用 `LocalDateTime.now()`（后者取 JVM 默认时区，本地/容器/CI 三个结果）。
+- **越权一律返回 40400**，不要返回 40300——403 等于承认「这个 id 存在」。
+
 ## 文件
 
 | 项 | 约定 |
