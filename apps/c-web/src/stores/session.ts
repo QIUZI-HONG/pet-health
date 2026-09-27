@@ -4,30 +4,44 @@
  * 三件事在这里统一：
  *   - 启动时用本地令牌换一次 `/users/me`（令牌过期会被请求层静默刷新，ADR-0012）；
  *   - 「当前宠物」以服务端为准（`active_pet_id`），本地只做兜底——用户可能在另一台浏览器上切过；
- *   - 令牌失效统一收敛成 `anonymous`，页面据此显示无权限态，而不是各页面自己判断。
+ *   - **区分「身份失效」与「服务不可用」**：前者清会话跳登录，后者保留会话显示错误态。
+ *
+ * 最后这条是踩出来的：早先任何失败都清令牌，于是后端一重启，所有在线用户都被静默登出、
+ * 看到的是「登录后查看」而不是「服务异常，请重试」。用户没法从「请登录」这个提示里
+ * 知道其实是后端抖了。
  */
 import { defineStore } from "pinia";
-import { cApp, tokenStore, type Pet, type UserProfile } from "@pet-health/shared";
+import { ApiError, cApp, tokenStore, type Pet, type UserProfile } from "@pet-health/shared";
 
-export type SessionStatus = "idle" | "loading" | "authenticated" | "anonymous";
+export type SessionStatus = "idle" | "loading" | "authenticated" | "anonymous" | "error";
 
 interface SessionState {
   status: SessionStatus;
+  /** 本地是否有令牌（不代表服务端认可）。用于区分「没登录」与「登录了但取不到数据」。 */
+  hasSession: boolean;
   user: UserProfile | null;
   pets: Pet[];
   /** 启动失败的原因；用于错误态展示与重试。 */
   errorMessage: string;
+  /** 后端返回的请求 ID，报障时直接给这个。 */
+  errorRequestId: string;
 }
+
+/** 这几种失败说明「你的身份不行了」——只有它们该清会话。 */
+const IDENTITY_ERRORS = new Set([40100, 40101, 40300]);
 
 export const useSessionStore = defineStore("session", {
   state: (): SessionState => ({
     status: "idle",
+    hasSession: false,
     user: null,
     pets: [],
     errorMessage: "",
+    errorRequestId: "",
   }),
 
   getters: {
+    /** 服务端认可当前身份（`/users/me` 取到了）。 */
     isLoggedIn: (state) => state.status === "authenticated",
     /** 当前宠物：服务端记的那只；它被删掉或没切换过时回退到列表第一只（契约里的约定）。 */
     activePet(state): Pet | null {
@@ -42,27 +56,41 @@ export const useSessionStore = defineStore("session", {
     async bootstrap(): Promise<void> {
       if (!tokenStore.get()) {
         this.status = "anonymous";
+        this.hasSession = false;
         return;
       }
-      this.status = "loading";
+      this.hasSession = true;
       await this.reload();
     },
 
     async reload(): Promise<void> {
       this.status = "loading";
       this.errorMessage = "";
+      this.errorRequestId = "";
+      // 「有令牌」不等于「服务端认可」，但只要令牌还在，用户就还没被登出——
+      // 错误态要用这一点来决定显示「重试」还是「去登录」
+      this.hasSession = tokenStore.get() !== null;
       try {
         const [user, pets] = await Promise.all([cApp.me(), cApp.listPets()]);
         this.user = user;
         this.pets = pets;
+        this.hasSession = true;
         this.status = "authenticated";
       } catch (error) {
-        this.user = null;
-        this.pets = [];
-        // 令牌问题 → 匿名；其它（网络/服务异常）→ 也退回匿名但把原因留给页面展示
-        tokenStore.clear();
-        this.errorMessage = error instanceof Error ? error.message : "加载失败";
-        this.status = "anonymous";
+        const apiError = error instanceof ApiError ? error : null;
+        if (apiError && IDENTITY_ERRORS.has(apiError.code)) {
+          // 身份确实失效了：清掉本地令牌，回到未登录
+          tokenStore.clear();
+          this.user = null;
+          this.pets = [];
+          this.hasSession = false;
+          this.status = "anonymous";
+        } else {
+          // 服务不可用 / 网络问题：**保住会话**，交给页面显示错误态与重试
+          this.status = "error";
+        }
+        this.errorMessage = apiError?.message ?? "加载失败，请稍后重试";
+        this.errorRequestId = apiError?.requestId ?? "";
       }
     },
 
@@ -84,10 +112,13 @@ export const useSessionStore = defineStore("session", {
       const refreshToken = tokenStore.refreshToken;
       if (refreshToken) {
         // 退出失败也要把本地清掉：用户点了退出就该退出
-        await cApp.logout(refreshToken).catch(() => undefined);
+        await cApp.logout(refreshToken).catch((error: unknown) => {
+          console.warn("[session] 通知服务端退出失败，本地仍按已退出处理", error);
+        });
       }
       tokenStore.clear();
       this.$reset();
+      this.hasSession = false;
       this.status = "anonymous";
     },
 
@@ -105,6 +136,7 @@ export const useSessionStore = defineStore("session", {
 
     applyTokens(tokens: { access_token: string; refresh_token: string }): void {
       tokenStore.save({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+      this.hasSession = true;
     },
   },
 });

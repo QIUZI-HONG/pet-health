@@ -11,7 +11,7 @@ import { ref } from "vue";
 import { formatDate, speciesLabel } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import StateEmpty from "../components/states/StateEmpty.vue";
-import StateForbidden from "../components/states/StateForbidden.vue";
+import SessionGate from "../components/SessionGate.vue";
 
 const session = useSessionStore();
 const draft = ref("");
@@ -22,12 +22,8 @@ const draft = ref("");
     <h2 class="ph-page-title">AI 管家</h2>
     <p class="ph-page-desc">描述症状、补一张照片，拿到风险等级与下一步该做什么。</p>
 
-    <StateForbidden
-      v-if="!session.isLoggedIn"
-      description="AI 咨询会结合宠物的健康档案，所以需要先登录。"
-    />
-
-    <div v-else class="ph-ai">
+    <SessionGate forbidden-description="AI 咨询会结合宠物的健康档案，所以需要先登录。">
+      <div class="ph-ai">
       <!-- 对话区 -->
       <div class="ph-card ph-ai__chat">
         <StateEmpty
@@ -80,8 +76,9 @@ const draft = ref("");
             （docs/conventions.md）。
           </p>
         </article>
-      </aside>
-    </div>
+        </aside>
+      </div>
+    </SessionGate>
   </section>
 </template>
 

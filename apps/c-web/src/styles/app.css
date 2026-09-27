@@ -230,6 +230,17 @@ a {
   height: 40px;
 }
 
+/* 校验失败：描边变红 + 下面一行说明「哪里不对」——
+   只把提交按钮变灰而不说明原因，用户只能猜 */
+.ph-field__input--invalid {
+  border-color: var(--ph-color-danger);
+}
+
+.ph-field__hint {
+  font-size: 12px;
+  color: var(--ph-color-danger);
+}
+
 /* ===== 断点（ADR-0016）=====
  * ≥1280：左栏 208px + 两栏内容；1080–1280：收窄留白与栏宽；<1080：内容并成一栏。
  * **左栏宽度不随断点变**——ADR 写的是「208px 固定」，收窄靠留白而不是砍导航。

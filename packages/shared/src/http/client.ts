@@ -92,7 +92,9 @@ function toApiError(error: AxiosError<Envelope>): ApiError {
   if (!error.response) {
     return new ApiError("网络连接失败，请检查网络后重试", { code: 0, network: true });
   }
-  return new ApiError(`服务异常（HTTP ${error.response.status}）`, {
+  // 这种响应不是我们后端的信封（多半是网关/代理报的错），所以没有 request_id。
+  // 文案先给人看的那句，技术细节放括号里——用户不需要先读懂 HTTP 500。
+  return new ApiError(`服务暂时不可用，请稍后重试（HTTP ${error.response.status}）`, {
     code: -1,
     httpStatus: error.response.status,
   });

@@ -23,10 +23,26 @@ const requestId = ref("");
 
 const form = reactive({ phone: "", password: "", nickname: "" });
 
+/** 失焦后才提示：刚打开页面、还没开始填就红一片是很烦人的。 */
+const phoneTouched = ref(false);
+const passwordTouched = ref(false);
+
 const isRegister = computed(() => mode.value === "register");
-const canSubmit = computed(
-  () => /^1[3-9]\d{9}$/.test(form.phone) && form.password.length >= 8 && !submitting.value,
+const phoneValid = computed(() => /^1[3-9]\d{9}$/.test(form.phone));
+const passwordValid = computed(
+  () => form.password.length >= 8 && form.password.length <= 32 && /[A-Za-z]/.test(form.password) && /\d/.test(form.password),
 );
+const canSubmit = computed(() => phoneValid.value && passwordValid.value && !submitting.value);
+
+const phoneHint = computed(() => {
+  if (!phoneTouched.value || phoneValid.value) return "";
+  return form.phone.length === 0 ? "请填写手机号" : "手机号格式不对，应为 1 开头的 11 位数字";
+});
+
+const passwordHint = computed(() => {
+  if (!passwordTouched.value || passwordValid.value || form.password.length === 0) return "";
+  return "密码需 8–32 位，且同时包含字母与数字";
+});
 
 function switchMode(): void {
   mode.value = isRegister.value ? "login" : "register";
@@ -78,21 +94,27 @@ async function submit(): Promise<void> {
           <input
             v-model.trim="form.phone"
             class="ph-field__input ph-field__input--lg"
+            :class="{ 'ph-field__input--invalid': phoneHint }"
             inputmode="numeric"
             maxlength="11"
             placeholder="13800138000"
             autocomplete="tel"
+            @blur="phoneTouched = true"
           />
+          <span v-if="phoneHint" class="ph-field__hint">{{ phoneHint }}</span>
         </label>
         <label class="ph-field">
           <span class="ph-field__label">密码</span>
           <input
             v-model="form.password"
             class="ph-field__input ph-field__input--lg"
+            :class="{ 'ph-field__input--invalid': passwordHint }"
             type="password"
             placeholder="8–32 位，含字母与数字"
             :autocomplete="isRegister ? 'new-password' : 'current-password'"
+            @blur="passwordTouched = true"
           />
+          <span v-if="passwordHint" class="ph-field__hint">{{ passwordHint }}</span>
         </label>
         <label v-if="isRegister" class="ph-field">
           <span class="ph-field__label">昵称（可选）</span>

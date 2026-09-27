@@ -6,10 +6,7 @@
  * 数据如实空着**：分类按交付文档 4.x 的六类列出，点进分类给空态。
  */
 import StateEmpty from "../components/states/StateEmpty.vue";
-import StateForbidden from "../components/states/StateForbidden.vue";
-import { useSessionStore } from "../stores/session";
-
-const session = useSessionStore();
+import SessionGate from "../components/SessionGate.vue";
 
 const categories = [
   { key: "hospital", label: "医院", hint: "体检、疫苗、常见病诊疗" },
@@ -26,9 +23,7 @@ const categories = [
     <h2 class="ph-page-title">服务</h2>
     <p class="ph-page-desc">按分类找到标准服务项，明码标价，选时段预约。</p>
 
-    <StateForbidden v-if="!session.isLoggedIn" description="预约需要绑定宠物与账号信息。" />
-
-    <template v-else>
+    <SessionGate forbidden-description="预约需要绑定宠物与账号信息。">
       <div class="ph-categories">
         <button v-for="category in categories" :key="category.key" type="button" class="ph-category" disabled>
           <span class="ph-category__label">{{ category.label }}</span>
@@ -44,7 +39,7 @@ const categories = [
           description="平台统一的标准服务目录与定价区间在 #75 决策、#104 实现；服务者选品定价在 #105，下单与核销在 #109。目录一上线，这里就换成可筛选的服务列表。"
         />
       </article>
-    </template>
+    </SessionGate>
   </section>
 </template>
 

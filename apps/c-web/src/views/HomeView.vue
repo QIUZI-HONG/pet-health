@@ -11,7 +11,7 @@ import { computed } from "vue";
 import { formatDate, speciesLabel } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import StateEmpty from "../components/states/StateEmpty.vue";
-import StateForbidden from "../components/states/StateForbidden.vue";
+import SessionGate from "../components/SessionGate.vue";
 
 const session = useSessionStore();
 
@@ -33,12 +33,8 @@ const quickEntries = [
     <h2 class="ph-page-title">你好{{ session.user ? `，${session.user.nickname}` : "" }}</h2>
     <p class="ph-page-desc">24 小时看着这只小家伙的，是你和它一起。</p>
 
-    <StateForbidden
-      v-if="!session.isLoggedIn"
-      description="登录后就能看到健康评分、提醒和打卡任务。"
-    />
-
-    <div v-else class="ph-columns">
+    <SessionGate forbidden-description="登录后就能看到健康评分、提醒和打卡任务。">
+      <div class="ph-columns">
       <!-- 主栏 -->
       <div class="ph-stack">
         <article class="ph-card">
@@ -106,8 +102,9 @@ const quickEntries = [
           </ul>
           <StateEmpty v-else icon="🐾" title="还没有宠物" description="到「我的」里建第一份档案。" />
         </article>
+        </div>
       </div>
-    </div>
+    </SessionGate>
   </section>
 </template>
 

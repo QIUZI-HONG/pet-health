@@ -7,18 +7,16 @@
  *
  * 权益、积分、券、社群这些入口先不放：它们还没有数据源，摆一排点不动的入口不如不摆。
  */
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { ApiError, cApp, formatDate, genderLabel, speciesLabel, type Pet } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
+import SessionGate from "../components/SessionGate.vue";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import StateError from "../components/states/StateError.vue";
-import StateForbidden from "../components/states/StateForbidden.vue";
-import StateLoading from "../components/states/StateLoading.vue";
 
 const session = useSessionStore();
 
 const recycleBin = ref<Pet[]>([]);
-const loading = ref(false);
 const errorMessage = ref("");
 const requestId = ref("");
 const formError = ref("");
@@ -42,11 +40,12 @@ const form = reactive({
 
 const canSubmit = computed(() => form.name.trim().length > 0 && !saving.value);
 
-async function load(): Promise<void> {
-  loading.value = true;
+/** 回收站是这一页独有的数据；宠物列表本身在会话 store 里（会话加载时就一起取了）。 */
+async function loadRecycleBin(): Promise<void> {
+  if (!session.isLoggedIn) return;
   errorMessage.value = "";
+  requestId.value = "";
   try {
-    await session.refreshPets();
     recycleBin.value = await cApp.listPets(true);
   } catch (error) {
     if (error instanceof ApiError) {
@@ -55,16 +54,25 @@ async function load(): Promise<void> {
     } else {
       errorMessage.value = "加载失败，请稍后重试";
     }
-  } finally {
-    loading.value = false;
   }
 }
 
-onMounted(() => {
-  if (session.isLoggedIn) {
-    void load();
-  }
-});
+/** 会话一恢复就重新拉回收站——所以「重新加载」点完，这一页的数据也会跟着回来。 */
+watch(
+  () => session.status,
+  (status) => {
+    if (status === "authenticated") {
+      void loadRecycleBin();
+    }
+  },
+  { immediate: true },
+);
+
+/** 整页刷新：会话 + 本页数据。 */
+async function reloadPage(): Promise<void> {
+  await session.reload();
+  await loadRecycleBin();
+}
 
 function openForm(): void {
   formError.value = "";
@@ -125,7 +133,8 @@ async function submit(): Promise<void> {
       await cApp.updatePet(editingId.value, payload);
     }
     closeForm();
-    await load();
+    await session.refreshPets();
+    await loadRecycleBin();
   } catch (error) {
     formError.value = error instanceof ApiError
       ? error.message
@@ -139,14 +148,16 @@ async function remove(pet: Pet): Promise<void> {
   await cApp.deletePet(pet.id).catch((error: unknown) => {
     errorMessage.value = error instanceof ApiError ? error.message : "删除失败";
   });
-  await load();
+  await session.refreshPets();
+  await loadRecycleBin();
 }
 
 async function restore(pet: Pet): Promise<void> {
   await cApp.restorePet(pet.id).catch((error: unknown) => {
     errorMessage.value = error instanceof ApiError ? error.message : "恢复失败";
   });
-  await load();
+  await session.refreshPets();
+  await loadRecycleBin();
 }
 
 async function activate(pet: Pet): Promise<void> {
@@ -165,18 +176,15 @@ function restorableUntil(pet: Pet): string {
     <h2 class="ph-page-title">我的</h2>
     <p class="ph-page-desc">账号、宠物档案与回收站。</p>
 
-    <StateForbidden v-if="!session.isLoggedIn" description="登录后管理你的账号与宠物。" />
+    <SessionGate forbidden-description="登录后管理你的账号与宠物。">
+      <StateError
+        v-if="errorMessage"
+        :message="errorMessage"
+        :request-id="requestId"
+        @retry="reloadPage"
+      />
 
-    <StateLoading v-else-if="session.status === 'loading' || loading" :rows="4" />
-
-    <StateError
-      v-else-if="errorMessage"
-      :message="errorMessage"
-      :request-id="requestId"
-      @retry="load"
-    />
-
-    <div v-else class="ph-columns">
+      <div v-else class="ph-columns">
       <div class="ph-stack">
         <!-- 宠物 -->
         <article class="ph-card">
@@ -303,8 +311,9 @@ function restorableUntil(pet: Pet): string {
             这里先只读展示。
           </p>
         </article>
+        </div>
       </div>
-    </div>
+    </SessionGate>
   </section>
 </template>
 

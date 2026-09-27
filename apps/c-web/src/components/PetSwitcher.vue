@@ -13,7 +13,11 @@ const router = useRouter();
 const open = ref(false);
 const saving = ref(false);
 
-const label = computed(() => session.activePet?.name ?? "还没有宠物");
+const label = computed(() => {
+  if (session.activePet) return session.activePet.name;
+  // 数据没取到时别写「还没有宠物」——那是在断言一件我们并不知道的事
+  return session.status === "error" ? "宠物信息不可用" : "还没有宠物";
+});
 
 async function pick(petId: number): Promise<void> {
   open.value = false;

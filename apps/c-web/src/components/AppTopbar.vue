@@ -22,13 +22,15 @@ async function onLogout(): Promise<void> {
   <header class="ph-topbar">
     <div class="ph-topbar__left">
       <h1 class="ph-topbar__title">{{ route.meta.title }}</h1>
-      <PetSwitcher v-if="session.isLoggedIn" />
+      <PetSwitcher v-if="session.hasSession" />
     </div>
 
     <div class="ph-topbar__right">
       <span class="ph-topbar__notice" title="提醒体系尚未实现（#56 / #99）">🔔</span>
-      <template v-if="session.isLoggedIn">
-        <span class="ph-topbar__user">{{ session.user?.nickname }}</span>
+      <!-- 按 hasSession 而不是 isLoggedIn：后端不可用时（status=error）会话还在，
+           这时显示「登录」会与内容区的「服务异常，请重新加载」自相矛盾 -->
+      <template v-if="session.hasSession">
+        <span class="ph-topbar__user">{{ session.user?.nickname ?? "已登录" }}</span>
         <button type="button" class="ph-button ph-button--text" @click="onLogout">退出</button>
       </template>
       <RouterLink v-else class="ph-button ph-button--primary" :to="{ name: 'login' }">登录</RouterLink>

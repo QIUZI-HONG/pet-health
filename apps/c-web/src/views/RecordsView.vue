@@ -8,7 +8,7 @@
 import { formatDate, genderLabel, speciesLabel } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import StateEmpty from "../components/states/StateEmpty.vue";
-import StateForbidden from "../components/states/StateForbidden.vue";
+import SessionGate from "../components/SessionGate.vue";
 
 const session = useSessionStore();
 </script>
@@ -18,9 +18,8 @@ const session = useSessionStore();
     <h2 class="ph-page-title">健康档案</h2>
     <p class="ph-page-desc">疫苗、驱虫、就医、打卡与服务报工，都汇成同一条时间轴。</p>
 
-    <StateForbidden v-if="!session.isLoggedIn" description="健康档案跟着宠物走，登录后查看。" />
-
-    <div v-else class="ph-columns">
+    <SessionGate forbidden-description="健康档案跟着宠物走，登录后查看。">
+      <div class="ph-columns">
       <div class="ph-stack">
         <article class="ph-card">
           <h3 class="ph-card__title">时间轴</h3>
@@ -62,8 +61,9 @@ const session = useSessionStore();
             description="到「我的」里建第一份档案，档案页就有内容了。"
           />
         </article>
+        </div>
       </div>
-    </div>
+    </SessionGate>
   </section>
 </template>
 
