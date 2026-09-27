@@ -53,7 +53,7 @@ pet-health/
 ├── packages/               三端共享
 │   ├── shared/             请求封装 / 鉴权 / 字典 / 契约生成的 TS 类型
 │   ├── ui/                 设计 token + 共享组件
-│   └── config/             tsconfig / vite 预设
+│   └── config/             tsconfig 基线（被三个应用 extends）
 └── deploy/                 编排
     └── docker-compose.dev.yml
 ```
