@@ -19,6 +19,9 @@ public class User extends BaseEntity {
     /** 账号被禁用（风控或运营处置）。 */
     public static final int STATUS_DISABLED = 2;
 
+    /** 注销时间；NULL=未注销（迁移 V9）。 */
+    private java.time.LocalDateTime deactivatedAt;
+
     private String phoneEnc;
     private String phoneHash;
     private String passwordHash;
@@ -97,5 +100,13 @@ public class User extends BaseEntity {
 
     public boolean isActive() {
         return status == null || status == STATUS_ACTIVE;
+    }
+
+    public java.time.LocalDateTime getDeactivatedAt() {
+        return deactivatedAt;
+    }
+
+    public void setDeactivatedAt(java.time.LocalDateTime deactivatedAt) {
+        this.deactivatedAt = deactivatedAt;
     }
 }

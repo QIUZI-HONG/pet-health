@@ -1285,6 +1285,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/me/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 导出我的账号数据（合规要求）
+         * @description 一次交齐：账号资料、宠物档案（含打卡与防疫记录、健康评分）、消息。
+         *     `notice` 说明它不是逐字段的完整副本，避免用户误以为这就是全部。
+         *
+         *     **不含**任何不属于该用户的数据，也不含服务者侧内部字段。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 数据副本 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AccountExportView"];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/deactivation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 注销账号
+         * @description **幂等**：重复调用不报错（网络重试下的第二次调用不该失败）。
+         *
+         *     做的事：状态置禁用（登录与刷新令牌立刻拒绝）→ 手机号与昵称匿名化
+         *     （**让出唯一键，同一手机号可重新注册**）→ 宠物与档案软删。
+         *
+         *     不物理删除：留痕与将来的账目要保留（V9 迁移的注释里写了这条分工）。
+         *     已经签发的 Access Token 在最长 2 小时内仍能通过签名校验——这是 JWT 的固有代价，
+         *     账号资料这条路径会拒绝已注销用户，其余模块的彻底封堵属 #121。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已注销（重复调用同样返回成功） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/compliance/documents": {
         parameters: {
             query?: never;
@@ -2076,6 +2166,56 @@ export interface components {
             effective_from?: string | null;
             /** @description 正文是否仍是占位。**true 时前端要显示「待法务定稿」**（ADR-0025） */
             is_placeholder: boolean;
+        };
+        AccountExportView: {
+            user: components["schemas"]["UserProfile"];
+            pets: {
+                /** Format: int64 */
+                pet_id?: number;
+                name?: string;
+                species?: number;
+                breed?: string | null;
+                gender?: number;
+                birthday?: string | null;
+                /** @description 金额与体重都用 decimal 字符串，避免浮点 */
+                weight?: string | null;
+                sterilized?: boolean;
+                chronic_desc?: string | null;
+                /** @description 打卡分项与防疫记录都是这里的行（同属 archive_record） */
+                records?: {
+                    record_date?: string;
+                    /** @description 1体重2饮食3排泄4行为5情绪6卫生7防疫 */
+                    category?: number;
+                    content?: string | null;
+                    /** @description 1用户 2AI 3服务者报工 */
+                    source?: number | null;
+                    due_on?: string | null;
+                    numeric_value?: string | null;
+                }[];
+                scores?: {
+                    calc_date?: string;
+                    total_score?: number | null;
+                    physiology?: number | null;
+                    behavior?: number | null;
+                    hygiene?: number | null;
+                    epidemic?: number | null;
+                    elderly?: number | null;
+                }[];
+            }[];
+            messages: {
+                kind?: string;
+                type?: string;
+                title?: string;
+                content?: string | null;
+                risk_level?: number;
+                remind_at?: string;
+                read?: boolean;
+                created_at?: string;
+            }[];
+            /** @example 2026-09-28 22:10:00 */
+            exported_at: string;
+            /** @description 给用户看的一句话：这不是逐字段的完整副本 */
+            notice: string;
         };
         ApiResponse: {
             /** @description 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes） */

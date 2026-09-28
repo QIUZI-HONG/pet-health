@@ -28,6 +28,11 @@
     <!-- 切换当前宠物要校验「这只宠物是不是他的」——走 record 模块暴露的接口，不直连它的表（ADR-0006） -->
     <dependency>
       <groupId>com.pethealth</groupId>
+      <artifactId>ph-reminder</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.pethealth</groupId>
       <artifactId>ph-record</artifactId>
       <version>${project.version}</version>
     </dependency>

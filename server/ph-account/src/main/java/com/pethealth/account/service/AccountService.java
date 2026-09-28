@@ -183,7 +183,7 @@ public class AccountService {
                 Math.toIntExact(access.expiresInSeconds()), toProfile(user));
     }
 
-    private UserProfile toProfile(User user) {
+    UserProfile toProfile(User user) {
         String phone = fieldCipher.decrypt(user.getPhoneEnc());
         return new UserProfile(
                 user.getId(),
@@ -211,6 +211,11 @@ public class AccountService {
         User user = userMapper.selectById(userId);
         if (user == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "账号不存在");
+        }
+        if (user.getStatus() != null && user.getStatus() == User.STATUS_DISABLED) {
+            // 注销/禁用的账号：旧 Access Token 在到期前仍能通过签名校验，所以这里要再判一次状态。
+            // 彻底的做法是在鉴权层每请求查一次用户状态（多一次库查询），属 #121 的范围。
+            throw BusinessException.unauthorized("账号已注销或禁用");
         }
         return user;
     }
