@@ -14,7 +14,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.3", "ruff>=0.8"]
+# PyYAML 是**直接**依赖（三个测试文件 import yaml 读评测集），不要靠 uvicorn[standard] 的传递依赖——
+# 本地能过 CI 挂过不止一次，这种「我这儿有」的隐性依赖最难查
+dev = ["pytest>=8.3", "ruff>=0.8", "PyYAML>=6.0"]
 
 [build-system]
 requires = ["setuptools>=68"]
