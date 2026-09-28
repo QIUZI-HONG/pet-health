@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     # **唯一来源就是这里**：提示词入 DB（#103）之前，改提示词时必须手工把这里 +1。
     prompt_version: str = "p0-code"
 
+    # 红线词表的缓存秒数（ADR-0021）：运营在后台改完，最多滞后这么久生效。
+    # 调小 = 更及时但每次咨询都查库；0 表示每次都查。
+    red_flag_cache_seconds: float = 60.0
+
+    # 时区：与 Java 侧 AppTime 和数据库保持一致（docs/conventions.md）
+    timezone: str = "Asia/Shanghai"
+
     # ---- 基础设施：对知识域只读（ADR-0009 的边界）----
     mysql_host: str = "127.0.0.1"
     # 3307 不是 3306：本机原生 Windows MySQL 占着 3306，见 deploy/docker-compose.dev.yml

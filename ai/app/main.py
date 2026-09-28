@@ -16,7 +16,7 @@ import logging
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 
-from . import model_client, prompts
+from . import guardrails, model_client, prompts, red_flags
 from .config import settings
 from .models import ConsultRequest, ConsultResponse
 
@@ -60,6 +60,40 @@ def health() -> dict[str, object]:
     }
 
 
+def _red_flag_response(
+    req: ConsultRequest,
+    hits: list[red_flags.RedFlagHit],
+    image_count: int,
+    rule_set: red_flags.LoadResult,
+) -> ConsultResponse:
+    """红线命中时的响应：一句话给动作，其余命中项作为补充事项。
+
+    `model_name` 标成 `rule:red_flag` 而不是留空——留痕里必须能看出**这次没有模型参与**，
+    否则事后分析分级准确率时会把规则判定混进模型样本里（ADR-0021）。
+    """
+    primary = hits[0].rule
+    tips = [hit.rule.action_hint for hit in hits[1:] if hit.rule.action_hint]
+    logger.warning(
+        "consult red_flag trace_id=%s user_id=%s hits=%s images=%s",
+        req.trace_id, req.user_id, [hit.code for hit in hits], image_count,
+    )
+    return ConsultResponse(
+        risk_level=3,
+        possible_causes=[],
+        action_suggestion=primary.action_hint or "命中急症信号，请立即送医。",
+        need_hospital=True,
+        care_tips=tips,
+        images_used=0,
+        red_flag_check="ok" if rule_set.available else "unavailable",
+        red_flag_hits=[hit.code for hit in hits],
+        # 命中详情带给 Java 侧留痕：哪条规则、命中的是哪个词
+        guard_hits=[f"{hit.code}:{hit.term}" for hit in hits],
+        degraded=False,
+        model_name="rule:red_flag",
+        prompt_version=settings.prompt_version,
+    )
+
+
 @app.post(
     "/internal/consult",
     response_model=ConsultResponse,
@@ -68,6 +102,19 @@ def health() -> dict[str, object]:
 async def consult(req: ConsultRequest) -> ConsultResponse:
     images = req.input.media_urls[: settings.ai_max_images]
     image_count = len(images)
+
+    # ---- 硬红线预检：命中即判红，**不调模型**（ADR-0021）----
+    # 排在最前面有两个理由：它判的是分钟级急症，早一次跳转就少一段时间；它还很便宜，
+    # 命中时省掉一次模型调用。
+    rule_set = red_flags.load_rules()
+    hits = red_flags.match(
+        req.input.text,
+        rule_set.rules,
+        species=req.pet.species,
+        age_stage=red_flags.age_stage_of(req.pet.birth_date, req.pet.species),
+    )
+    if hits:
+        return _red_flag_response(req, hits, image_count, rule_set)
 
     user_prompt = prompts.build_user_prompt(
         pet=req.pet.model_dump(),
@@ -95,6 +142,7 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             degrade_reason=f"image_not_supported: {exc}",
             care_tips=[f"已收到 {image_count} 张图片，但本轮没有分析它们。"],
             images_used=0,
+            red_flag_check="ok" if rule_set.available else "unavailable",
             model_name=settings.ai_model_grading,
             prompt_version=settings.prompt_version,
         )
@@ -108,6 +156,7 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             degraded=True,
             degrade_reason=f"model_unavailable: {exc}",
             images_used=0,
+            red_flag_check="ok" if rule_set.available else "unavailable",
             model_name=settings.ai_model_grading,
             prompt_version=settings.prompt_version,
         )
@@ -121,6 +170,7 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             degraded=True,
             degrade_reason=f"model_output_invalid: {exc}",
             images_used=0,
+            red_flag_check="ok" if rule_set.available else "unavailable",
             model_name=settings.ai_model_grading,
             prompt_version=settings.prompt_version,
         )
@@ -132,16 +182,27 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
         image_count, result.latency_ms, settings.prompt_version,
     )
 
+    # ---- 输出层护栏：绝不输出确诊 / 处方 / 剂量（交付文档 9.5）----
+    # 提示词是概率性的，这里是机械的。命中就改写并留痕，不静默删除（ADR-0021 第四条）。
+    causes, cause_hits = guardrails.review_list(list(result.possible_causes))
+    action, action_hits = guardrails.review(result.action_suggestion)
+    care, care_hits = guardrails.review_list(list(result.care_tips))
+    guard_hits = cause_hits + action_hits + care_hits
+    if guard_hits:
+        _log_degraded("output_guardrail", req.trace_id, guard_hits)
+
     return ConsultResponse(
         risk_level=result.risk_level,
-        possible_causes=result.possible_causes,
-        action_suggestion=result.action_suggestion,
+        possible_causes=causes,
+        action_suggestion=action,
         need_hospital=result.need_hospital,
-        care_tips=result.care_tips,
+        care_tips=care,
         # 检索层未实现，来源引用拿不出来。宁可空着，也不编造条目 ID。
         citations=[],
         # 本轮模型实际看了几张图。留痕用：事后归因分级漂移时要能区分「当时有图」和「当时没图」
         images_used=image_count,
+        guard_hits=guard_hits,
+        red_flag_check="ok" if rule_set.available else "unavailable",
         degraded=False,
         model_name=result.model_name,
         model_version=result.model_version,

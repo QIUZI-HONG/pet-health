@@ -42,6 +42,13 @@ class ConsultResponse(BaseModel):
     # 本轮实际送进模型几张图（0 表示没看图或模型看不见）。留痕用：
     # 事后归因「分级漂移」时要能区分「当时有图」和「当时没图」。
     images_used: int = 0
+    # 命中的硬红线规则编号（如 ["RF-007"]）。非空表示**没有调模型**，结论由规则给出——
+    # 留痕里要能一眼分清「模型判的红」与「红线规则判的红」（ADR-0021）。
+    red_flag_hits: list[str] = Field(default_factory=list)
+    # 输出层护栏命中的标记（dose / phrase:xxx）：为「模型这次越界了」留证据（ADR-0021 第四条）。
+    guard_hits: list[str] = Field(default_factory=list)
+    # 红线预检本身是否生效：ok / unavailable。不可用时**不静默放行**，Java 侧据此告警。
+    red_flag_check: str = "ok"
     degraded: bool = False
     degrade_reason: str | None = None
     model_name: str = ""
