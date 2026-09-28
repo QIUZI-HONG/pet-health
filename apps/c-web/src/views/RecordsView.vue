@@ -52,12 +52,12 @@ const latest = createLatestGuard();
 
 async function load(): Promise<void> {
   if (!pet.value) return;
-  const seq = latest.claim();
+  const { token: seq, signal } = latest.claim();
   loading.value = true;
   errorMessage.value = "";
   records.value = [];
   try {
-    const list = await cApp.listEpidemicRecords(pet.value.id);
+    const list = await cApp.listEpidemicRecords(pet.value.id, signal);
     if (!latest.isCurrent(seq)) return;
     records.value = list;
   } catch (error) {

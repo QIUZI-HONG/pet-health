@@ -72,15 +72,15 @@ function dayBefore(date: string): string {
 const latest = createLatestGuard();
 
 async function load(petId: number): Promise<void> {
-  const seq = latest.claim();
+  const { token: seq, signal } = latest.claim();
   loading.value = true;
   errorMessage.value = "";
   try {
     const [scoreData, dayData, streakData, remindersData] = await Promise.all([
-      cApp.getHealthScore(petId),
-      cApp.getCheckInDay(petId),
-      cApp.getCheckInStreak(petId),
-      cApp.getMessageHighlights(6),
+      cApp.getHealthScore(petId, signal),
+      cApp.getCheckInDay(petId, undefined, signal),
+      cApp.getCheckInStreak(petId, signal),
+      cApp.getMessageHighlights(6, signal),
     ]);
     if (!latest.isCurrent(seq)) return;
     score.value = scoreData;
@@ -92,7 +92,7 @@ async function load(petId: number): Promise<void> {
     await messageStore.refresh();
     // 昨天只为「和昨天一样」按钮服务；失败不影响主流程
     // 日期按字符串减一天：`shiftDate` 不走本地时区，否则东八区会取成前天的值（踩过）
-    const previous = await cApp.getCheckInDay(petId, dayBefore(dayData.date)).catch(() => null);
+    const previous = await cApp.getCheckInDay(petId, dayBefore(dayData.date), signal).catch(() => null);
     if (latest.isCurrent(seq)) {
       yesterday.value = previous;
     }

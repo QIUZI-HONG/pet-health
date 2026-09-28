@@ -57,11 +57,11 @@ async function send(): Promise<void> {
     errorMessage.value = "先添加一只宠物，AI 才能结合它的档案判断。";
     return;
   }
-  const seq = latest.claim();
+  const { token: seq, signal } = latest.claim();
   sending.value = true;
   errorMessage.value = "";
   try {
-    const answer = await cApp.consultAi(petId, { question });
+    const answer = await cApp.consultAi(petId, { question }, signal);
     // 两道判断：期间又发了一次（守卫），或者**换过宠物**（结论的对象已经变了）
     if (!latest.isCurrent(seq) || session.activePet?.id !== petId) return;
     result.value = answer;

@@ -148,6 +148,11 @@ async function send<T>(config: AxiosRequestConfig, attempt = 0): Promise<T> {
       }
       throw error;
     }
+    // 取消是我们自己叫停的（守卫作废了这次请求），不是故障：直接抛出去让调用方丢弃，
+    // 既不重试、也不报错
+    if (axios.isCancel(error)) {
+      throw error;
+    }
     const apiError = toApiError(error as AxiosError<Envelope>);
     if (apiError.isTokenExpired && attempt === 0 && (await refreshSession())) {
       return send<T>(config, attempt + 1);
@@ -168,17 +173,18 @@ function traceHeaders(traceId?: string): Record<string, string> | undefined {
 }
 
 export const http = {
-  get<T>(url: string, params?: Record<string, unknown>, traceId?: string): Promise<T> {
-    return send<T>({ method: "GET", url, params, headers: traceHeaders(traceId) });
+  /** `signal`：页面用 `createLatestGuard` 领到的取消信号——新请求会把旧请求 abort 掉。 */
+  get<T>(url: string, params?: Record<string, unknown>, traceId?: string, signal?: AbortSignal): Promise<T> {
+    return send<T>({ method: "GET", url, params, headers: traceHeaders(traceId), signal });
   },
-  post<T>(url: string, body?: unknown, traceId?: string): Promise<T> {
-    return send<T>({ method: "POST", url, data: body, headers: traceHeaders(traceId) });
+  post<T>(url: string, body?: unknown, traceId?: string, signal?: AbortSignal): Promise<T> {
+    return send<T>({ method: "POST", url, data: body, headers: traceHeaders(traceId), signal });
   },
-  put<T>(url: string, body?: unknown, traceId?: string): Promise<T> {
-    return send<T>({ method: "PUT", url, data: body, headers: traceHeaders(traceId) });
+  put<T>(url: string, body?: unknown, traceId?: string, signal?: AbortSignal): Promise<T> {
+    return send<T>({ method: "PUT", url, data: body, headers: traceHeaders(traceId), signal });
   },
-  delete<T>(url: string, traceId?: string): Promise<T> {
-    return send<T>({ method: "DELETE", url, headers: traceHeaders(traceId) });
+  delete<T>(url: string, traceId?: string, signal?: AbortSignal): Promise<T> {
+    return send<T>({ method: "DELETE", url, headers: traceHeaders(traceId), signal });
   },
   /**
    * 直传原始字节（切片 #95 的上传路径）。

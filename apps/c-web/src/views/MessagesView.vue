@@ -50,13 +50,13 @@ const unreadCount = computed(() => messageStore.unread);
 const latest = createLatestGuard();
 
 async function load(append = false): Promise<void> {
-  const seq = latest.claim();
+  const { token: seq, signal } = latest.claim();
   loading.value = !append;
   errorMessage.value = "";
   try {
     const current = append ? page.value + 1 : 1;
     const [result, settingList] = await Promise.all([
-      cApp.listMessages({ unreadOnly: unreadOnly.value, page: current, pageSize: 20 }),
+      cApp.listMessages({ unreadOnly: unreadOnly.value, page: current, pageSize: 20 }, signal),
       cApp.listReminderSettings(),
     ]);
     if (!latest.isCurrent(seq)) return;
