@@ -508,3 +508,29 @@ def test_usage_survives_exhausted_repair_retries(monkeypatch):
 
     assert caught.value.prompt_tokens == 200      # 两次各 100
     assert caught.value.completion_tokens == 100
+
+
+def test_inline_images_passes_data_urls_through(monkeypatch):
+    """已经是 data URL 的图直接透传，不去 GET 它。
+
+    实测踩到的：`httpx` 只认 http(s)，拿 `data:` 去 GET 会抛错 → 降级成「读不到图」。
+    而「字节已经在手里」是最不该失败的一种情况（调用方自己内联的、或将来由 Java 侧内联的）。
+    """
+    data_url = "data:image/png;base64,iVBORw0KGgo="
+
+    class NoFetchClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url):  # pragma: no cover —— 被调用就是失败
+            raise AssertionError("data URL 不该发起 GET")
+
+    monkeypatch.setattr(model_client.httpx, "AsyncClient", NoFetchClient)
+
+    assert asyncio.run(model_client.inline_images([data_url])) == [data_url]

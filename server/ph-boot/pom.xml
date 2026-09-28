@@ -99,6 +99,21 @@
       <scope>runtime</scope>
     </dependency>
 
+    <!--
+      Prometheus 指标端点（#121「关键指标有监控与告警」的第一步）。
+      它让指标**存在且可取**：HTTP 请求量/延迟/错误率、JVM、连接池这些由 Spring Boot 自动埋点，
+      来一条 scrape 就能看到。**告警规则不在这一层**（那要真实的监控系统与阈值），
+      本项目的现状是「没有用户、没有真实流量」，先把数据面打通。
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
@@ -131,6 +146,26 @@
         <configuration>
           <skip>false</skip>
         </configuration>
+      </plugin>
+
+      <!--
+        覆盖率**聚合报告**：领域模块（ph-account / ph-record / ph-reminder / ph-ai …）自己没有测试，
+        它们的代码是被本模块的集成测试覆盖的——只看单模块报告会得到「ph-boot 37%、其它模块没有报告」
+        这种误导性数字。本模块依赖了全部领域模块，所以在这里聚合一次，
+        target/site/jacoco-aggregate/ 才是「后端整体覆盖率」。
+      -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>report-aggregate</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report-aggregate</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

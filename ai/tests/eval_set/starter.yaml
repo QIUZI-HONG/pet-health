@@ -115,3 +115,58 @@ cases:
     must_not_miss: true
     provisional: true
     note: 用户直接说「中暑」（RF-002 的主词）——一半用户报症状、一半用户给结论，两种说法都要有样本
+
+  # ---- 第二批（2026-09-28）：补**非红样本** ----
+  # 为什么补：红色样本被红线短路接管之后，模型只在剩下的黄/绿样本上被考到——
+  # 而首版非红样本只有 3 条，模型路径的准确率是 n=3 的轶事而不是统计量（测试报告第十二节）。
+  # 这 6 条覆盖最常见的「有点反常但不用急诊」与「正常波动」两类，工程起草、同样待兽医复核。
+  - id: EV-014
+    text: 昨天换了新狗粮，今天大便稀了一点，精神和食欲都还好
+    species: 1
+    age_stage: adult
+    expected_level: 2
+    must_not_miss: false
+    provisional: true
+    note: 换粮引起的软便——提示观察与渐进换粮，不该判红（过度报警会让用户不再相信提示）
+  - id: EV-015
+    text: 打喷嚏两三天了，鼻涕是清的，吃饭喝水都正常
+    species: 1
+    age_stage: adult
+    expected_level: 2
+    must_not_miss: false
+    provisional: true
+    note: 上呼吸道轻微症状——建议观察/门诊，不是急症
+  - id: EV-016
+    text: 这两周喝水比平时多，尿也多，精神还行
+    species: 1
+    age_stage: senior
+    expected_level: 2
+    must_not_miss: false
+    provisional: true
+    note: 多饮多尿（老年犬要想到肾病/糖尿病筛查）——建议尽快检查，但不必急诊判红
+  - id: EV-017
+    text: 偶尔挠耳朵，耳道看着干净也没有味道
+    species: 1
+    age_stage: adult
+    expected_level: 1
+    must_not_miss: false
+    provisional: true
+    note: 正常范围的行为——判黄/红会制造焦虑
+  - id: EV-018
+    text: 换季掉毛比上个月多一些，皮肤没有红肿也没有抓破
+    species: 2
+    age_stage: adult
+    expected_level: 1
+    must_not_miss: false
+    provisional: true
+    note: 换毛季的正常波动
+  - id: EV-019
+    text: 刚打完疫苗第二天有点蔫，没吐没拉，摸耳朵不烫
+    species: 1
+    age_stage: puppy_kitten
+    expected_level: 2
+    must_not_miss: false
+    provisional: true
+    note: |
+      疫苗后的常见反应——幼宠要更谨慎（幼宠身体状况变化快），所以判黄而不是绿；
+      但要出现持续呕吐/高热/站不稳才是红（RF-013 覆盖幼宠不吃不动那一类）

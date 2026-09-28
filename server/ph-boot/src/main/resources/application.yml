@@ -54,7 +54,16 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        # prometheus 是把指标交出去的端点（#121）：部署时它必须**只在监控网段可达**
+        # （走内网端口或前置代理限制），否则等于把内部指标公开——那是 #122 部署时的事，这里先写明
+        include: health,info,prometheus
+  endpoint:
+    health:
+      # 只回 UP/DOWN，不回组件细节：健康端点在网关后往往可直接访问，细节属于内部信息
+      show-details: never
+  metrics:
+    tags:
+      application: pet-health-server
 
 # ---- 会话与口令（ADR-0012）----
 app:

@@ -93,6 +93,35 @@
           <skip>true</skip>
         </configuration>
       </plugin>
+
+      <!--
+        覆盖率：交付文档 13.3 要求「关键业务单测覆盖率 ≥60%」。此前**没有任何工具在算这个数**，
+        于是它既没被达标也没被违反——只是没人知道（测试报告里的「没有量尺」之一）。
+
+        只生成报告、不设阈值门禁：先让数字可见。门禁要等口径定下来（哪些包算「关键业务」、
+        集成测试算不算进分母）——那属 #82「测试策略」。现在设一个 60% 的硬门，
+        最可能的结果是有人为了让 CI 变绿去写无意义的断言。
+      -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>0.8.13</version>
+        <executions>
+          <execution>
+            <id>prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 </project>

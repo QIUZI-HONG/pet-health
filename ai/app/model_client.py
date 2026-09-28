@@ -219,6 +219,12 @@ async def inline_images(urls: list[str]) -> list[str]:
     inlined: list[str] = []
     async with httpx.AsyncClient(timeout=settings.ai_image_timeout_seconds) as client:
         for url in urls:
+            # 已经是 data URL 就直接用：调用方可能已经把字节内联好了（测试、离线环境、
+            # 或将来改成由 Java 侧内联）。**httpx 只认 http(s)**，拿 data: 去 GET 会抛错，
+            # 结果是把「图就在手里」这种最好办的情况降级成「读不到图」——实测踩到的。
+            if url.startswith("data:"):
+                inlined.append(url)
+                continue
             try:
                 response = await client.get(url)
             except httpx.HTTPError as exc:
