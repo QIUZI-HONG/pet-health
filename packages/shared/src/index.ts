@@ -50,8 +50,8 @@ export { ApiError } from "./http/errors";
 export { tokenStore } from "./http/tokenStore";
 export type { SessionTokens } from "./http/tokenStore";
 
-// 展示格式化与字典：日期格式、物种/性别这些标签各页面共用一份（docs/conventions.md）
-export { formatDate, formatDateTime } from "./format/date";
+// 展示格式化与字典：日期格式、日期加减、物种/性别这些标签各页面共用一份（docs/conventions.md）
+export { formatDate, formatDateTime, shiftDate, todayIso } from "./format/date";
 export { genderLabel, speciesLabel } from "./dict/pet";
 
 export const SHARED_PACKAGE_READY = true;

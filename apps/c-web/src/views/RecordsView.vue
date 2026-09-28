@@ -7,16 +7,18 @@
  * 完整的档案分项与时间轴属 #102，那一块如实显示空态。
  */
 import { computed, reactive, ref, watch } from "vue";
-import { ApiError, cApp, formatDate, genderLabel, speciesLabel, type EpidemicRecord } from "@pet-health/shared";
+import { ApiError, cApp, formatDate, genderLabel, speciesLabel, todayIso, type EpidemicRecord } from "@pet-health/shared";
 import SessionGate from "../components/SessionGate.vue";
 import PhotoUploader from "../components/PhotoUploader.vue";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import StateError from "../components/states/StateError.vue";
+import StateLoading from "../components/states/StateLoading.vue";
 import { useSessionStore } from "../stores/session";
 
 const session = useSessionStore();
 
 const records = ref<EpidemicRecord[]>([]);
+const loading = ref(false);
 const errorMessage = ref("");
 const requestId = ref("");
 const saving = ref(false);
@@ -32,17 +34,34 @@ const form = reactive({
 
 const pet = computed(() => session.activePet);
 
+/**
+ * 加载与切宠物。**清空 + loading 是必须的**：多宠家庭切宠物时，若不清空，旧宠物的防疫记录会
+ * 挂在新宠物的标题下（确定性错误，不是竞态）；首页那种「空态先闪一下」也是同一原因。
+ * 序号用于丢弃过期响应——先发的请求后回来，会把新宠物的数据盖掉。
+ */
+let loadSeq = 0;
+
 async function load(): Promise<void> {
   if (!pet.value) return;
+  const seq = (loadSeq += 1);
+  loading.value = true;
   errorMessage.value = "";
+  records.value = [];
   try {
-    records.value = await cApp.listEpidemicRecords(pet.value.id);
+    const list = await cApp.listEpidemicRecords(pet.value.id);
+    if (seq !== loadSeq) return;
+    records.value = list;
   } catch (error) {
+    if (seq !== loadSeq) return;
     if (error instanceof ApiError) {
       errorMessage.value = error.message;
       requestId.value = error.requestId;
     } else {
       errorMessage.value = "加载失败，请稍后重试";
+    }
+  } finally {
+    if (seq === loadSeq) {
+      loading.value = false;
     }
   }
 }
@@ -133,6 +152,8 @@ function kindLabel(kind: number): string {
             @retry="load"
           />
 
+          <StateLoading v-else-if="loading" :rows="3" />
+
           <StateEmpty
             v-else-if="records.length === 0 && !showingForm"
             icon="💉"
@@ -168,11 +189,11 @@ function kindLabel(kind: number): string {
               </label>
               <label class="ph-field">
                 <span class="ph-field__label">接种日期 *</span>
-                <input v-model="form.givenOn" type="date" class="ph-field__input" />
+                <input v-model="form.givenOn" type="date" class="ph-field__input" :max="todayIso()" />
               </label>
               <label class="ph-field">
                 <span class="ph-field__label">下次应接种日期</span>
-                <input v-model="form.nextDueOn" type="date" class="ph-field__input" />
+                <input v-model="form.nextDueOn" type="date" class="ph-field__input" :min="form.givenOn || undefined" />
               </label>
             </div>
             <p v-if="formError" class="ph-form__error">{{ formError }}</p>

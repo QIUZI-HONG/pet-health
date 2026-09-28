@@ -42,12 +42,12 @@ watch(() => route.params.code as string, (code) => void load(code), { immediate:
     <SessionGate forbidden-description="条款与账号操作需要先登录。">
       <article class="ph-card ph-legal">
         <StateLoading v-if="loading" :rows="4" />
-        <StateError v-else-if="errorMessage" :message="errorMessage" />
+        <StateError v-else-if="errorMessage" :message="errorMessage" @retry="load(route.params.code as string)" />
 
         <template v-else-if="document">
           <p v-if="document.is_placeholder" class="ph-legal__placeholder">
-            这是待法务定稿的占位文本（版本 {{ document.version }}），**不作为生效条款**。
-            定稿后会替换本页内容并标注生效日期。
+            这是待法务定稿的占位文本（版本 {{ document.version }}），
+            <strong>不作为生效条款</strong>。定稿后会替换本页内容并标注生效日期。
           </p>
           <p v-else class="ph-text-sub">
             版本 {{ document.version }}<template v-if="document.effective_from"> · 自 {{ document.effective_from }} 起生效</template>

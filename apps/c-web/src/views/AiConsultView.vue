@@ -31,6 +31,10 @@ const RISK_LABEL: Record<number, string> = {
 
 const riskLabel = computed(() => (result.value ? RISK_LABEL[result.value.risk_level] ?? "" : ""));
 
+/** 契约里 `question` 是 2–500 字：一个字的描述信息量不够，后端也会按 40001 拒。 */
+const MIN_QUESTION_LENGTH = 2;
+const canSend = computed(() => draft.value.trim().length >= MIN_QUESTION_LENGTH && !sending.value);
+
 async function send(): Promise<void> {
   const question = draft.value.trim();
   if (!question || sending.value) return;
@@ -110,7 +114,7 @@ async function send(): Promise<void> {
               :disabled="sending"
               @keydown.enter.exact.prevent="send"
             />
-            <button type="button" class="ph-button ph-button--primary" :disabled="sending || !draft.trim()" @click="send">
+            <button type="button" class="ph-button ph-button--primary" :disabled="!canSend" @click="send">
               {{ sending ? "分析中…" : "发送" }}
             </button>
           </div>

@@ -113,8 +113,32 @@ describe("消息中心", () => {
     getUnreadCount.mockResolvedValue({ unread: 0, unread_reminders: 0 });
   });
 
-  it("展示未读数与消息内容，未读的加粗并带圆点", async () => {
-    listMessages.mockResolvedValue({
+  /**
+   * 回归：游客打开消息中心时，原先 `onMounted(load)` 会先发请求拿回 40100，而错误态排在闸门之前，
+   * 于是游客看到的是「⚠️ 未登录（请求 ID）」——五个主页面里只有这一页是这样。
+   */
+  it("未登录时显示登录闸门，且不发消息请求", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: "/messages", name: "messages", component: { template: "<div/>" } }],
+    });
+    await router.push("/messages");
+    await router.isReady();
+    const session = (await import("../stores/session")).useSessionStore();
+    session.$patch({ status: "anonymous", hasSession: false, user: null, pets: [] });
+
+    const wrapper = mount(MessagesView, { global: { plugins: [pinia, router] } });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("去登录");
+    expect(wrapper.text()).not.toContain("请求 ID");
+    expect(listMessages).not.toHaveBeenCalled();
+    expect(listReminderSettings).not.toHaveBeenCalled();
+  });
+
+  it("展示未读数与消息内容，未读的加粗并带圆点", async () => {    listMessages.mockResolvedValue({
       list: [makeMessage(), makeMessage({ id: 2, read: true, title: "体外驱虫还有 2 天" })],
       page: 1,
       page_size: 20,

@@ -28,3 +28,31 @@ export function formatDateTime(value: string | null | undefined): string {
   const date = `${parts.year}年${parts.month}月${parts.day}日`;
   return parts.time ? `${date} ${parts.time}` : date;
 }
+
+/**
+ * 日期加减若干天，返回 `YYYY-MM-DD`。**只按年月日做算术，不经过本地时区**。
+ *
+ * 为什么不用 `new Date("2026-09-28T00:00:00")` 再 `toISOString()`：前者按**本地时区**构造，
+ * 后者按 UTC 输出，东八区会整体少一天——首页「和昨天一样」会取到**前天**的值再按今天提交，
+ * 打卡与评分一并写错（实测 `2026-09-28` → `2026-09-26`）。接口给的是可直接比较的字符串
+ * （契约口径），按 UTC 做算术既准确又不带时区。
+ */
+export function shiftDate(date: string, days: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return date;
+  const stamp = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return new Date(stamp + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * 今天的 `YYYY-MM-DD`（按**浏览器本地时区**取年月日再拼串）。
+ *
+ * 用途是给日期输入框当 `max`（生日、接种日期不得晚于今天）。这里必须用本地年月日：
+ * 先转 UTC 再取日期的话，东八区当天 00:00–08:00 会得到「昨天」，把合法输入判成非法。
+ */
+export function todayIso(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}

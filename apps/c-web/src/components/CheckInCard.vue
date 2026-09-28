@@ -34,6 +34,22 @@ const draft = ref<{ abnormal: boolean; value: string; note: string }>({
   note: "",
 });
 
+/**
+ * 体重这一项要挡住非法值。取值范围与建档一致（`0.01–999.99`，契约 `PetCreateRequest.weight`）。
+ *
+ * 为什么前端也要拦：后端这一项的 `value` 只当字符串存（`CheckInItemInput.value`），
+ * `abc` / `0` / `-5` 都收得下，会落进档案并参与体重趋势——首页会算出「体重下降了 2000080%」
+ * 这种提醒（实测复现）。前端拦一道，用户至少当场知道哪里填错了。
+ */
+const weightInvalid = computed(() => {
+  if (expandedCategory.value !== 1) return false;
+  const raw = draft.value.value.trim();
+  if (raw === "") return false; // 留空＝这一项先不记，允许
+  if (!/^\d+(\.\d{1,2})?$/.test(raw)) return true;
+  const value = Number(raw);
+  return value < 0.01 || value > 999.99;
+});
+
 const items = computed<CheckInItem[]>(() => props.day?.items ?? []);
 const progressText = computed(() =>
   props.day ? `${props.day.completed_count}/${props.day.total_count}` : "—",
@@ -53,6 +69,7 @@ function toggle(item: CheckInItem): void {
 }
 
 function submitRow(category: number): void {
+  if (category === 1 && weightInvalid.value) return;   // 非法体重不发出去（后端这一项不校验）
   const raw = draft.value.value.trim();
   // 「正常」只是下拉的默认选项，不是用户填的内容：勾了异常还把它当值传上去，
   // 库里就会存下「异常 + normal」这种自相矛盾的记录（界面上出现过「异常 · normal」）
@@ -152,9 +169,12 @@ function statusText(item: CheckInItem): string {
               v-if="item.category === 1"
               v-model="draft.value"
               class="ph-field__input ph-checkin__input"
+              :class="{ 'ph-field__input--invalid': weightInvalid }"
               inputmode="decimal"
+              maxlength="6"
               placeholder="体重 kg，例如 12.50"
             />
+            <span v-if="weightInvalid" class="ph-field__hint">体重填 0.01–999.99 之间的数字，最多两位小数。</span>
             <label class="ph-checkin__switch">
               <input v-model="draft.abnormal" type="checkbox" />
               <span>这次不太正常</span>
@@ -166,7 +186,7 @@ function statusText(item: CheckInItem): string {
               :placeholder="draft.abnormal ? '说明一下情况（例如：吃得很少）' : '备注（可选）'"
             />
             <div class="ph-checkin__actions">
-              <button type="button" class="ph-button ph-button--primary" :disabled="props.saving" @click="submitRow(item.category)">
+              <button type="button" class="ph-button ph-button--primary" :disabled="props.saving || weightInvalid" @click="submitRow(item.category)">
                 保存
               </button>
               <button

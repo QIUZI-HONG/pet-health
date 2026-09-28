@@ -8,7 +8,8 @@
  * 权益、积分、券、社群这些入口先不放：它们还没有数据源，摆一排点不动的入口不如不摆。
  */
 import { computed, reactive, ref, watch } from "vue";
-import { ApiError, cApp, formatDate, genderLabel, speciesLabel, type Pet } from "@pet-health/shared";
+import { useRoute, useRouter } from "vue-router";
+import { ApiError, cApp, formatDate, genderLabel, speciesLabel, todayIso, type Pet } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import ComplianceCard from "../components/ComplianceCard.vue";
 import SessionGate from "../components/SessionGate.vue";
@@ -16,6 +17,8 @@ import StateEmpty from "../components/states/StateEmpty.vue";
 import StateError from "../components/states/StateError.vue";
 
 const session = useSessionStore();
+const route = useRoute();
+const router = useRouter();
 
 const recycleBin = ref<Pet[]>([]);
 const errorMessage = ref("");
@@ -74,6 +77,22 @@ async function reloadPage(): Promise<void> {
   await session.reload();
   await loadRecycleBin();
 }
+
+/**
+ * 顶栏的「还没有宠物 ▾ / ＋ 添加宠物」会带 `?action=create-pet` 跳进来（PetSwitcher.goCreate）。
+ * 认下这个参数：登录态就绪后把建档表单展开，并把参数从地址里去掉——不然后续刷新会又弹一次，
+ * 用户点过「取消」也白点。
+ */
+watch(
+  () => [route.query.action, session.isLoggedIn] as const,
+  ([action, loggedIn]) => {
+    if (action === "create-pet" && loggedIn) {
+      openForm();
+      void router.replace({ name: "profile" });
+    }
+  },
+  { immediate: true },
+);
 
 function openForm(): void {
   formError.value = "";
@@ -146,25 +165,32 @@ async function submit(): Promise<void> {
 }
 
 async function remove(pet: Pet): Promise<void> {
-  await cApp.deletePet(pet.id).catch((error: unknown) => {
+  try {
+    await cApp.deletePet(pet.id);
+    // 刷新也可能失败（后端抖一下），一并收在这一层——否则会变成没人接的 Promise 拒绝
+    await session.refreshPets();
+    await loadRecycleBin();
+  } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "删除失败";
-  });
-  await session.refreshPets();
-  await loadRecycleBin();
+  }
 }
 
 async function restore(pet: Pet): Promise<void> {
-  await cApp.restorePet(pet.id).catch((error: unknown) => {
+  try {
+    await cApp.restorePet(pet.id);
+    await session.refreshPets();
+    await loadRecycleBin();
+  } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "恢复失败";
-  });
-  await session.refreshPets();
-  await loadRecycleBin();
+  }
 }
 
 async function activate(pet: Pet): Promise<void> {
-  await session.activatePet(pet.id).catch((error: unknown) => {
+  try {
+    await session.activatePet(pet.id);
+  } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "切换失败";
-  });
+  }
 }
 
 function restorableUntil(pet: Pet): string {
@@ -246,7 +272,7 @@ function restorableUntil(pet: Pet): string {
               </label>
               <label class="ph-field">
                 <span class="ph-field__label">生日</span>
-                <input v-model="form.birthday" type="date" class="ph-field__input" />
+                <input v-model="form.birthday" type="date" class="ph-field__input" :max="todayIso()" />
               </label>
               <label class="ph-field">
                 <span class="ph-field__label">体重（kg）</span>
@@ -311,8 +337,7 @@ function restorableUntil(pet: Pet): string {
             </li>
           </ul>
           <p class="ph-note">
-          <p class="ph-note">手机号与昵称暂时只读展示；资料编辑、数据导出与账号注销正在开发。</p>
-            这里先只读展示。
+            手机号与昵称暂时只读展示，资料编辑在后面接；数据导出与账号注销见上方「账号与条款」。
           </p>
         </article>
         </div>

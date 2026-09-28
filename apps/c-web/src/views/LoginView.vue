@@ -136,7 +136,14 @@ async function submit(): Promise<void> {
       </button>
 
       <p class="ph-login__note">
-        {{ isRegister ? "注册即表示同意《用户协议》与《隐私政策》" : "登录后可管理宠物档案与健康记录" }}
+        <!-- 「注册即表示同意」必须把两份文档做成**入口**：只写书名号等于让人签一份读不到的东西 -->
+        <template v-if="isRegister">
+          注册即表示同意
+          <RouterLink to="/legal/user_agreement">《用户协议》</RouterLink>
+          与
+          <RouterLink to="/legal/privacy_policy">《隐私政策》</RouterLink>
+        </template>
+        <template v-else>登录后可管理宠物档案与健康记录</template>
       </p>
     </div>
   </div>

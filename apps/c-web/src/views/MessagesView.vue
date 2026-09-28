@@ -8,15 +8,17 @@
  * 口径提醒：本项目没有推送通道，所以页面上要说清「主动」的含义——系统主动**生成**，
  * 用户回到站内就能看到；不要写成「实时推送」（ADR-0019）。
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { ApiError, cApp, formatDateTime, type MessageView, type ReminderSetting } from "@pet-health/shared";
 import { useMessageStore } from "../stores/messages";
+import { useSessionStore } from "../stores/session";
 import SessionGate from "../components/SessionGate.vue";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import StateError from "../components/states/StateError.vue";
 import StateLoading from "../components/states/StateLoading.vue";
 
 const messageStore = useMessageStore();
+const session = useSessionStore();
 const messages = ref<MessageView[]>([]);
 const settings = ref<ReminderSetting[]>([]);
 const loading = ref(true);
@@ -59,7 +61,18 @@ async function load(append = false): Promise<void> {
   }
 }
 
-onMounted(load);
+/**
+ * 会话就绪后再拉数据。**不能无条件 onMounted(load)**：未登录时这一页的请求会拿回 40100，
+ * 而错误态排在闸门前面，游客看到的就是「⚠️ 未登录（请求 ID）」，而不是「登录后查看 + 去登录」
+ * （其它四个主页面都是闸门态，只有这一页不一样——已踩过）。
+ */
+watch(
+  () => session.isLoggedIn,
+  (loggedIn) => {
+    if (loggedIn) void load();
+  },
+  { immediate: true },
+);
 
 async function markRead(message: MessageView): Promise<void> {
   if (message.read) return;
@@ -96,12 +109,16 @@ async function markAllRead(): Promise<void> {
   }
 }
 
-async function toggleSetting(setting: ReminderSetting): Promise<void> {
+async function toggleSetting(setting: ReminderSetting, event: Event): Promise<void> {
   if (!setting.closable) return;   // 不可关闭的那类，开关是灰的，点了也不该发请求
+  const input = event.target as HTMLInputElement;
   saving.value = true;
   try {
     settings.value = await cApp.updateReminderSetting(setting.type, !setting.enabled);
   } catch (error) {
+    // 失败要把复选框拨回去：绑定的是 `:checked`，模型没变时 Vue 不会重绘它，
+    // 不回写就会停在与服务端不一致的位置（看着开着，其实没开）
+    input.checked = setting.enabled;
     errorMessage.value = error instanceof ApiError ? error.message : "修改失败";
   } finally {
     saving.value = false;
@@ -128,11 +145,11 @@ function riskLabel(message: MessageView): string {
       系统为你生成的健康提醒与业务通知都汇总在这里。没有推送通道（ADR-0019），所以提醒是「回到站内就能看到」。
     </p>
 
-    <StateLoading v-if="loading" :rows="4" />
-    <StateError v-else-if="errorMessage" :message="errorMessage" :request-id="requestId" @retry="load" />
+    <SessionGate forbidden-description="登录后查看你的提醒与通知。">
+      <StateLoading v-if="loading" :rows="4" />
+      <StateError v-else-if="errorMessage" :message="errorMessage" :request-id="requestId" @retry="load" />
 
-    <SessionGate v-else forbidden-description="登录后查看你的提醒与通知。">
-      <div class="ph-columns">
+      <div v-else class="ph-columns">
         <div class="ph-stack">
           <article class="ph-card">
             <div class="ph-msg__head">
@@ -210,7 +227,7 @@ function riskLabel(message: MessageView): string {
                     type="checkbox"
                     :checked="setting.enabled"
                     :disabled="!setting.closable || !setting.platform_enabled || saving"
-                    @change="toggleSetting(setting)"
+                    @change="toggleSetting(setting, $event)"
                   />
                   <span class="ph-text-weak">
                     {{ !setting.closable ? "不可关闭" : setting.platform_enabled ? "" : "平台暂停" }}
@@ -218,12 +235,6 @@ function riskLabel(message: MessageView): string {
                 </label>
               </li>
             </ul>
-
-            <div v-if="hasMore" class="ph-msg__more">
-              <button type="button" class="ph-button ph-button--secondary" :disabled="loading" @click="load(true)">
-                加载更多
-              </button>
-            </div>
           </article>
         </div>
       </div>

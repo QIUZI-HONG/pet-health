@@ -102,8 +102,7 @@ it("点行内展开 → 勾「不太正常」→ 保存，提交里带 abnormal:
     expect(submitted[0].note).toBe("有点软");
   });
 
-  it("「全部正常」一次提交六项，且体重不填「normal」这种无意义取值", async () => {
-    const wrapper = mount(CheckInCard, { props: { day: makeDay(), streakDays: 0 } });
+  it("「全部正常」一次提交六项，且体重不填「normal」这种无意义取值", async () => {    const wrapper = mount(CheckInCard, { props: { day: makeDay(), streakDays: 0 } });
 
     await wrapper.get(".ph-checkin__bulk button").trigger("click");
 
@@ -177,6 +176,41 @@ it("点行内展开 → 勾「不太正常」→ 保存，提交里带 abnormal:
     });
 
     expect(mount(CheckInCard, { props: { day, streakDays: 0 } }).text()).toContain("补录");
+  });
+
+  /**
+   * 体重这一项**后端不校验**（`CheckInItemInput.value` 是自由字符串），`abc` / `0` / `-5` / `99999`
+   * 都收得下并落进档案、参与体重趋势——实测首页会出现「体重下降了 2000080%」这种提醒。
+   * 前端拦一道：非法值不发请求，并当场告诉用户哪里不对。
+   */
+  it("体重填非法值时：保存禁用、给出提示、不发请求", async () => {
+    const wrapper = mount(CheckInCard, { props: { day: makeDay(), streakDays: 0 } });
+
+    await wrapper.findAll(".ph-checkin__line")[0].trigger("click"); // 第 1 行 = 体重
+    const input = wrapper.get(".ph-checkin__input");
+    const save = wrapper.get(".ph-checkin__actions button");
+
+    for (const bad of ["abc", "0", "-5", "99999", "8.256", "１２"]) {
+      await input.setValue(bad);
+      expect(await save.attributes("disabled"), `${bad} 应被拒绝`).toBeDefined();
+      expect(wrapper.text()).toContain("0.01–999.99");
+      await save.trigger("click");
+    }
+    expect(wrapper.emitted("submit")).toBeUndefined();
+
+    await input.setValue("8.25");
+    expect(await save.attributes("disabled")).toBeUndefined();
+    await save.trigger("click");
+    const submitted = wrapper.emitted("submit")?.[0]?.[0] as Array<{ category: number; value?: string }>;
+    expect(submitted[0]).toEqual({ category: 1, abnormal: false, value: "8.25", note: undefined });
+  });
+
+  it("体重留空是允许的：这一项先不记，不算填错", async () => {
+    const wrapper = mount(CheckInCard, { props: { day: makeDay(), streakDays: 0 } });
+
+    await wrapper.findAll(".ph-checkin__line")[0].trigger("click");
+    expect(wrapper.text()).not.toContain("0.01–999.99");
+    expect(await wrapper.get(".ph-checkin__actions button").attributes("disabled")).toBeUndefined();
   });
 });
 

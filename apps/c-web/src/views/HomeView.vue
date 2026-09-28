@@ -12,6 +12,7 @@ import {
   ApiError,
   cApp,
   formatDate,
+  shiftDate,
   speciesLabel,
   type CheckInDay,
   type CheckInItemInput,
@@ -59,12 +60,17 @@ const quickEntries = [
 ];
 
 function dayBefore(date: string): string {
-  const value = new Date(`${date}T00:00:00`);
-  value.setDate(value.getDate() - 1);
-  return value.toISOString().slice(0, 10);
+  return shiftDate(date, -1);
 }
 
+/**
+ * 加载序号：多宠家庭切宠物时，先发的请求可能后回来，把新宠物的数据盖成旧宠物的。
+ * 每次 load 领一个号，落地前比对——不是自己的号就丢掉（评分/打卡显示错宠物的数据比慢更糟）。
+ */
+let loadSeq = 0;
+
 async function load(petId: number): Promise<void> {
+  const seq = (loadSeq += 1);
   loading.value = true;
   errorMessage.value = "";
   try {
@@ -74,6 +80,7 @@ async function load(petId: number): Promise<void> {
       cApp.getCheckInStreak(petId),
       cApp.getMessageHighlights(6),
     ]);
+    if (seq !== loadSeq) return;
     score.value = scoreData;
     today.value = dayData;
     streakDays.value = streakData.streak_days;
@@ -82,11 +89,18 @@ async function load(petId: number): Promise<void> {
     // 未读数接口本身不补算（角标每次切页都拉，不该写库），不刷新的话角标会停在旧值（踩过）
     await messageStore.refresh();
     // 昨天只为「和昨天一样」按钮服务；失败不影响主流程
-    yesterday.value = await cApp.getCheckInDay(petId, dayBefore(dayData.date)).catch(() => null);
+    // 日期按字符串减一天：`shiftDate` 不走本地时区，否则东八区会取成前天的值（踩过）
+    const previous = await cApp.getCheckInDay(petId, dayBefore(dayData.date)).catch(() => null);
+    if (seq === loadSeq) {
+      yesterday.value = previous;
+    }
   } catch (error) {
+    if (seq !== loadSeq) return;
     errorMessage.value = error instanceof ApiError ? error.message : "加载失败，请稍后重试";
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) {
+      loading.value = false;
+    }
   }
 }
 

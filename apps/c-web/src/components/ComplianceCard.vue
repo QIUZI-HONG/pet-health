@@ -9,10 +9,12 @@
  */
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { cApp, ApiError, tokenStore } from "@pet-health/shared";
+import { cApp, ApiError } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
+import { useMessageStore } from "../stores/messages";
 
 const session = useSessionStore();
+const messageStore = useMessageStore();
 const router = useRouter();
 
 const busy = ref(false);
@@ -52,8 +54,10 @@ async function deactivate(): Promise<void> {
   errorMessage.value = "";
   try {
     await cApp.deactivateAccount();
-    // 注销后本地会话必须清掉：留着它只会让用户不断撞 40100
-    tokenStore.clear();
+    // 注销后本地会话要**整套**清掉（会话 store + 令牌）：只清令牌的话，store 里仍留着
+    // user / pets 与「已登录」标记，用户从登录页后退、或直接输地址回来，还能看到上一个账号的资料
+    await session.logout();
+    messageStore.clear();
     await router.push({ name: "login" });
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "注销失败，请稍后重试";
