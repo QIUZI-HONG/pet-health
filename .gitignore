@@ -48,6 +48,12 @@ server/data/
 *.env.local
 deploy/data/
 
+# ---- 本机工具的忽略文件（不属于仓库）----
+.zcodeignore
+
+# ---- 测试产物（截图由 GUI 测试脚本生成，不入库）----
+gui-test-screenshots/
+
 # ---- 系统 ----
 .DS_Store
 Thumbs.db
