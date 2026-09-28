@@ -32,6 +32,8 @@ export type MessagePage = Omit<Schemas["PageResult"], "list"> & { list: MessageV
 export type ReminderSetting = Schemas["ReminderSetting"];
 export type EpidemicRecord = Schemas["EpidemicRecord"];
 export type EpidemicRecordInput = Schemas["EpidemicRecordInput"];
+export type AiConsultRequest = Schemas["AiConsultRequest"];
+export type AiConsultView = Schemas["AiConsultView"];
 export type FilePresignRequest = Schemas["FilePresignRequest"];
 export type FilePresignView = Schemas["FilePresignView"];
 export type FileView = Schemas["FileView"];
@@ -143,6 +145,13 @@ export const cApp = {
   },
   updateReminderSetting(type: number, enabled: boolean): Promise<ReminderSetting[]> {
     return http.put<ReminderSetting[]>(`${BASE}/messages/settings`, { type, enabled });
+  },
+
+  // ---- AI 咨询（切片 #98，决策见 ADR-0021/0024）----
+  // 一次咨询 = 一次请求。红线命中时后端不经模型（结果里 red_flag_hits 非空）；
+  // 到量只是提示，接口照常返回 —— 见 remaining_today 的说明。
+  consultAi(petId: number, body: AiConsultRequest): Promise<AiConsultView> {
+    return http.post<AiConsultView>(`${BASE}/pets/${petId}/ai-consults`, body);
   },
 
   // ---- 文件（切片 #95，决策见 ADR-0020）----

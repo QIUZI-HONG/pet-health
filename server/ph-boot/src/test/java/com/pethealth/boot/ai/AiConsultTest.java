@@ -220,6 +220,29 @@ class AiConsultTest extends IntegrationTestBase {
         assertThat(row.get("degrade_reason").toString()).contains("java_client");
     }
 
+    @Test
+    @DisplayName("免费额度只提示不拦截：到量后照常给结论（ADR-0024）")
+    void quotaIsCountedButNotEnforced() {
+        String token = api.registerAndGetAccessToken(PHONE);
+        long petId = api.createPet(token, "豆豆");
+
+        java.util.List<Integer> remaining = new ArrayList<>();
+        java.util.List<Integer> codes = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            ApiClient.ApiCall call = api.post("/api/v1/app/pets/" + petId + "/ai-consults",
+                    new AiConsultRequest("第 " + i + " 次提问：今天精神一般", null), token);
+            codes.add(call.code());
+            remaining.add(call.data().path("remaining_today").asInt());
+        }
+
+        assertThat(remaining).containsExactly(2, 1, 0, 0);
+        assertThat(codes).as("到量后不返回错误——解锁路径在 #112，现在拦截会把用户挡死")
+                .containsOnly(0);
+        assertThat(api.post("/api/v1/app/pets/" + petId + "/ai-consults",
+                new AiConsultRequest("第四次之后仍然可以问", null), token)
+                .data().path("quota_per_day").asInt()).isEqualTo(3);
+    }
+
     // ------------------------------------------------------------ 越权
 
     @Test

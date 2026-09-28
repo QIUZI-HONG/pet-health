@@ -1968,6 +1968,13 @@ export interface components {
             disclaimer: string;
             /** @example 2026-09-28 21:30:00 */
             created_at?: string;
+            /** @description 每日免费次数（交付文档 F006 的 3 次）。**本期只提示不拦截**（ADR-0024） */
+            quota_per_day?: number;
+            /**
+             * @description 今日剩余次数。到 0 之后接口**照常返回结果**——解锁路径在 #112 权益引擎里，
+             *     现在拦截会把用户挡在一扇没有出口的门后面
+             */
+            remaining_today?: number;
         };
         ApiResponse: {
             /** @description 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes） */

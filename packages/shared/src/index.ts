@@ -16,6 +16,8 @@ export type * from "./api/common";
 // `paths` / `components` / `operations` 这些同名成员，批量转出会报「重复导出」。
 export { cApp, uploadFiles } from "./api/cApp";
 export type {
+  AiConsultRequest,
+  AiConsultView,
   CheckInDay,
   CheckInItem,
   CheckInItemInput,

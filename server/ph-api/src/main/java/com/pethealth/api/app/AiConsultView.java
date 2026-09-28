@@ -13,6 +13,8 @@ import java.util.List;
  *                    前端可以据此把结论写成「命中急症信号」而不是「AI 认为」
  * @param disclaimer  免责声明，由后端给（医疗文案不该散落在前端各处）
  * @param degraded    true 表示这是降级答复（模型超时 / 不可用 / 输出不可用），不是模型结论
+ * @param quotaPerDay / remainingToday 免费额度与今日剩余。**本期只提示不拦截**（ADR-0024）：
+ *                    到量后接口照常返回结果，界面据此劝用户邀请好友（#112 才有解锁路径）
  */
 public record AiConsultView(
         long id,
@@ -28,5 +30,7 @@ public record AiConsultView(
         String promptVersion,
         int latencyMs,
         String disclaimer,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt,
+        int quotaPerDay,
+        int remainingToday) {
 }

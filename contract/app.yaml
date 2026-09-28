@@ -1415,3 +1415,12 @@ components:
           type: string
           description: 免责声明。由后端给：医疗文案散落到前端各处时改起来一定会漏
         created_at: { type: string, example: "2026-09-28 21:30:00" }
+        quota_per_day:
+          type: integer
+          description: 每日免费次数（交付文档 F006 的 3 次）。**本期只提示不拦截**（ADR-0024）
+        remaining_today:
+          type: integer
+          description: |
+            今日剩余次数。到 0 之后接口**照常返回结果**——解锁路径在 #112 权益引擎里，
+            现在拦截会把用户挡在一扇没有出口的门后面
+

@@ -1,12 +1,15 @@
 package com.pethealth.ai.service;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.pethealth.ai.client.AiServiceClient;
+import com.pethealth.ai.config.AiQuotaProperties;
 import com.pethealth.ai.domain.AiConsult;
 import com.pethealth.ai.mapper.AiConsultMapper;
 import com.pethealth.api.app.AiConsultRequest;
 import com.pethealth.api.app.AiConsultView;
 import com.pethealth.common.crypto.FieldCipher;
 import com.pethealth.common.error.BusinessException;
+import com.pethealth.common.time.AppTime;
 import com.pethealth.common.trace.TraceIds;
 import com.pethealth.file.api.FileUrlApi;
 import com.pethealth.record.api.AiPetApi;
@@ -55,15 +58,18 @@ public class AiConsultService {
     private final FileUrlApi fileUrlApi;
     private final FieldCipher fieldCipher;
     private final ObjectMapper objectMapper;
+    private final AiQuotaProperties quota;
 
     public AiConsultService(AiServiceClient client, AiConsultMapper consultMapper, AiPetApi petApi,
-                            FileUrlApi fileUrlApi, FieldCipher fieldCipher, ObjectMapper objectMapper) {
+                            FileUrlApi fileUrlApi, FieldCipher fieldCipher, ObjectMapper objectMapper,
+                            AiQuotaProperties quota) {
         this.client = client;
         this.consultMapper = consultMapper;
         this.petApi = petApi;
         this.fileUrlApi = fileUrlApi;
         this.fieldCipher = fieldCipher;
         this.objectMapper = objectMapper;
+        this.quota = quota;
     }
 
     public AiConsultView consult(long userId, long petId, AiConsultRequest request) {
@@ -79,7 +85,8 @@ public class AiConsultService {
         AiServiceClient.ConsultResponse response = callAi(userId, pet, request.question(), mediaUrls, traceId);
 
         AiConsult record = save(userId, petId, request.question(), mediaUrls.size(), response, traceId);
-        return toView(record, response);
+        // 计数取「含本次在内」的当天行数；请求被拒（越权、参数错）本就到不了这里，不消耗额度
+        return toView(record, response, countToday(userId));
     }
 
     /** 调 AI 服务；失败时给出降级答复（不抛错，不向用户报错）。 */
@@ -139,7 +146,23 @@ public class AiConsultService {
         return record;
     }
 
-    private AiConsultView toView(AiConsult record, AiServiceClient.ConsultResponse response) {
+    /**
+     * 今日已用次数。
+     *
+     * <p>**直接数留痕表的行**，而不是另用一个 Redis 计数器：一次咨询必落一行 `ai_consult`，
+     * 所以这张表就是「今天问了几次」的权威记录。多一个计数器就多一处漂移（计数与留痕不一致时，
+     * 谁都说不清哪个对），而按用户 + 时间取数的查询已经有索引（`idx_user_time`）。
+     *
+     * <p>**只计数不拦截**（ADR-0024）：到量后接口行为不变，界面负责劝说。
+     */
+    private int countToday(long userId) {
+        Long used = consultMapper.selectCount(Wrappers.<AiConsult>lambdaQuery()
+                .eq(AiConsult::getUserId, userId)
+                .ge(AiConsult::getCreatedAt, AppTime.today().atStartOfDay()));
+        return used == null ? 0 : used.intValue();
+    }
+
+    private AiConsultView toView(AiConsult record, AiServiceClient.ConsultResponse response, int usedToday) {
         return new AiConsultView(
                 record.getId(),
                 response.riskLevel(),
@@ -154,7 +177,9 @@ public class AiConsultService {
                 response.promptVersion(),
                 response.latencyMs(),
                 DISCLAIMER,
-                record.getCreatedAt());
+                record.getCreatedAt(),
+                quota.freePerDay(),
+                Math.max(0, quota.freePerDay() - usedToday));
     }
 
     /** 列表字段存 JSON。序列化失败不该让整次咨询失败，留痕里写 null 即可。 */
