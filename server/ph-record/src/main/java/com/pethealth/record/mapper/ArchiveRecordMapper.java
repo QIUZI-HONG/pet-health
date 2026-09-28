@@ -35,6 +35,23 @@ public interface ArchiveRecordMapper extends BaseMapper<ArchiveRecord> {
      * 完整度要算「该维有记录的**天数**」——那是各分项日期的**并集**，不是各自天数的最大值。
      * 按分项聚合回来只能取 max，会把「同一天只记了排泄」的日子漏掉（踩过）。
      */
+    /**
+     * 防疫记录的概况：记录条数 + 最早的到期日。一次查询就够（{@code EpidemicSummary}）。
+     *
+     * <p>**刻意不带时间窗口**：疫苗与驱虫是按年/按月打的，用「近 7 天」筛等于要求用户每次接种
+     * 都当天录入（ADR-0025 修的就是这个口子）。
+     */
+    @Select("""
+            SELECT COUNT(*) AS totalCount, MIN(due_on) AS earliestDue
+              FROM archive_record
+             WHERE pet_id = #{petId} AND category = 7 AND is_deleted = 0
+            """)
+    EpidemicSummary selectEpidemicSummary(@Param("petId") long petId);
+
+    /** 防疫概况。{@code totalCount = 0} 表示没有任何记录；{@code earliestDue} 可空（记录没填到期日）。 */
+    record EpidemicSummary(int totalCount, java.time.LocalDate earliestDue) {
+    }
+
     @Select("""
             SELECT record_date  AS recordDate,
                    category     AS category,

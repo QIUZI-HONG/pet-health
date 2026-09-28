@@ -55,6 +55,9 @@ public class HealthScoreService {
 
     /** 老年专项的年龄门槛（交付文档 F009：7 岁以上或录入慢病触发）。 */
     private static final int ELDERLY_AGE_YEARS = 7;
+    /** 防疫维度的两个取值（ADR-0025）：在有效期内 100、已过期 60。 */
+    private static final int EPIDEMIC_OK_SCORE = 100;
+    private static final int EPIDEMIC_OVERDUE_SCORE = 60;
 
     /** 计算顺序即前端展示顺序。 */
     private static final Map<String, DimensionSpec> DIMENSIONS = new LinkedHashMap<>();
@@ -167,9 +170,17 @@ public class HealthScoreService {
         if (rows.isEmpty()) {
             List<HealthScoreDimension> empty = new ArrayList<>();
             for (Map.Entry<String, DimensionSpec> entry : DIMENSIONS.entrySet()) {
+                // 防疫除外：它的判据不在窗口里（ADR-0025）——只有一条三个月前的疫苗记录时，
+                // 窗口内确实没有记录，但「防护还在不在有效期内」是有答案的。
+                if ("epidemic".equals(entry.getKey())) {
+                    empty.add(epidemicDimension(pet, calcDate));
+                    continue;
+                }
                 empty.add(new HealthScoreDimension(entry.getKey(), entry.getValue().name(), null, false,
                         "暂无记录", "记录几天之后就会有分数"));
             }
+            // 总分仍为空：ADR-0018 的本意是「窗口里没有记录就不要给一个总分」，
+            // 否则只补录过疫苗的用户会看到一个 100 分，那比没有分更容易误导。
             return new Computed(null, empty, 0);
         }
 
@@ -199,10 +210,10 @@ public class HealthScoreService {
             }
             int days = daysWithRecord.size();
 
-            if (days == 0 && "epidemic".equals(key)) {
-                // 防疫还没有录入入口（属 #102）：如实说「待录入」，而不是给 0 分让人以为疫苗出问题
-                dimensions.add(new HealthScoreDimension(key, spec.name(), null, false,
-                        "待录入", "录入疫苗或驱虫记录后开始计分"));
+            // 防疫维度不按「近 7 天有没有录入」算（ADR-0025）：疫苗按年打，补录历史接种是最常见的
+            // 建档场景。它问的是「防护还在不在有效期内」，所以取「有没有记录」+「最近一次的到期状态」。
+            if ("epidemic".equals(key)) {
+                dimensions.add(epidemicDimension(pet, calcDate));
                 continue;
             }
 
@@ -230,6 +241,28 @@ public class HealthScoreService {
             return false;
         }
         return Period.between(pet.getBirthday(), calcDate).getYears() >= ELDERLY_AGE_YEARS;
+    }
+
+    /**
+     * 防疫维度（ADR-0025）：有记录即计入，按最近一次记录的到期状态取值。
+     *
+     * <p>**任一条记录的到期日已过就降档**（不是「看最新那条」）：一条刚打的疫苗会把已过期的驱虫
+     * 盖过去，而防护有缺口这件事不该被盖住——这是实现时被测试逼出来的口径修正，写回 ADR-0025。
+     *
+     * <p>未到期 100 / 有任一条过期 60 / 无记录「待录入」不计入。**没填 {@code next_due_on} 的记录不参与
+     * 过期判定**：不替用户猜周期（与 ADR-0019 对提醒的口径一致——不填就不提醒，这里是不填就不扣分）。
+     */
+    private HealthScoreDimension epidemicDimension(Pet pet, LocalDate calcDate) {
+        ArchiveRecordMapper.EpidemicSummary summary = recordMapper.selectEpidemicSummary(pet.getId());
+        if (summary == null || summary.totalCount() == 0) {
+            return new HealthScoreDimension("epidemic", "防疫", null, false,
+                    "待录入", "录入疫苗或驱虫记录后开始计分");
+        }
+        LocalDate earliestDue = summary.earliestDue();
+        boolean overdue = earliestDue != null && earliestDue.isBefore(calcDate);
+        return new HealthScoreDimension("epidemic", "防疫",
+                overdue ? EPIDEMIC_OVERDUE_SCORE : EPIDEMIC_OK_SCORE, true, null,
+                overdue ? "有记录的应接种日期已过，该补打了" : "有疫苗或驱虫记录，且在有效期内");
     }
 
     /** 中性档位文案：不用「优秀 / 健康」这类医学化的词（ADR-0018）。 */

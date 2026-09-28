@@ -412,6 +412,32 @@ class ReminderAndMessageTest extends IntegrationTestBase {
     }
 
     @Test
+    @DisplayName("补录历史疫苗也能计分；已过期只给 60（ADR-0025 的普通场景）")
+    void epidemicDimensionCountsBackfilledRecords() {
+        String token = register("13200000031");
+        long petId = api.createPet(token, "豆豆");
+        var today = today();
+
+        // 最常见的建档场景：用户补录几个月前打的疫苗——绝不是「近 7 天录入」能覆盖的
+        addEpidemicRecord(token, petId, 1, "狂犬疫苗", today.minusMonths(3), today.plusMonths(9));
+        JsonNode fresh = dimension(api.get("/api/v1/app/pets/" + petId + "/health-score", token)
+                .data().path("dimensions"), "epidemic");
+        assertThat(fresh.path("included").asBoolean()).isTrue();
+        assertThat(fresh.path("score").asInt()).isEqualTo(100);
+        // 窗口内没有其它记录时总分仍为空：ADR-0018 的本意是「没有记录就不要给总分」，
+        // 否则只补录过疫苗的用户会看到一个 100 分
+        assertThat(api.get("/api/v1/app/pets/" + petId + "/health-score", token)
+                .data().path("total_score").isNull()).isTrue();
+
+        // 到期日已过：仍计入，但降档
+        addEpidemicRecord(token, petId, 2, "体内驱虫", today.minusMonths(6), today.minusDays(3));
+        JsonNode overdue = dimension(api.get("/api/v1/app/pets/" + petId + "/health-score", token)
+                .data().path("dimensions"), "epidemic");
+        assertThat(overdue.path("included").asBoolean()).isTrue();
+        assertThat(overdue.path("score").asInt()).isEqualTo(60);
+    }
+
+    @Test
     @DisplayName("防疫记录录入后，健康评分的「防疫」维度开始计分")
     void epidemicRecordUnlocksEpidemicDimension() {
         String token = register("13200000020");

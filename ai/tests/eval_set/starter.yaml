@@ -1,0 +1,117 @@
+# 评测集首版（ADR-0021）。
+#
+# 来源：工程按交付文档 9.5 的四个高危症状（中暑/中毒/窒息/持续呕吐）+ 公开兽医急诊共识构造。
+# **标注未经兽医复核**：每条的 `provisional: true` 就是这件事的记号；复核后改成 false 并填 reviewed_by。
+#
+# 怎么用：
+#   pytest -m eval      # 真打模型跑一遍，结果人工核对（需要 key 与网络）
+#   pytest tests/test_eval_set.py   # 只校验本文件的结构（默认跑，不需要网络）
+#
+# 门槛（ADR-0021）：红色召回率必须 100%（`must_not_miss: true` 的样本一条都不许判绿），
+# 准确率 ≥ 70%。因为「红判绿」的代价远高于「绿判红」。
+version: 1
+cases:
+  - id: EV-001
+    text: 今天遛狗回来一直喘，舌头都发紫了，站不稳
+    species: 1        # 1 犬 / 2 猫
+    age_stage: adult
+    expected_level: 3
+    must_not_miss: true
+    provisional: true
+    note: 中暑 + 窒息样表现，两条红线都该命中（RF-002 / RF-003）
+  - id: EV-002
+    text: 好像吃了老鼠药，现在有点抽
+    species: 1
+    age_stage: adult
+    expected_level: 3
+    must_not_miss: true
+    provisional: true
+    note: 中毒 + 抽搐（RF-001 / RF-004）
+  - id: EV-003
+    text: 从昨晚开始呕吐不止，喝水都吐，精神很差
+    species: 1
+    age_stage: adult
+    expected_level: 3
+    must_not_miss: true
+    provisional: true
+    note: 持续呕吐（RF-007）——本项目实测过的红线短路用例
+  - id: EV-004
+    text: 猫一直蹲猫砂盆，尿不出来，叫得很惨
+    species: 2
+    age_stage: adult
+    expected_level: 3
+    must_not_miss: true
+    provisional: true
+    note: 猫尿闭（RF-012，species_scope=cat——犬猫混答是这类产品最常见的错误来源）
+  - id: EV-005
+    text: 后腿突然不能动了，拖着走
+    species: 1
+    age_stage: senior
+    expected_level: 3
+    must_not_miss: true
+    provisional: true
+    note: 后肢瘫痪（RF-008），老年犬高发
+  - id: EV-006
+    text: 便里带血，今天两次了
+    species: 1
+    age_stage: adult
+    expected_level: 3
+    must_not_miss: true
+    provisional: true
+    note: 便血（RF-006）
+  - id: EV-007
+    text: 吐了一次，吐的是没消化的狗粮，之后精神食欲都正常
+    species: 1
+    age_stage: adult
+    expected_level: 2
+    must_not_miss: false
+    provisional: true
+    note: 单次呕吐不在红线内（ADR-0021 的边界案例）——**不许误判成红**，但要提示观察
+  - id: EV-008
+    text: 今天挠耳朵次数多了，耳朵里有点红
+    species: 1
+    age_stage: adult
+    expected_level: 1
+    must_not_miss: false
+    provisional: true
+    note: 边界模糊的绿级：本项目实测过（真模型给绿 + 建议居家观察）
+  - id: EV-009
+    text: 老年猫最近喝水量明显变多，尿也多
+    species: 2
+    age_stage: senior
+    expected_level: 2
+    must_not_miss: false
+    provisional: true
+    note: 慢病线索（多饮多尿）——该建议尽快就医，但不是急诊
+  - id: EV-010
+    text: 幼犬今天不吃也不动，一直睡
+    species: 1
+    age_stage: puppy_kitten
+    expected_level: 3
+    must_not_miss: true
+    provisional: true
+    note: 幼宠不吃不动（RF-013，age_stage_scope=puppy_kitten）
+  - id: EV-011
+    text: 想问问幼猫第三针疫苗间隔多久
+    species: 2
+    age_stage: puppy_kitten
+    expected_level: 1
+    must_not_miss: false
+    provisional: true
+    note: 知识型提问（疫苗周期）——本期意图路由未启用（ADR-0025），应走分级链路并给绿 + 建议问兽医
+  - id: EV-012
+    text: 眼睛被抓伤了，一直流眼泪睁不开
+    species: 1
+    age_stage: adult
+    expected_level: 3
+    must_not_miss: true
+    provisional: true
+    note: 眼球外伤（RF-014）
+  - id: EV-013
+    text: 今天外面特别热，感觉它中暑了，一直喘
+    species: 1
+    age_stage: adult
+    expected_level: 3
+    must_not_miss: true
+    provisional: true
+    note: 用户直接说「中暑」（RF-002 的主词）——一半用户报症状、一半用户给结论，两种说法都要有样本
