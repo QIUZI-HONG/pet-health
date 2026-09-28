@@ -16,7 +16,8 @@ public interface AiConsultMapper extends BaseMapper<AiConsult> {
      * 某个时间点之后消耗的 token 总量（日预算告警用）。
      *
      * <p>手写 SQL 要自己带 {@code is_deleted = 0}——逻辑删除插件不管手写 SQL（ADR-0011）。
-     * 走 {@code idx_created_at}（V7 建的），聚合的是一天量级的数据。
+     * 走 {@code idx_created_at}（V11 补的：V7 那三条索引前导列是 user_id / pet_id / risk_level，
+     * 都用不上这个「按时间范围聚合」的形状，缺了它就是每小时一次全表扫）。
      */
     @Select("""
             SELECT IFNULL(SUM(prompt_tokens), 0)     AS promptTokens,

@@ -469,3 +469,42 @@ def test_healthz_is_open_but_bare():
 
 def test_internal_health_requires_token():
     assert client.get("/internal/health").status_code == 401
+
+
+def test_usage_survives_repair_retry_failure(monkeypatch):
+    """修复重试先成功一次、再失败：**那一次的钱要能带出去**（否则预算系统性偏低）。
+
+    ADR-0026 说的是「记录每次模型调用的 token 用量」，只在成功返回时带用量就违背了它。
+    """
+    calls = {"n": 0}
+
+    async def fake_chat(messages, model):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # 第一次：有用量，但没调工具（触发修复重试）
+            return {"choices": [{"message": {"content": "我直接说吧"}, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 700, "completion_tokens": 300}, "model": "m"}
+        raise ModelUnavailable("第二轮连不上")
+
+    monkeypatch.setattr(model_client, "_chat", fake_chat)
+
+    with pytest.raises(ModelUnavailable) as caught:
+        asyncio.run(model_client.assess(system_prompt="s", user_prompt="u"))
+
+    assert caught.value.prompt_tokens == 700
+    assert caught.value.completion_tokens == 300
+
+
+def test_usage_survives_exhausted_repair_retries(monkeypatch):
+    """两次都没调工具：累计用量要随 ModelOutputInvalid 带出去。"""
+    async def fake_chat(messages, model):
+        return {"choices": [{"message": {"content": "还是不说"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 50}, "model": "m"}
+
+    monkeypatch.setattr(model_client, "_chat", fake_chat)
+
+    with pytest.raises(ModelOutputInvalid) as caught:
+        asyncio.run(model_client.assess(system_prompt="s", user_prompt="u"))
+
+    assert caught.value.prompt_tokens == 200      # 两次各 100
+    assert caught.value.completion_tokens == 100

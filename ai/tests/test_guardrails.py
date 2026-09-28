@@ -72,3 +72,42 @@ def test_review_list_drops_items_replaced_wholesale():
 
     assert out == ["多观察精神与食欲"]
     assert any(hit.startswith("drug:") for hit in hits)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "千万别给猫用对乙酰氨基酚，那对猫是剧毒",       # 对乙酰氨基酚 ← 否定词在 12 字窗口内
+        "不要喂布洛芬，会伤肾",
+        "严禁使用伊维菌素",
+        "避免给猫用感冒药",
+    ],
+)
+def test_warnings_are_not_rewritten(text: str):
+    """**警告别用**某药是正确的回答，不能被误伤成兜底话术。
+
+    「对乙酰氨基酚对猫剧毒」这类信息恰恰是用户最需要知道的；把「别用 X」改写成
+    「请由兽医决定」会丢掉它——误伤好回答与漏掉坏回答一样糟（评审提出）。
+    """
+    out, hits = guardrails.review(text)
+
+    assert out == text, f"「{text}」是警告，不该被改写"
+    assert hits == [], f"警告不该记成护栏命中，实际 {hits}"
+
+
+def test_recommendation_after_a_warning_is_still_blocked():
+    """前半句警告、后半句推荐：**推荐仍要拦**——否定窗口只管它自己那一小段。"""
+    text = "不要自行用药。可以喂点阿莫西林，一天两次。"
+    out, hits = guardrails.review(text)
+
+    assert out == guardrails.REPLACEMENT
+    assert any(hit.startswith("drug:") for hit in hits)
+
+
+def test_negation_does_not_leak_across_sentences():
+    """上一个分句的否定不能把下一分句的推荐也「洗白」。"""
+    text = "别担心，建议喂点蒙脱石散。"
+    out, hits = guardrails.review(text)
+
+    assert out == guardrails.REPLACEMENT, "跨分句的「别」不该保护后面的推荐"
+    assert any(hit.startswith("drug:") for hit in hits)

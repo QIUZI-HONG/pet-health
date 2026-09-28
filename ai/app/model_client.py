@@ -29,7 +29,20 @@ from .config import settings
 from .prompts import REPORT_TOOL
 
 
-class ModelUnavailable(Exception):
+class _UsageCarrying(Exception):
+    """带 token 用量的异常基类。
+
+    为什么异常要捎带用量：修复重试可能先成功一次再失败——**那一次的钱是真花了**。
+    只在成功返回时带用量的话，预算会系统性偏低（花掉的不进账单，告警就不准）。
+    """
+
+    def __init__(self, *args: object, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
+        super().__init__(*args)
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+
+
+class ModelUnavailable(_UsageCarrying):
     """传输层失败：超时、连不上、非 2xx、响应体根本不是 JSON。调用方据此降级。"""
 
 
@@ -45,7 +58,7 @@ class ImageUnavailable(Exception):
     """
 
 
-class ModelOutputInvalid(Exception):
+class ModelOutputInvalid(_UsageCarrying):
     """模型返回了，但内容不能用（没调工具 / 参数不是合法 JSON / 取值越界）。"""
 
 
@@ -257,7 +270,12 @@ async def assess(
     prompt_tokens = 0
     completion_tokens = 0
     for attempt in range(settings.ai_max_repair_retry + 1):
-        body = await _chat(messages, model)
+        try:
+            body = await _chat(messages, model)
+        except ModelUnavailable as exc:
+            # 传输层挂在这一轮：把**已经花掉**的用量捎出去（上一次重试可能成功过）
+            raise ModelUnavailable(str(exc), prompt_tokens=prompt_tokens,
+                                   completion_tokens=completion_tokens) from exc
         # 用量按次累加：修复重试也是真实的钱（哪怕这一轮最后判无效）
         used_prompt, used_completion = _usage_of(body)
         prompt_tokens += used_prompt
@@ -285,4 +303,6 @@ async def assess(
             **fields,
         )
 
-    raise ModelOutputInvalid(str(last_error))
+    # 重试到顶仍然不可用：把累计用量带上，别让这两次白花
+    raise ModelOutputInvalid(str(last_error), prompt_tokens=prompt_tokens,
+                             completion_tokens=completion_tokens)

@@ -11,7 +11,14 @@
  *  - 到量的提示**不拦人**（ADR-0024）：照常给结果，只是劝一句邀请好友。
  */
 import { computed, ref } from "vue";
-import { formatDate, speciesLabel, cApp, ApiError, type AiConsultView } from "@pet-health/shared";
+import {
+  formatDate,
+  speciesLabel,
+  cApp,
+  ApiError,
+  createLatestGuard,
+  type AiConsultView,
+} from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import SessionGate from "../components/SessionGate.vue";
@@ -35,6 +42,13 @@ const riskLabel = computed(() => (result.value ? RISK_LABEL[result.value.risk_le
 const MIN_QUESTION_LENGTH = 2;
 const canSend = computed(() => draft.value.trim().length >= MIN_QUESTION_LENGTH && !sending.value);
 
+/**
+ * 并发守卫：一次咨询要花几秒，期间用户可能切了宠物。
+ * 不拦的话，**旧宠物的回答会挂在新宠物名下**——「豆豆的结论」显示在咪咪的页面上，
+ * 而结论是结合档案给的（评审发现：这一页原先没有守卫）。
+ */
+const latest = createLatestGuard();
+
 async function send(): Promise<void> {
   const question = draft.value.trim();
   if (!question || sending.value) return;
@@ -43,15 +57,22 @@ async function send(): Promise<void> {
     errorMessage.value = "先添加一只宠物，AI 才能结合它的档案判断。";
     return;
   }
+  const seq = latest.claim();
   sending.value = true;
   errorMessage.value = "";
   try {
-    result.value = await cApp.consultAi(petId, { question });
+    const answer = await cApp.consultAi(petId, { question });
+    // 两道判断：期间又发了一次（守卫），或者**换过宠物**（结论的对象已经变了）
+    if (!latest.isCurrent(seq) || session.activePet?.id !== petId) return;
+    result.value = answer;
     draft.value = "";
   } catch (error) {
+    if (!latest.isCurrent(seq)) return;
     errorMessage.value = error instanceof ApiError ? error.message : "咨询失败，请稍后重试";
   } finally {
-    sending.value = false;
+    if (latest.isCurrent(seq)) {
+      sending.value = false;
+    }
   }
 }
 </script>

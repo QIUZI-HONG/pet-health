@@ -31,8 +31,13 @@ public record AiBudgetProperties(BigDecimal dailyCny, BigDecimal promptCnyPer1k,
         completionCnyPer1k = completionCnyPer1k == null ? BigDecimal.ZERO : completionCnyPer1k;
     }
 
-    /** 单价是否还是空的——启动时据此提醒「这个告警其实不会响」。 */
+    /**
+     * 有没有单价还没配——启动时据此提醒「这个告警其实不会响」。
+     *
+     * <p>判据是**任一个为 0**（而不是两个都为 0）：只配了输入价、输出价留空时，
+     * 输出那部分会静默算成 0，比完全没配更容易被当成「已经在算了」（评审提出）。
+     */
     public boolean pricesArePlaceholders() {
-        return promptCnyPer1k.signum() == 0 && completionCnyPer1k.signum() == 0;
+        return promptCnyPer1k.signum() == 0 || completionCnyPer1k.signum() == 0;
     }
 }

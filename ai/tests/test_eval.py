@@ -18,7 +18,6 @@ ADR-0021 写死过门槛——**红色召回率 100%、准确率 ≥70%**，任�
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 from datetime import datetime
 from pathlib import Path
@@ -31,7 +30,7 @@ from app import guardrails, model_client, prompts, red_flags
 from app.config import settings
 
 EVAL_DIR = Path(__file__).parent / "eval_set"
-REPORT_DIR = Path(__file__).parent.parent / "reports"
+REPORT_DIR = EVAL_DIR
 #: 提示词里的「本次附带图片」是按张数写的，评测集只有文本，所以固定 0
 IMAGE_COUNT = 0
 
@@ -60,10 +59,16 @@ def pet_context_of(case: dict) -> dict:
 @pytest.mark.eval
 def test_eval_gate():
     if not settings.ai_api_key:
-        pytest.skip("没有配置 AI_API_KEY（发布门槛需要在真模型上跑）")
+        # 不 skip：`-m eval` 是**显式点名**要跑发布门槛，此时缺 key 必须红——
+        # 跳过会让退出码是 0，CI 上「拦发布」就成了没跑（评审提出）
+        pytest.fail("发布门槛要在真模型上跑，但没有配置 AI_API_KEY——缺 key 时它不该静默通过")
 
     cases = load_cases()
     assert cases, "评测集是空的，门槛没有意义"
+    assert red_flags.load_rules(force=True).available, (
+        "红线词表这一层不可用（读不到库或词表为空）：红色召回率失去机械保障，"
+        "此时跑出来的召回率不能用来判断能不能发布"
+    )
 
     results: list[dict] = []
     for case in cases:
@@ -77,7 +82,9 @@ def test_eval_gate():
     report_path = write_report(results, summary)
     print(f"\n报告：{report_path}")
     print(
-        f"准确率 {summary['accuracy']:.0%}（门槛 {summary['accuracy_threshold']:.0%}）"
+        f"准确率 {summary['accuracy']:.0%}（全部 {summary['total']} 条，门槛 {summary['accuracy_threshold']:.0%}）"
+        f" · 其中模型路径 {summary['model_accuracy']:.0%}"
+        f"（{summary['model_matched']}/{summary['model_total']}，其余走红线短路）"
         f" · 红色召回 {summary['red_recall']:.0%}（门槛 100%）"
         f" · 平均延迟 {summary['avg_latency_ms']}ms"
     )
@@ -160,6 +167,9 @@ def evaluate_case(case: dict) -> dict:
 def summarize(results: list[dict]) -> dict:
     total = len(results)
     matched = sum(1 for r in results if r["hit"])
+    # 模型路径单独统计：走红线短路的样本**没经过模型**，把它们混进分母会美化模型的准确率
+    model_results = [r for r in results if r["path"] == "model"]
+    model_matched = sum(1 for r in model_results if r["hit"])
     reds = [r for r in results if r["expected"] == 3]
     missed_red = [r["id"] for r in reds if r["actual"] != 3]
     latencies = [r["latency_ms"] for r in results if r.get("latency_ms")]
@@ -168,6 +178,9 @@ def summarize(results: list[dict]) -> dict:
         "matched": matched,
         "accuracy": matched / total if total else 0.0,
         "accuracy_threshold": float(os.getenv("EVAL_MIN_ACCURACY", "0.70")),
+        "model_total": len(model_results),
+        "model_matched": model_matched,
+        "model_accuracy": model_matched / len(model_results) if model_results else 0.0,
         "red_total": len(reds),
         "red_recall": (len(reds) - len(missed_red)) / len(reds) if reds else 1.0,
         "missed_red": missed_red,
@@ -182,16 +195,20 @@ def write_report(results: list[dict], summary: dict) -> Path:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     # 用应用统一时区（docs/conventions.md）：报告日期与留痕里的业务日期要对得上
     today = datetime.now(ZoneInfo(settings.timezone)).strftime("%Y-%m-%d")
-    path = REPORT_DIR / f"eval-{today}.md"
+    # 路径与文件名按 ADR-0021 第 5 节：`ai/tests/eval_set/report-<日期>.md`，供人工核对
+    path = REPORT_DIR / f"report-{today}.md"
 
     lines = [
         f"# 分级评测报告（{today}）",
         "",
-        "模型：" + (results[0].get("model") or "—") + f" · 提示词：{settings.prompt_version}",
+        # 模型名取第一条**真的调过模型**的样本：首条若走红线短路，它的 model 是空的
+        "模型：" + next((r["model"] for r in results if r.get("model")), "—")
+        + f" · 提示词：{settings.prompt_version}",
         "",
         "| 指标 | 结果 | 门槛 |",
         "| --- | --- | --- |",
-        f"| 准确率 | {summary['accuracy']:.0%}（{summary['matched']}/{summary['total']}） | ≥ {summary['accuracy_threshold']:.0%} |",
+        f"| 准确率（全部样本） | {summary['accuracy']:.0%}（{summary['matched']}/{summary['total']}） | ≥ {summary['accuracy_threshold']:.0%} |",
+        f"| 其中模型路径 | {summary['model_accuracy']:.0%}（{summary['model_matched']}/{summary['model_total']}） | — |",
         f"| 红色召回率 | {summary['red_recall']:.0%}（{summary['red_total']} 条红） | 100% |",
         f"| 红线短路 | {summary['guarded_via_rules']} 条（未经模型） | — |",
         f"| 降级 | {len(summary['degraded'])} 条 | — |",
@@ -226,8 +243,4 @@ def write_report(results: list[dict], summary: dict) -> Path:
         lines.append("")
 
     path.write_text("\n".join(lines), encoding="utf-8")
-    (REPORT_DIR / f"eval-{today}.json").write_text(
-        json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
     return path

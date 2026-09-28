@@ -86,6 +86,8 @@ def _degraded_response(
     detail: object,
     rule_set: red_flags.LoadResult,
     care_tips: list[str] | None = None,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
 ) -> ConsultResponse:
     """降级答复的统一构造。四个分支同形状，收在一处免得「改了码忘了明细」。
 
@@ -102,6 +104,10 @@ def _degraded_response(
         degrade_detail=f"{type(detail).__name__}: {detail}",
         care_tips=care_tips or [],
         images_used=0,
+        # 降级也可能已经花过钱（修复重试先成功一次再失败）：异常捎带的用量照记，
+        # 不然预算会系统性偏低（ADR-0026）
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
         red_flag_check="ok" if rule_set.available else "unavailable",
         model_name=settings.ai_model_grading,
         prompt_version=settings.prompt_version,
@@ -212,6 +218,8 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             code="model_unavailable",
             detail=exc,
             rule_set=rule_set,
+            prompt_tokens=exc.prompt_tokens,
+            completion_tokens=exc.completion_tokens,
         )
     except model_client.ModelOutputInvalid as exc:
         # 模型答了但没法用（没调工具、参数越界）。按设计：风险拔高一档更安全
@@ -222,6 +230,8 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             code="model_output_invalid",
             detail=exc,
             rule_set=rule_set,
+            prompt_tokens=exc.prompt_tokens,
+            completion_tokens=exc.completion_tokens,
         )
 
     # 留痕：trace_id 从 Java 一路带过来，这里落日志，模型侧出问题才追得回去（ADR-0009）

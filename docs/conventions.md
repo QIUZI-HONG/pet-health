@@ -32,7 +32,7 @@
 | 缓存 | 列表 5 分钟、详情 1 分钟；**用户敏感字段不缓存** |
 | Token 过期 | 静默用 Refresh Token 刷新；失败则跳登录 |
 | 重复提交 | 按钮点击后禁用 2 秒，接口侧幂等。**现状**：前端已按「请求进行中禁用」实现（更严），接口侧幂等键等 #81 定 |
-| 错误码 | 见 `contract/common.yaml` 的 `x-error-codes`；AI 相关用 60001 / 60002 |
+| 错误码 | 见 `contract/common.yaml` 的 `x-error-codes`。**AI 降级不用错误码**：一律 HTTP 200 + `degraded` + 一句中文（[ADR-0026](adr/0026-ai-degrade-codes-and-daily-budget.md) 废弃了交付文档的 60001/60002） |
 
 ## 数据
 

@@ -37,6 +37,37 @@ DRUG_TERMS = (
 #: 改写后的兜底话术。宁严勿松（docs/conventions.md）——不解释「模型本来想说什么」。
 REPLACEMENT = "具体处理与用药请由兽医面诊决定。"
 
+#: 否定语境：药名出现在这些词后面时，模型是在**警告别用**，不是在推荐。
+#: 判据只需要看药名往前一小段（同一分句内），因为中文的否定词紧贴动词：
+#: 「千万别给猫用对乙酰氨基酚」「不要喂布洛芬」「避免使用伊维菌素」。
+#:
+#: 为什么必须区分：把「别用 X」改写成「请由兽医决定」会**丢掉一条正确且重要的警告**
+#: （对乙酰氨基酚对猫是剧毒）——误伤好回答与漏掉坏回答一样糟。
+NEGATION_CUES = ("别", "不要", "不能", "不可", "切勿", "禁止", "避免", "严禁", "不得", "千万不要")
+#: 药名前多少字符内出现否定词就算「在警告」（同分句内一般不超过这个距离）
+NEGATION_WINDOW = 12
+
+
+def _is_warning(text: str, start: int) -> bool:
+    """药名出现在否定语境里吗——只看药名往前一个窗口，且不跨句子边界。"""
+    window = text[max(0, start - NEGATION_WINDOW):start]
+    # 跨分句不算：上一个分句里的否定管不到这一句的药名。
+    # **逗号也算边界**——「别担心，建议喂点蒙脱石散」里的「别」属于前半句，
+    # 不该给后半句的推荐洗白（评审提的用例）
+    for boundary in ("。", "；", ";", "！", "？", "\n", "，", "、", ","):
+        if boundary in window:
+            window = window.rsplit(boundary, 1)[-1]
+    return any(cue in window for cue in NEGATION_CUES)
+
+
+def _recommended_drug(text: str) -> str | None:
+    """返回第一个**被推荐**（不在否定语境里）的药名；全是警告则返回 None。"""
+    for drug in DRUG_TERMS:
+        start = text.find(drug)
+        if start >= 0 and not _is_warning(text, start):
+            return drug
+    return None
+
 
 def review(text: str) -> tuple[str, list[str]]:
     """检查一段文本，返回 (改写后的文本, 命中的护栏标记)。
@@ -53,9 +84,9 @@ def review(text: str) -> tuple[str, list[str]]:
     for phrase in BANNED_PHRASES:
         if phrase in text:
             hits.append(f"phrase:{phrase}")
-    for drug in DRUG_TERMS:
-        if drug in text:
-            hits.append(f"drug:{drug}")
+    recommended = _recommended_drug(text)
+    if recommended:
+        hits.append(f"drug:{recommended}")
 
     if not hits:
         return text, []

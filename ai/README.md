@@ -38,6 +38,10 @@ curl -s -H "X-Internal-Token: $INTERNAL_TOKEN" localhost:8000/internal/health
 | 图片 | ✅ 走 `ai_vision_model`（当前 flash；**pro 看不见图**）。没配视觉模型时明确降级并告知 |
 | 语音 / 向量 | ❌ 该供应商没有这两个端点 |
 
+**发布门槛**（`pytest -m eval`）：真打模型跑 `tests/eval_set/`，准确率 ≥70%、
+**红色召回率必须 100%**，逐条明细落 `tests/eval_set/report-<日期>.md`。缺 key 时它**失败而不是跳过**
+——`-m eval` 是显式点名要跑门槛，静默通过等于门槛不存在。
+
 `/internal/health` 会报出能力矩阵（`capabilities`），别靠猜。
 
 ## 怎么跑测试
@@ -46,6 +50,7 @@ curl -s -H "X-Internal-Token: $INTERNAL_TOKEN" localhost:8000/internal/health
 .venv/bin/ruff check .
 .venv/bin/python -m pytest                 # 常规：模型被桩掉，不依赖网络
 AI_LIVE_TEST=1 .venv/bin/python -m pytest -m live   # 实弹：真打模型（需要 key 与网络）
+.venv/bin/python -m pytest -m eval -s      # 发布门槛：真打模型跑评测集（ADR-0021）
 ```
 
 ## 两条不能忘的约束
