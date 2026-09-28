@@ -54,8 +54,9 @@ class ConsultResponse(BaseModel):
     # model_output_invalid）。给用户看的中文由 Java 侧按这个码映射——原因里的细节
     # （异常类名、上游原始响应、模型原始输出）不能出现在用户可见的文案里（测试报告 D6）。
     degrade_code: str | None = None
-    # 内部明细：只进日志与留痕，**不进用户可见文案**。
-    degrade_reason: str | None = None
+    # 内部明细：只进日志与留痕，**不进用户可见文案**。故意不叫 degrade_reason——
+    # 那个名字在 C 端契约里是「给用户看的中文句子」，同名双语义只会让下一次改动改错地方。
+    degrade_detail: str | None = None
     model_name: str = ""
     model_version: str = ""
     prompt_version: str = ""

@@ -1,5 +1,6 @@
 package com.pethealth.account.service;
 
+import com.pethealth.account.auth.AccountStatus;
 import com.pethealth.account.auth.JwtService;
 import com.pethealth.account.auth.LoginThrottle;
 import com.pethealth.account.auth.RefreshTokenStore;
@@ -49,6 +50,7 @@ public class AccountService {
     private final RefreshTokenStore refreshTokens;
     private final LoginThrottle loginThrottle;
     private final PetQueryApi petQueryApi;
+    private final AccountStatus accountStatus;
 
     public AccountService(UserMapper userMapper,
                           FieldCipher fieldCipher,
@@ -56,7 +58,8 @@ public class AccountService {
                           JwtService jwtService,
                           RefreshTokenStore refreshTokens,
                           LoginThrottle loginThrottle,
-                          PetQueryApi petQueryApi) {
+                          PetQueryApi petQueryApi,
+                          AccountStatus accountStatus) {
         this.userMapper = userMapper;
         this.fieldCipher = fieldCipher;
         this.passwordEncoder = passwordEncoder;
@@ -64,6 +67,7 @@ public class AccountService {
         this.refreshTokens = refreshTokens;
         this.loginThrottle = loginThrottle;
         this.petQueryApi = petQueryApi;
+        this.accountStatus = accountStatus;
     }
 
     @Transactional
@@ -147,7 +151,7 @@ public class AccountService {
 
         if (request.nickname() != null) {
             if (request.nickname().isBlank()) {
-                throw BusinessException.paramInvalid("nickname 昵称不能为空");
+                throw BusinessException.paramInvalid("昵称不能为空");
             }
             user.setNickname(request.nickname().trim());
         }
@@ -212,9 +216,11 @@ public class AccountService {
         if (user == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "账号不存在");
         }
-        if (user.getStatus() != null && user.getStatus() == User.STATUS_DISABLED) {
+        if (!accountStatus.isActive(userId)) {
             // 账号状态的**权威判定在鉴权层**（JwtAuthenticationFilter + AccountStatus），
-            // 这一句只是本模块内的兜底（比如将来有定时任务直接调 service，不经过过滤器）
+            // 这一句是本模块内的兜底（例如将来有定时任务直接调 service，不经过过滤器）。
+            // 复用同一个 AccountStatus，而不是在这里再写一遍「status == DISABLED」——
+            // 否则注销判定会有两份实现，改一处漏一处
             throw BusinessException.unauthorized("账号已注销或禁用");
         }
         return user;

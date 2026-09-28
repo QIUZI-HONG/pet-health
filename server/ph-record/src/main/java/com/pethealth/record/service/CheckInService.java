@@ -141,7 +141,7 @@ public class CheckInService {
         LocalDate target = date == null ? AppTime.today() : date;
         validateWindow(target);
         if (!CHECK_IN_CATEGORIES.containsKey(category)) {
-            throw BusinessException.paramInvalid("category 只能是 1–6（打卡的六项）");
+            throw BusinessException.paramInvalid("打卡分项只能是 1–6 这六项");
         }
         // 逻辑删除：历史留痕不丢（ADR-0011「物理删除仅限账号注销」）
         recordMapper.delete(Wrappers.<ArchiveRecord>lambdaQuery()
@@ -202,16 +202,16 @@ public class CheckInService {
      *   <li>「先查再写」在并发下会撞 {@code uk_checkin_slot}，而撞唯一键会把整个事务标记成
      *       rollback-only——接住异常也救不回来，提交时照样 500（已复现）；</li>
      *   <li>撤销是逻辑删除，但唯一键占着那个槽，所以复活必须由「冲突时 UPDATE」来完成；</li>
-     *   <li>体重的值先过 {@link Weight}：非法值在这里就被挡下（40001），
-     *       不再静默存成 null 让趋势算出荒谬数字（测试报告 D1）。</li>
+     *   <li>体重的值先过 {@link Weight#parseOrNull}：**留空合法**（这一项先不记），
+     *       非法值一律挡下（40001）——不再静默存成 null 让趋势算出荒谬数字（测试报告 D1）。</li>
      * </ul>
      */
     private void upsert(long userId, long petId, LocalDate date, CheckInItemInput item, boolean backfilled) {
         boolean abnormal = Boolean.TRUE.equals(item.abnormal());
-        BigDecimal weight = item.category() == CATEGORY_WEIGHT ? Weight.parse(item.value()) : null;
+        BigDecimal weight = item.category() == CATEGORY_WEIGHT ? Weight.parseOrNull(item.value()) : null;
 
         recordMapper.upsertCheckIn(petId, userId, date, item.category(), buildContent(item),
-                abnormal ? 1 : 0, backfilled ? 1 : 0, weight,
+                abnormal ? 1 : 0, backfilled ? 1 : 0, weight, ArchiveRecord.SOURCE_USER,
                 AppTime.now(), TraceIds.currentOperatorId(), TraceIds.currentTraceId());
     }
 

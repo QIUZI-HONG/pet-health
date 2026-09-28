@@ -101,7 +101,8 @@ public class AiServiceClient {
             boolean degraded,
             /** 机器可读的降级原因码；给用户的中文由 {@code AiConsultService} 映射。 */
             String degradeCode,
-            String degradeReason,
+            /** 内部明细（异常类名 / 上游原文 / 模型原文）：只进留痕，不下发给用户。 */
+            String degradeDetail,
             String modelName,
             String modelVersion,
             String promptVersion,

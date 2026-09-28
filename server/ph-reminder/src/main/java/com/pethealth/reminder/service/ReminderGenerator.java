@@ -2,6 +2,7 @@ package com.pethealth.reminder.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.pethealth.common.time.AppTime;
+import com.pethealth.common.trace.TraceIds;
 import com.pethealth.record.api.ReminderSourceApi;
 import com.pethealth.reminder.domain.Message;
 import com.pethealth.reminder.domain.ReminderRule;
@@ -10,7 +11,6 @@ import com.pethealth.reminder.mapper.MessageMapper;
 import com.pethealth.reminder.mapper.ReminderSettingMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -355,30 +355,27 @@ public class ReminderGenerator {
             return 1;
         }
 
-        Message message = new Message();
-        message.setUserId(pet.userId());
-        message.setPetId(candidate.pet().petId());
-        message.setKind(candidate.kind());
-        message.setType(candidate.type());
-        message.setTitle(candidate.title());
-        message.setContent(candidate.content());
-        message.setRiskLevel(candidate.riskLevel());
-        message.setRemindAt(candidate.remindAt());
-        message.setStatus(Message.STATUS_SENT);
-        message.setDedupKey(candidate.dedupKey());
-        message.setActionHint(candidate.actionHint());
-        message.setActionTarget(candidate.actionTarget());
-        message.setChannelState("in_site");
-        try {
-            messageMapper.insert(message);
-        } catch (DuplicateKeyException e) {
-            // 上面的「先查后插」之间有一个窗口：首页同时拉列表与强提醒流（或批算与用户请求并发）时，
-            // 两边都查不到就都插入，后一个撞 uk_dedup 报 50000，而这条消息其实已经生成了。
-            // 接住即可——同一个去重键本来就只该有一条消息（2026-09-28 测试报告 D9）。
-            log.info("提醒去重键并发命中，已有同键消息 dedup_key={}", candidate.dedupKey());
-            return 0;
-        }
-        return 1;
+        // 「同键已存在就什么都不做」写成一条 SQL，而不是先查后插再 catch 冲突：
+        // 查询与插入之间的窗口里，另一个并发请求（首页同时拉列表与强提醒流、批算与用户请求撞上）
+        // 可以插进同一个去重键，而在事务里撞唯一键会把事务标记成 rollback-only——
+        // catch 住异常也救不回来，提交时照样 500（同一批提交里打卡路径就是这么实测出来的）。
+        return messageMapper.insertIfAbsent(
+                pet.userId(),
+                candidate.pet().petId(),
+                candidate.kind(),
+                candidate.type(),
+                candidate.title(),
+                candidate.content(),
+                candidate.riskLevel(),
+                candidate.remindAt(),
+                Message.STATUS_SENT,
+                candidate.dedupKey(),
+                candidate.actionHint(),
+                candidate.actionTarget(),
+                "in_site",
+                AppTime.now(),
+                TraceIds.currentOperatorId(),
+                TraceIds.currentTraceId());
     }
 
     /**

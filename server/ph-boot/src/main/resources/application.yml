@@ -104,7 +104,7 @@ ai:
     timeout-ms: ${AI_TIMEOUT_MS:20000}
     # **本服务对 AI 服务可达的地址**：档案照片的签名读地址是相对路径，AI 服务要自己去取图
     # （取回字节再内联给模型，因为模型供应商拉不到我们的内网），所以出站时要补成绝对地址
-    app-base-url: ${APP_BASE_URL:http://127.0.0.1:8080}
+    file-base-url: ${APP_BASE_URL:http://127.0.0.1:8080}
   quota:
     # 交付文档 F006：免费用户每日 3 次
     free-per-day: ${AI_FREE_QUOTA_PER_DAY:3}

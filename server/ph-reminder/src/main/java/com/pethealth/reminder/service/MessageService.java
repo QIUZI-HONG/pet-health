@@ -197,7 +197,7 @@ public class MessageService {
     public List<ReminderSettingView> updateSetting(long userId, ReminderSettingRequest request) {
         int type = request.type();
         if (!REMINDER_TYPE_NAMES.containsKey(type)) {
-            throw BusinessException.paramInvalid("type 不是可开关的提醒类型");
+            throw BusinessException.paramInvalid("这个提醒类型不能开关");
         }
         if (!request.enabled() && !isClosable(type)) {
             // 红色等级的健康提醒不允许关闭：用户安全优先于体验（ADR-0019）

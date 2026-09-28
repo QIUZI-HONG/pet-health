@@ -30,7 +30,8 @@
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | POST | `/internal/consult` | 一次健康咨询的完整分级 |
-| GET | `/internal/health` | 存活探测 |
+| GET | `/healthz` | 存活探测：只回 `{"status":"ok"}`，不要令牌（探针不需要知道配置状态） |
+| GET | `/internal/health` | 能力矩阵与配置状态，**要 `X-Internal-Token`** |
 
 ### 请求
 
@@ -65,7 +66,8 @@
   "care_tips": ["记录呕吐物性状与频次"],
   "citations": ["K-0042", "K-0117"],
   "degraded": false,
-  "degrade_reason": null,
+  "degrade_code": null,
+  "degrade_detail": null,
   "model_name": "qwen3-vl-plus",
   "model_version": "2025-12-19",
   "prompt_version": "triage-v3",
@@ -75,7 +77,9 @@
 
 `degraded=true` 时，AI 服务给一个机器可读的 `degrade_code`
 （`image_not_supported` / `image_unavailable` / `model_unavailable` / `model_output_invalid`），
-Java 侧据此映射成给用户看的中文并把码与明细写进留痕；上游异常类名与模型原文只进留痕，不下发。
+明细放 `degrade_detail`（可能含异常类名、上游原文、模型原始输出）；
+Java 侧按码映射成给用户看的一句中文（那是 `contract/app.yaml` 里 C 端的 `degrade_reason`），
+`degrade_code` 与 `degrade_detail` 只进留痕。**两个字段故意不同名**：同名双语义会让下一次改动改错地方。
 （交付文档的 **60001/60002** 目前没有产出路径——降级一律 200 + `degraded`，见 `ErrorCode` 的注释。）
 
 ## 3. 处理链路

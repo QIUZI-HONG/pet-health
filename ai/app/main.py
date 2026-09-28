@@ -78,6 +78,36 @@ def health() -> dict[str, object]:
     }
 
 
+def _degraded_response(
+    *,
+    risk_level: int,
+    action_suggestion: str,
+    code: str,
+    detail: object,
+    rule_set: red_flags.LoadResult,
+    care_tips: list[str] | None = None,
+) -> ConsultResponse:
+    """降级答复的统一构造。四个分支同形状，收在一处免得「改了码忘了明细」。
+
+    `degrade_detail` 里可能带异常类名、上游原文、甚至**模型返回的原始文本**：
+    它只进日志与留痕（Java 侧落 `ai_consult.degrade_reason`），**不进用户可见文案**——
+    用户看到的是一句按 `degrade_code` 映射的中文（测试报告 D6）。
+    """
+    return ConsultResponse(
+        risk_level=risk_level,
+        action_suggestion=action_suggestion,
+        need_hospital=True,
+        degraded=True,
+        degrade_code=code,
+        degrade_detail=f"{type(detail).__name__}: {detail}",
+        care_tips=care_tips or [],
+        images_used=0,
+        red_flag_check="ok" if rule_set.available else "unavailable",
+        model_name=settings.ai_model_grading,
+        prompt_version=settings.prompt_version,
+    )
+
+
 def _red_flag_response(
     req: ConsultRequest,
     hits: list[red_flags.RedFlagHit],
@@ -151,69 +181,47 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
         # 有图但当前没有能看图的模型。**明确告知**，不做静默忽略——
         # 用户以为模型看过照片、其实没看，比直接说不支持危险得多。
         _log_degraded("image_not_supported", req.trace_id, exc)
-        return ConsultResponse(
+        return _degraded_response(
             risk_level=2,
             action_suggestion="暂时无法分析图片，请把症状用文字补充清楚（部位、多久、有没有变化）；"
             "如情况紧急请直接送医。",
-            need_hospital=True,
-            degraded=True,
-            degrade_code="image_not_supported",
-            degrade_reason=f"{type(exc).__name__}: {exc}",
+            code="image_not_supported",
+            detail=exc,
+            rule_set=rule_set,
             care_tips=[f"已收到 {image_count} 张图片，但本轮没有分析它们。"],
-            images_used=0,
-            red_flag_check="ok" if rule_set.available else "unavailable",
-            model_name=settings.ai_model_grading,
-            prompt_version=settings.prompt_version,
         )
     except model_client.ImageUnavailable as exc:
         # 有能看图的模型，但图片没取回来（签名过期、后端不可达、体积超限）。
         # 与上一类分开留痕：一个是「模型不能看图」，一个是「我们没把图送到」。
         _log_degraded("image_unavailable", req.trace_id, exc)
-        return ConsultResponse(
+        return _degraded_response(
             risk_level=2,
             action_suggestion="这次没能读到你的图片，请先用文字描述症状（部位、多久、有没有变化）；"
             "如情况紧急请直接送医。",
-            need_hospital=True,
-            degraded=True,
-            degrade_code="image_unavailable",
-            degrade_reason=f"{type(exc).__name__}: {exc}",
+            code="image_unavailable",
+            detail=exc,
+            rule_set=rule_set,
             care_tips=[f"已收到 {image_count} 张图片，但本轮没有分析它们。"],
-            images_used=0,
-            red_flag_check="ok" if rule_set.available else "unavailable",
-            model_name=settings.ai_model_grading,
-            prompt_version=settings.prompt_version,
         )
     except model_client.ModelUnavailable as exc:
         # 传输层挂了：降级成保守建议，不向用户报错（设计文档第 5 节的硬要求）
         _log_degraded("model_unavailable", req.trace_id, exc)
-        return ConsultResponse(
+        return _degraded_response(
             risk_level=2,
             action_suggestion=DEGRADED_SUGGESTION,
-            need_hospital=True,
-            degraded=True,
-            degrade_code="model_unavailable",
-            degrade_reason=f"{type(exc).__name__}: {exc}",
-            images_used=0,
-            red_flag_check="ok" if rule_set.available else "unavailable",
-            model_name=settings.ai_model_grading,
-            prompt_version=settings.prompt_version,
+            code="model_unavailable",
+            detail=exc,
+            rule_set=rule_set,
         )
     except model_client.ModelOutputInvalid as exc:
         # 模型答了但没法用（没调工具、参数越界）。按设计：风险拔高一档更安全
         _log_degraded("model_output_invalid", req.trace_id, exc)
-        return ConsultResponse(
+        return _degraded_response(
             risk_level=3,
             action_suggestion=DEGRADED_SUGGESTION,
-            need_hospital=True,
-            degraded=True,
-            degrade_code="model_output_invalid",
-            # 这个明细里**可能含模型的原始输出**（参数不是合法 JSON 时会带上原文片段），
-            # 所以它只进日志与留痕表；用户看到的是 Java 按 degrade_code 映射的中文（测试报告 D6）
-            degrade_reason=f"{type(exc).__name__}: {exc}",
-            images_used=0,
-            red_flag_check="ok" if rule_set.available else "unavailable",
-            model_name=settings.ai_model_grading,
-            prompt_version=settings.prompt_version,
+            code="model_output_invalid",
+            detail=exc,
+            rule_set=rule_set,
         )
 
     # 留痕：trace_id 从 Java 一路带过来，这里落日志，模型侧出问题才追得回去（ADR-0009）

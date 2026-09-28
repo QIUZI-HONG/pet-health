@@ -56,7 +56,7 @@ public interface ArchiveRecordMapper extends BaseMapper<ArchiveRecord> {
                  source, created_at, updated_at, created_by, updated_by, trace_id, is_deleted)
             VALUES
                 (#{petId}, #{userId}, #{date}, #{category}, #{content}, #{abnormal}, #{backfilled},
-                 #{numericValue}, 1, #{now}, #{now}, #{operatorId}, #{operatorId}, #{traceId}, 0)
+                 #{numericValue}, #{source}, #{now}, #{now}, #{operatorId}, #{operatorId}, #{traceId}, 0)
             ON DUPLICATE KEY UPDATE
                 content = VALUES(content),
                 abnormal = VALUES(abnormal),
@@ -75,6 +75,7 @@ public interface ArchiveRecordMapper extends BaseMapper<ArchiveRecord> {
                       @Param("abnormal") int abnormal,
                       @Param("backfilled") int backfilled,
                       @Param("numericValue") BigDecimal numericValue,
+                      @Param("source") int source,
                       @Param("now") LocalDateTime now,
                       @Param("operatorId") long operatorId,
                       @Param("traceId") String traceId);

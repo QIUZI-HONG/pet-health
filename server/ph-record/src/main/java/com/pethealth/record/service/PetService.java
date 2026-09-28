@@ -228,7 +228,7 @@ public class PetService implements PetQueryApi, AiPetApi {
 
     private void validateChronic(boolean chronic, String desc) {
         if (chronic && (desc == null || desc.isBlank())) {
-            throw BusinessException.paramInvalid("chronic_desc 标记为慢病时必须填写慢病描述");
+            throw BusinessException.paramInvalid("标记为慢病时必须填写慢病描述");
         }
     }
 

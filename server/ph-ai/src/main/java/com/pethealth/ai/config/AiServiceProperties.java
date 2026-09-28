@@ -9,18 +9,18 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param token     内部鉴权令牌，必须与 {@code ai/.env} 的 {@code INTERNAL_TOKEN} 一致
  * @param timeoutMs 读超时。**没有短默认值**：ADR-0017 实测模型偶发 20 秒，
  *                  配 8 秒等于常态化降级
- * @param appBaseUrl **本服务对外可达的地址**（AI 服务用它来取档案照片）。签名读地址是相对路径，
+ * @param fileBaseUrl **本服务对外可达的地址**（AI 服务用它来取档案照片）。签名读地址是相对路径，
  *                   浏览器按站点解析没问题，但 AI 服务没有「我们的站点」这个概念——
  *                   它要把图片取回来再内联给模型，所以要给绝对地址（测试报告 D7）。
  */
 @ConfigurationProperties(prefix = "ai.service")
-public record AiServiceProperties(String baseUrl, String token, long timeoutMs, String appBaseUrl) {
+public record AiServiceProperties(String baseUrl, String token, long timeoutMs, String fileBaseUrl) {
 
     public AiServiceProperties {
         baseUrl = (baseUrl == null || baseUrl.isBlank()) ? "http://127.0.0.1:8000" : baseUrl;
         timeoutMs = timeoutMs <= 0 ? 20_000 : timeoutMs;
-        appBaseUrl = (appBaseUrl == null || appBaseUrl.isBlank()) ? "http://127.0.0.1:8080" : appBaseUrl;
+        fileBaseUrl = (fileBaseUrl == null || fileBaseUrl.isBlank()) ? "http://127.0.0.1:8080" : fileBaseUrl;
         // 结尾的斜杠会让拼接出现双斜杠，归一化掉
-        appBaseUrl = appBaseUrl.endsWith("/") ? appBaseUrl.substring(0, appBaseUrl.length() - 1) : appBaseUrl;
+        fileBaseUrl = fileBaseUrl.endsWith("/") ? fileBaseUrl.substring(0, fileBaseUrl.length() - 1) : fileBaseUrl;
     }
 }

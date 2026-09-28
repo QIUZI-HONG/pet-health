@@ -6,6 +6,8 @@ import com.pethealth.api.app.ReminderSettingView;
 import com.pethealth.common.api.ApiResponse;
 import com.pethealth.common.api.PageResult;
 import com.pethealth.common.security.CurrentUser;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import com.pethealth.common.security.LoginDomain;
 import com.pethealth.reminder.service.MessageService;
 import jakarta.validation.Valid;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -29,6 +32,8 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/v1/app/messages")
+// @Validated：方法参数上的 @Min/@Max 要靠它才会生效（Spring 的 MethodValidationPostProcessor）
+@Validated
 public class MessageController {
 
     private final MessageService messageService;
@@ -37,12 +42,20 @@ public class MessageController {
         this.messageService = messageService;
     }
 
+    /**
+     * 消息列表。
+     *
+     * <p>`page` / `page_size` 带下界校验：契约（`common.yaml`）写的是 `minimum: 1`，
+     * 而 `page=0` 会被原样回显、`page_size=0` 会拼出 `LIMIT 0` 返回空列表——
+     * 两种都是「看起来正常但答案是错的」，比报错更难发现（测试报告 D20）。
+     */
     @GetMapping
     public ApiResponse<PageResult<MessageView>> list(
             @RequestParam(required = false) Integer kind,
             @RequestParam(name = "unread_only", defaultValue = "false") boolean unreadOnly,
-            @RequestParam(defaultValue = "1") long page,
-            @RequestParam(name = "page_size", defaultValue = "20") long pageSize) {
+            @RequestParam(defaultValue = "1") @Min(value = 1, message = "页码从 1 开始") long page,
+            @RequestParam(name = "page_size", defaultValue = "20")
+            @Min(value = 1, message = "每页至少 1 条") @Max(value = 100, message = "每页最多 100 条") long pageSize) {
         long userId = CurrentUser.requireDomain(LoginDomain.APP);
         return ApiResponse.ok(messageService.list(userId, kind, unreadOnly, page, pageSize));
     }

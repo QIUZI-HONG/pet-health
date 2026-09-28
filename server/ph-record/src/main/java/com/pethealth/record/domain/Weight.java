@@ -25,7 +25,7 @@ public final class Weight {
     public static final String MIN = "0.01";
     public static final String MAX = "999.99";
 
-    /** 给用户看的一句话：范围与形状写在一起，前端也复用同一句（避免各处各措辞）。 */
+    /** 给用户看的一句话：范围与形状写在一起。前端有同一句（`CheckInCard` 的提示），改一处要改两处。 */
     public static final String HINT = "体重需为 " + MIN + "–" + MAX + " 之间的数字，最多两位小数";
 
     private static final Pattern SHAPE = Pattern.compile(PATTERN);
@@ -36,17 +36,37 @@ public final class Weight {
     }
 
     /**
-     * 解析并校验。{@code null} / 空串返回 {@code null}——这个字段本身可以留空
-     * （建档时不填体重、打卡时「这一项先不记」都是合法意图）；不合法一律 40001。
+     * 解析并校验**建档 / 编辑**传来的体重。{@code null} 返回 {@code null}（这个字段可以不填）；
+     * **空串一律 40001**——契约里写着「`weight` 不接受空串（要改就得给合法值）」：
+     * 放它过去就等于让一次误传的空串把体重悄悄清掉。
      *
      * <p>**不做四舍五入**：形状已经限死两位小数，能通过校验的值不会被截断，
      * 悄悄改掉用户填的数字（12.345 → 12.35）比报错更糟。
      */
     public static BigDecimal parse(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        if (raw.isBlank()) {
+            throw BusinessException.paramInvalid("体重不能为空；不想填就整个字段不要传");
+        }
+        return validate(raw.trim());
+    }
+
+    /**
+     * 打卡用的宽松入口：**留空是合法意图**（「这一项先不记」），{@code null} 与空串都返回 {@code null}。
+     *
+     * <p>两个入口分开而不是一个方法兼两义：同一个字符串在两条业务线上含义不同，
+     * 合并成一个「看情况」的方法，下一次改动一定会在某一侧悄悄改错（评审意见）。
+     */
+    public static BigDecimal parseOrNull(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
-        String value = raw.trim();
+        return validate(raw.trim());
+    }
+
+    private static BigDecimal validate(String value) {
         if (!SHAPE.matcher(value).matches()) {
             throw BusinessException.paramInvalid(HINT);
         }

@@ -183,6 +183,26 @@ class PetProfileTest extends IntegrationTestBase {
     }
 
     @Test
+    @DisplayName("体重不走「空串=清空」：契约写明不接受空串，要改就得给合法值")
+    void weightRejectsEmptyString() {
+        String token = api.registerAndGetAccessToken("13800138015");
+        long petId = api.post("/api/v1/app/pets",
+                        new PetCreateRequest("豆豆", 1, null, 0, null, "8.20", null, null, null, null), token)
+                .data().path("id").asLong();
+
+        // 品种/头像可以用空串清空，但体重不行（契约 app.yaml：`weight` 不接受空串）——
+        // 放它过去，一次误传的空串就会把体重悄悄清掉（评审发现：值对象一度把空串当「留空」）
+        ApiClient.ApiCall call = api.put("/api/v1/app/pets/" + petId, Map.of("weight", ""), token);
+        assertThat(call.status()).isEqualTo(400);
+        assertThat(call.code()).isEqualTo(40001);
+        assertThat(jdbc.queryForObject("SELECT weight FROM pet WHERE id = ?", java.math.BigDecimal.class, petId))
+                .isEqualByComparingTo("8.20");
+
+        // 给合法值照常改
+        assertThat(api.put("/api/v1/app/pets/" + petId, Map.of("weight", "8.35"), token).code()).isZero();
+    }
+
+    @Test
     @DisplayName("切换当前宠物；宠物被删掉后当前宠物读出来是 null")
     void activePetSwitchAndStaleValue() {
         String token = api.registerAndGetAccessToken("13800138009");

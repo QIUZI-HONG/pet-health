@@ -195,9 +195,9 @@ def test_image_request_degrades_when_no_vision_model(monkeypatch):
     ).json()
 
     assert body["degraded"] is True
-    # degrade_code 是机器可读的码（用户可见的中文由 Java 侧映射），明细在 degrade_reason 里
+    # degrade_code 是机器可读的码（用户可见的中文由 Java 侧映射），明细在 degrade_detail 里
     assert body["degrade_code"] == "image_not_supported"
-    assert "VisionUnavailable" in body["degrade_reason"]
+    assert "VisionUnavailable" in body["degrade_detail"]
     assert body["images_used"] == 0
     assert "图片" in body["action_suggestion"]
     assert calls == []
@@ -214,7 +214,7 @@ def test_model_unavailable_degrades_to_conservative_advice(monkeypatch):
     assert body["degraded"] is True
     assert body["degrade_code"] == "model_unavailable"
     # 明细里有异常类名，**这些不能出给用户**：Java 侧按 degrade_code 映射用户文案（测试报告 D6）
-    assert "ConnectTimeout" in body["degrade_reason"]
+    assert "ConnectTimeout" in body["degrade_detail"]
     assert body["need_hospital"] is True
     # 降级不等于报错：HTTP 仍然是 200，前端拿到的是一句人话
     assert body["risk_level"] == 2

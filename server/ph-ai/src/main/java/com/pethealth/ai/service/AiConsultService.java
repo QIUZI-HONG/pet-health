@@ -91,6 +91,13 @@ public class AiConsultService {
         AiServiceClient.ConsultResponse response = callAi(userId, pet, request.question(), mediaUrls, traceId);
 
         // 留痕里的图片张数用 AI 服务**实际送进模型**的张数，不是我们交出去的张数（测试报告 D27）
+        if (!"ok".equals(response.redFlagCheck())) {
+            // 红线预检这一层没生效（词表为空 / 读不到库）：red_flag_check=unavailable。
+            // 它是「红色 100% 召回」那条验收标准的机械保障，静默失效比失效本身更危险——
+            // 所以在这里留一条 warn（排障与告警系统都看得见），而不是等事后从留痕里发现。
+            log.warn("红线预检未生效 trace_id={} user_id={} red_flag_check={}",
+                    traceId, userId, response.redFlagCheck());
+        }
         AiConsult record = save(userId, petId, request.question(), response.imagesUsed(), response, traceId);
         // 计数取「含本次在内」的当天行数；请求被拒（越权、参数错）本就到不了这里，不消耗额度
         return toView(record, response, countToday(userId));
@@ -103,7 +110,7 @@ public class AiConsultService {
      * 所以出站前补成 AI 服务可达的绝对地址（测试报告 D7）。
      */
     private List<String> absolute(List<String> urls) {
-        String base = serviceProperties.appBaseUrl();
+        String base = serviceProperties.fileBaseUrl();
         return urls.stream().map(url -> url.startsWith("http") ? url : base + url).toList();
     }
 
@@ -172,7 +179,7 @@ public class AiConsultService {
             return null;
         }
         String code = response.degradeCode() == null ? "degraded" : response.degradeCode();
-        return response.degradeReason() == null ? code : code + ": " + response.degradeReason();
+        return response.degradeDetail() == null ? code : code + ": " + response.degradeDetail();
     }
 
     /**

@@ -113,6 +113,9 @@ cd server && ./mvnw -B verify
 - `AI_SERVICE_BASE_URL`（`http://127.0.0.1:8000`）
 - `AI_SERVICE_TOKEN`（`dev-internal-token`）——**必须与 `ai/.env` 的 `INTERNAL_TOKEN` 一致**
 - `AI_TIMEOUT_MS`（`20000`；实测模型偶发 20 秒，配 8 秒等于常态化降级，见 ADR-0017）、`AI_FREE_QUOTA_PER_DAY`（`3`）、`AI_DAILY_BUDGET_CNY`（`50`）
+- `APP_BASE_URL`（`http://127.0.0.1:8080`）——**后端对 AI 服务可达的地址**：档案照片的签名读地址是相对路径，
+  AI 服务要把图取回来再内联给模型（模型供应商拉不到我们的内网），所以出站前会补成这个前缀。
+  **部署时必须填成 AI 服务能访问到的地址**，否则带图咨询会走「读不到图」的降级。
 - `MYSQL_URL` / `MYSQL_USER` / `MYSQL_PASSWORD`、`REDIS_HOST` / `REDIS_PORT`（默认值与 `deploy/docker-compose.dev.yml` 一致）
 
 **密钥纪律**：`AI_API_KEY` 这类真实密钥只写在本地 `.env` 里（已 gitignore）——不提交、不贴进对话、不写进任何文档。
