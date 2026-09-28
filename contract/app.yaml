@@ -46,6 +46,8 @@ tags:
     description: 文件元数据与上传凭证（切片 #95，决策见 ADR-0020；**字节不经这里**）
   - name: ai
     description: AI 健康咨询（切片 #98；分级标准与红线见 ADR-0021，模型调用在独立服务里，见 ADR-0009）
+  - name: compliance
+    description: 合规文档（切片 #74；正文占位、待法务定稿，见 ADR-0025）
 
 security:
   - bearerAuth: []
@@ -759,6 +761,52 @@ paths:
         "404":
           $ref: "./common.yaml#/components/responses/NotFound"
 
+  /compliance/documents:
+    get:
+      tags: [compliance]
+      summary: 合规文档清单（隐私政策 / 用户协议 / AI 免责声明）
+      description: |
+        正文由运营/法务在库里维护，接口只读、不缓存。
+
+        **`is_placeholder` 为 true 时前端必须显示「待法务定稿」**：把占位文字当生效条款展示
+        是实实在在的合规风险（ADR-0025）。
+      responses:
+        "200":
+          description: 文档清单
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/ComplianceDocumentView" }
+
+  /compliance/documents/{code}:
+    get:
+      tags: [compliance]
+      summary: 单份合规文档
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string, enum: [privacy_policy, user_agreement, ai_disclaimer] }
+      responses:
+        "200":
+          description: 文档正文
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ComplianceDocumentView" }
+        "404":
+          description: 没有这份文档（40400）
+
   /files/presign:
     post:
       tags: [file]
@@ -1424,3 +1472,15 @@ components:
             今日剩余次数。到 0 之后接口**照常返回结果**——解锁路径在 #112 权益引擎里，
             现在拦截会把用户挡在一扇没有出口的门后面
 
+    ComplianceDocumentView:
+      type: object
+      required: [code, title, body, is_placeholder]
+      properties:
+        code: { type: string }
+        title: { type: string }
+        body: { type: string }
+        version: { type: string, example: "v0-placeholder" }
+        effective_from: { type: string, nullable: true }
+        is_placeholder:
+          type: boolean
+          description: 正文是否仍是占位。**true 时前端要显示「待法务定稿」**（ADR-0025）

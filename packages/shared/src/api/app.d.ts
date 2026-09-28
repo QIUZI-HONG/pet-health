@@ -1285,6 +1285,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/compliance/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 合规文档清单（隐私政策 / 用户协议 / AI 免责声明）
+         * @description 正文由运营/法务在库里维护，接口只读、不缓存。
+         *
+         *     **`is_placeholder` 为 true 时前端必须显示「待法务定稿」**：把占位文字当生效条款展示
+         *     是实实在在的合规风险（ADR-0025）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 文档清单 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ComplianceDocumentView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/compliance/documents/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 单份合规文档 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    code: "privacy_policy" | "user_agreement" | "ai_disclaimer";
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 文档正文 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ComplianceDocumentView"];
+                        };
+                    };
+                };
+                /** @description 没有这份文档（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/files/presign": {
         parameters: {
             query?: never;
@@ -1975,6 +2066,16 @@ export interface components {
              *     现在拦截会把用户挡在一扇没有出口的门后面
              */
             remaining_today?: number;
+        };
+        ComplianceDocumentView: {
+            code: string;
+            title: string;
+            body: string;
+            /** @example v0-placeholder */
+            version?: string;
+            effective_from?: string | null;
+            /** @description 正文是否仍是占位。**true 时前端要显示「待法务定稿」**（ADR-0025） */
+            is_placeholder: boolean;
         };
         ApiResponse: {
             /** @description 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes） */

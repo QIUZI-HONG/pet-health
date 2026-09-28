@@ -102,6 +102,7 @@ public abstract class IntegrationTestBase {
     protected void cleanDatabase() {
         // 顺序：先清业务数据再清主表（没有物理外键，但这个顺序读起来最清楚）
         jdbc.execute("DELETE FROM `ai_consult`");
+        // 合规文档是**种子数据**（迁移里插的），不能清——清了整个切片就没内容了
         jdbc.execute("DELETE FROM `file_object`");
         jdbc.execute("DELETE FROM `message`");
         jdbc.execute("DELETE FROM `reminder_setting`");
