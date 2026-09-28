@@ -217,8 +217,10 @@ def write_report(results: list[dict], summary: dict) -> Path:
         f"| 红线短路 | {summary['guarded_via_rules']} 条（未经模型） | — |",
         f"| 降级 | {len(summary['degraded'])} 条 | — |",
         f"| 护栏命中 | {len(summary['guard_case_ids'])} 条 | — |",
-        f"| 模型路径延迟（均值 / P95，{summary['model_calls']} 次真调用） "
-        f"| {summary['avg_latency_ms']} ms / {summary['model_latency_p95_ms']} ms | — |",
+        (
+            f"| 模型路径延迟（均值 / P95，{summary['model_calls']} 次真调用） "
+            f"| {summary['avg_latency_ms']} ms / {summary['model_latency_p95_ms']} ms | — |"
+        ),
         "",
         "> 标注为 `provisional` 的样本**未经兽医复核**（评测集首版的口径），"
         + "门槛结论与它们一起看时要留出这个不确定性。",
