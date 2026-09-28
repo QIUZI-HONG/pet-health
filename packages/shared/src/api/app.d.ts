@@ -763,6 +763,476 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pets/{pet_id}/epidemic-records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pet_id: components["parameters"]["PetId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 疫苗 / 驱虫记录列表
+         * @description 按应接种日期倒序返回。数据落在档案记录表的防疫分项（category=7）上。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pet_id: components["parameters"]["PetId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["EpidemicRecord"][];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /** 录入一条疫苗 / 驱虫记录 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pet_id: components["parameters"]["PetId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EpidemicRecordInput"];
+                };
+            };
+            responses: {
+                /** @description 创建成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["EpidemicRecord"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pets/{pet_id}/epidemic-records/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pet_id: components["parameters"]["PetId"];
+                record_id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除一条防疫记录（软删除，幂等） */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pet_id: components["parameters"]["PetId"];
+                    record_id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 消息列表（分页）
+         * @description 消息中心的内容：**健康提醒**（kind=reminder，系统主动生成）与**业务通知**（kind=notification，事件驱动）
+         *     共用一张表与一套已读逻辑。
+         *
+         *     读取时会**惰性补算一次提醒**（与每日批算共用同一个幂等生成函数）——所以用户打开时看到的一定是最新的
+         *     （ADR-0019 的实现说明）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 只看某一类；不传则两类都返回 */
+                    kind?: 1 | 2;
+                    unread_only?: boolean;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["MessageView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/highlights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 首页「需要你关注」的强提醒流
+         * @description 按风险等级与指向时间排序的**未读**提醒，默认 6 条（交付文档 4.16.2 画的就是 6 张卡）。
+         *     只返回健康提醒，业务通知不进这一区。
+         *
+         *     这一处与消息列表一样会**惰性补算**提醒；未读数接口（`/messages/unread-count`）不会——
+         *     角标每次切页都会拉，不该让它写库。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["MessageView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/unread-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 未读数（顶栏角标） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: {
+                                unread?: number;
+                                /** @description 其中健康提醒的未读数 */
+                                unread_reminders?: number;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 全部标记已读
+         * @description 幂等：没有未读时也返回成功。返回最新的未读数。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: {
+                                unread?: number;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/{message_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * 删除单条消息（软删除，幂等）
+         * @description 删除不等于关闭该类型：用户删掉这一条，不代表以后不想收这类提醒。
+         *     要停止某一类请用 `/messages/settings`。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    message_id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/{message_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 标记单条已读 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    message_id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（幂等） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["MessageView"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的提醒开关
+         * @description 返回五类（疫苗/驱虫/日常/异常/趋势）与专项（慢病老年）的开关状态——它们是**提醒**的类型，不是业务通知的。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ReminderSetting"][];
+                        };
+                    };
+                };
+            };
+        };
+        /**
+         * 修改某类提醒的开关
+         * @description **红色等级的提醒不可关闭**（ADR-0019：用户安全 > 体验）。平台级已关掉的类型也不能由用户打开。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReminderSettingInput"];
+                };
+            };
+            responses: {
+                /** @description 修改后的全部开关 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ReminderSetting"][];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001），含「该类型不可关闭」 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pets/{pet_id}/health-score": {
         parameters: {
             query?: never;
@@ -1090,6 +1560,99 @@ export interface components {
             /** @description 口径声明，前端必须展示：评分是「被观察到的健康」，不是医学评估 */
             disclaimer?: string;
         };
+        EpidemicRecordInput: {
+            /**
+             * @description 1 疫苗 / 2 驱虫
+             * @enum {integer}
+             */
+            kind: 1 | 2;
+            /**
+             * @description 名称，如「狂犬疫苗」「体内驱虫」
+             * @example 狂犬疫苗
+             */
+            name: string;
+            /**
+             * @description 接种 / 执行日期 `YYYY-MM-DD`，不能晚于今天
+             * @example 2026-09-01
+             */
+            given_on: string;
+            /**
+             * @description 下次应接种日期 `YYYY-MM-DD`。**它是疫苗/驱虫提醒的唯一依据**——
+             *     不填就没有提醒（宁可少提醒，也不要替用户猜周期）。
+             * @example 2027-09-01
+             */
+            next_due_on?: string;
+        };
+        EpidemicRecord: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {integer} */
+            kind: 1 | 2;
+            name: string;
+            /** @example 2026-09-01 */
+            given_on: string;
+            /**
+             * @description 未填为 null
+             * @example 2027-09-01
+             */
+            next_due_on?: string;
+            /** @description 距下次应接种还有几天；负数表示已过期。未填 next_due_on 时为 null */
+            days_until_due?: number;
+        };
+        MessageView: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * @description 1 健康提醒 / 2 业务通知
+             * @enum {integer}
+             */
+            kind: 1 | 2;
+            /** @description 1疫苗2驱虫3日常4异常5趋势6慢病老年7订单8券9邀请10系统 */
+            type: number;
+            /** @example 狂犬疫苗还有 5 天到期 */
+            title: string;
+            content?: string;
+            /**
+             * @description 0 无 / 1 绿 / 2 黄 / 3 红。**红色提醒不可关闭**（ADR-0019）
+             * @enum {integer}
+             */
+            risk_level?: 0 | 1 | 2 | 3;
+            /** @example 2026-10-02 00:00:00 */
+            remind_at: string;
+            read: boolean;
+            /** @description 未读时为 null */
+            read_at?: string;
+            /** @description 按钮文案，如「去打卡」；无按钮时为 null */
+            action_hint?: string;
+            /** @description 按钮跳转的前端路由；无按钮时为 null */
+            action_target?: string;
+            /**
+             * Format: int64
+             * @description 相关宠物；业务通知可能为空
+             */
+            pet_id?: number;
+            /** @example 2026-09-27 08:00:00 */
+            created_at?: string;
+        };
+        /**
+         * @description **可关闭性按类型判定**（ADR-0019：「红色等级的健康提醒不可关闭」在类型粒度的落地）：
+         *     承载红色风险的异常类 `closable=false`，其余为 true。前端把不可关闭的开关置灰并写明原因。
+         */
+        ReminderSetting: {
+            type: number;
+            /** @example 疫苗到期 */
+            name: string;
+            /** @description 用户开关（未设置过时按默认开启返回） */
+            enabled: boolean;
+            /** @description 平台级总开关（运营可关掉整类；关掉时用户也开不起来） */
+            platform_enabled?: boolean;
+            /** @description 是否允许用户关闭。**红色等级的提醒为 false**，前端要把开关置灰并说明原因 */
+            closable?: boolean;
+        };
+        ReminderSettingInput: {
+            type: number;
+            enabled: boolean;
+        };
         ApiResponse: {
             /** @description 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes） */
             code: number;
@@ -1099,6 +1662,14 @@ export interface components {
             data?: unknown;
             /** @description 全链路追踪 ID */
             request_id?: string;
+        };
+        PageResult: {
+            list: unknown[];
+            page: number;
+            /** @default 20 */
+            page_size: number;
+            total: number;
+            has_more: boolean;
         };
     };
     responses: {
@@ -1119,6 +1690,8 @@ export interface components {
     };
     parameters: {
         PetId: number;
+        Page: number;
+        PageSize: number;
     };
     requestBodies: never;
     headers: never;
