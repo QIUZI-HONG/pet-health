@@ -9,6 +9,7 @@
 """
 
 import asyncio
+import base64
 import json
 from typing import ClassVar
 
@@ -534,3 +535,19 @@ def test_inline_images_passes_data_urls_through(monkeypatch):
     monkeypatch.setattr(model_client.httpx, "AsyncClient", NoFetchClient)
 
     assert asyncio.run(model_client.inline_images([data_url])) == [data_url]
+
+
+def test_data_url_still_goes_through_the_limits(monkeypatch):
+    """调用方自己内联的 data URL 也要过类型与体积把关——否则等于留了一条不限量的旁路。"""
+    oversize = base64.b64encode(b"\x00" * (settings.ai_max_image_bytes + 1)).decode()
+    with pytest.raises(model_client.ImageUnavailable):
+        asyncio.run(model_client.inline_images(["data:image/png;base64," + oversize]))
+
+    with pytest.raises(model_client.ImageUnavailable):
+        asyncio.run(model_client.inline_images(["data:text/plain;base64,aGk="]))
+
+    # 合法的小图照常直通
+    ok = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 16).decode()
+    assert asyncio.run(model_client.inline_images(["data:image/png;base64," + ok])) == [
+        "data:image/png;base64," + ok
+    ]

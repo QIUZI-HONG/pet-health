@@ -187,7 +187,11 @@ def summarize(results: list[dict]) -> dict:
         "degraded": [r["id"] for r in results if r["path"] == "degraded"],
         "guard_case_ids": [r["id"] for r in results if r["guard_hits"]],
         "guarded_via_rules": sum(1 for r in results if r["path"] == "red_flag"),
-        "avg_latency_ms": int(sum(latencies) / len(latencies)) if latencies else 0,
+            "avg_latency_ms": int(sum(latencies) / len(latencies)) if latencies else 0,
+        # P95 只对**模型路径**有意义：红线短路是 0ms（没调模型），混进来会把 P95 稀释成假的
+        "model_latency_p95_ms": sorted(latencies)[min(len(latencies) - 1, int(len(latencies) * 0.95))]
+        if latencies else 0,
+        "model_calls": len(latencies),
     }
 
 
@@ -213,7 +217,8 @@ def write_report(results: list[dict], summary: dict) -> Path:
         f"| 红线短路 | {summary['guarded_via_rules']} 条（未经模型） | — |",
         f"| 降级 | {len(summary['degraded'])} 条 | — |",
         f"| 护栏命中 | {len(summary['guard_case_ids'])} 条 | — |",
-        f"| 平均延迟 | {summary['avg_latency_ms']} ms | — |",
+        f"| 模型路径延迟（均值 / P95，{summary['model_calls']} 次真调用） "
+        f"| {summary['avg_latency_ms']} ms / {summary['model_latency_p95_ms']} ms | — |",
         "",
         "> 标注为 `provisional` 的样本**未经兽医复核**（评测集首版的口径），"
         + "门槛结论与它们一起看时要留出这个不确定性。",

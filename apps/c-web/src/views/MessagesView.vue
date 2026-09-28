@@ -57,7 +57,7 @@ async function load(append = false): Promise<void> {
     const current = append ? page.value + 1 : 1;
     const [result, settingList] = await Promise.all([
       cApp.listMessages({ unreadOnly: unreadOnly.value, page: current, pageSize: 20 }, signal),
-      cApp.listReminderSettings(),
+      cApp.listReminderSettings(signal),
     ]);
     if (!latest.isCurrent(seq)) return;
     messages.value = append ? [...messages.value, ...result.list] : result.list;

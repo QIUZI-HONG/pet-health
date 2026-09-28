@@ -4,8 +4,9 @@
  * 为什么需要它：体积是唯一能**在提交时**拦住的性能指标——真机加载时间要设备与网络，
  * 而体积不需要；体积涨了，加载时间一定跟着涨。此前没有任何检查，产物悄悄变大没人知道。
  *
- * 口径：**首次加载真正会下载的那些文件**（入口 JS + 入口 CSS + 首屏要用的共享块），
- * 不含路由懒加载的页面块——那些是进页面才下载的。判定用 gzip 后的大小（真实网络传的量）。
+ * 口径：**打开站点头屏真正会下载的那些文件**——入口 JS/CSS、Vite 的运行时辅助块，
+ * 以及 `/` 这个路由懒加载的 AppShell 与 HomeView（用户打开首页必然要下这几个）。
+ * 其它页面块不算：那是进页面才下载的。判定用 gzip 后的大小（真实网络传的量）。
  *
  * 预算写在下面 BUDGET 里，取值是 2026-09-28 实测值 + 15% 余量：正常开发不会碰到，
  * 但引入一个大依赖（比如把 Element Plus 拖进来）会立刻红。
@@ -17,18 +18,26 @@ import { gzipSync } from "node:zlib";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-/** gzip 后的预算（KB）。实测 2026-09-28：入口 73.7K，取 85K 作上限。 */
+/**
+ * gzip 后的预算（KB）。2026-09-28 实测 70.8K（入口 + 首页路由的块），取 85K 作上限
+ * ——留两成余量：正常开发碰不到，但拖进来一个大依赖会立刻红。
+ */
 const BUDGET = {
   total: 85,
 };
 
 const assetsDir = join(process.cwd(), "dist", "assets");
 
-/** 首次加载会下载的文件：入口 JS/CSS 与首屏即用的共享块（路由懒加载的页面块不计）。 */
+/**
+ * 打开首页会下载的文件。
+ *
+ * 判据是文件名前缀（Vite 的产物名带组件名）：入口、运行时辅助块，以及首页路由的
+ * AppShell 与 HomeView（含它们的样式）。**只算 index-* 会低报约 10%**——
+ * 用户打开站点必然也下 AppShell 与 HomeView 那几个块。
+ */
 function isInitialLoad(name) {
-  if (name.startsWith("index-")) return true;                    // 入口 JS 与入口 CSS
-  if (name.startsWith("_plugin-vue_export-helper")) return true; // Vite 的运行时辅助块
-  return false;
+  const prefixes = ["index-", "_plugin-vue_export-helper", "AppShell-", "HomeView-"];
+  return prefixes.some((prefix) => name.startsWith(prefix));
 }
 
 let totalKb = 0;

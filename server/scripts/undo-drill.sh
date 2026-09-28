@@ -19,6 +19,9 @@ DRILL_DB="${DRILL_DB:-pet_health_undo_drill}"
 MYSQL_CONTAINER="${MYSQL_CONTAINER:-ph-mysql-dev}"
 MYSQL_USER="${MYSQL_USER:-root}"
 MYSQL_PASSWORD="${MYSQL_PASSWORD:-devroot}"
+# 容器映射到宿主机的地址（默认与 deploy/docker-compose.dev.yml 一致：3307）
+MYSQL_HOST="${MYSQL_HOST:-127.0.0.1}"
+MYSQL_PORT="${MYSQL_PORT:-3307}"
 SERVER_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # 注意 stdin：`docker exec -i` 会读走 stdin。循环里若让它继承循环的 stdin，
@@ -31,14 +34,17 @@ sql -e "DROP DATABASE IF EXISTS $DRILL_DB; CREATE DATABASE $DRILL_DB CHARACTER S
 
 echo "== 2/5 起一次应用，让 Flyway 把迁移跑完（端口 8081，避免撞开发实例）"
 cd "$SERVER_DIR"
-MYSQL_URL="jdbc:mysql://127.0.0.1:3307/$DRILL_DB?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=Asia/Shanghai" \
+MYSQL_URL="jdbc:mysql://$MYSQL_HOST:$MYSQL_PORT/$DRILL_DB?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=Asia/Shanghai" \
   SERVER_PORT=8081 setsid nohup ./mvnw -B -o -pl ph-boot -am spring-boot:run > /tmp/undo-drill-boot.log 2>&1 < /dev/null &
+APP_PID=$!
 for _ in $(seq 1 40); do
   sleep 3
   if curl -sf -m 3 http://127.0.0.1:8081/actuator/health >/dev/null 2>&1; then break; fi
 done
 curl -sf -m 3 http://127.0.0.1:8081/actuator/health >/dev/null 2>&1 || { echo "应用没起来，见 /tmp/undo-drill-boot.log"; exit 1; }
-pkill -f "[s]pring-boot:run" || true
+# **只杀自己起的这一组**（setsid 让它成为进程组组长，负号杀整组）：
+# 用 `pkill -f spring-boot:run` 会连开发实例一起匹配——而且只杀到父进程、留下 fork 出的 JVM 占着 8080。
+kill -TERM -"$APP_PID" 2>/dev/null || kill -TERM "$APP_PID" 2>/dev/null || true
 sleep 3
 
 echo "== 3/5 造一份有代表性的数据（含「同一天多条防疫记录」——U4 的坑就在这里）"
@@ -51,6 +57,15 @@ INSERT IGNORE INTO health_score (pet_id, calc_date, total_score, included_dimens
 INSERT IGNORE INTO message (user_id, pet_id, kind, type, title, content, status, dedup_key, remind_at) VALUES (1, 1, 1, 1, 't', 'c', 1, 'drill-1', '2026-09-21 08:00:00');
 INSERT IGNORE INTO ai_consult (user_id, pet_id, trace_id, question_enc, risk_level, prompt_tokens, completion_tokens) VALUES (1, 1, 't', 'enc', 2, 100, 50);
 " >/dev/null
+
+# **校验数据真的进去了**：INSERT IGNORE 静默失败的话，演练会「通过」但什么都没验到——
+# 而 U4 的坑恰恰只有数据在的时候才暴露（禁止吞异常，这里同理）
+rows=$(sql -N "$DRILL_DB" -e "SELECT COUNT(*) FROM archive_record;" | grep -E "^[0-9]+$" | head -1)
+if [ "${rows:-0}" -lt 3 ]; then
+  echo "造数据失败（archive_record 只有 ${rows:-0} 行）——演练没有意义，中止"
+  exit 1
+fi
+echo "  数据就位：archive_record $rows 行"
 
 echo "== 4/5 从最新往下执行 undo（模拟人工三步：跑脚本 + 删历史行）"
 failed=0

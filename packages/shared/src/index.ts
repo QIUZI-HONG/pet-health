@@ -46,6 +46,7 @@ export type {
 
 // 请求层：统一响应解包、鉴权头、Token 过期静默刷新、网络错误重试一次（ADR-0012）
 export { http } from "./http/client";
+export type { RequestOptions } from "./http/client";
 export { ApiError } from "./http/errors";
 export { tokenStore } from "./http/tokenStore";
 export { onSessionExpired } from "./http/sessionEvents";

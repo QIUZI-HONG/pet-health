@@ -140,7 +140,7 @@ class InputAttackSurfaceTest extends IntegrationTestBase {
         String uploadUrl = presign.data().get(0).path("upload_url").asText();
 
         ResponseEntity<String> uploaded = rest.exchange(uploadUrl, HttpMethod.PUT,
-                new HttpEntity<>(png, jsonHeaders()), String.class);
+                new HttpEntity<>(png, pngHeaders()), String.class);
         assertThat(uploaded.getStatusCode().value())
                 .as("直传应落定，实际 %s：%s", uploaded.getStatusCode().value(), uploaded.getBody())
                 .isEqualTo(204);
@@ -171,7 +171,7 @@ class InputAttackSurfaceTest extends IntegrationTestBase {
         }
     }
 
-    private HttpHeaders jsonHeaders() {
+    private HttpHeaders pngHeaders() {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.IMAGE_PNG);
         return headers;

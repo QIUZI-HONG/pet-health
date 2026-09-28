@@ -51,11 +51,14 @@ mybatis-plus:
       logic-not-delete-value: 0
 
 management:
+  # 运维端点走**独立端口**（9090）：它们不随业务端口一起暴露，部署时只要不把 9090 映射出去，
+  # 指标与健康信息就只在内网可达。原先挂在业务端口上一个过滤器都不拦——实测无凭证
+  # `curl /actuator/prometheus` 直接 200，与 ai 服务「health 要内部令牌」的口径也不一致。
+  server:
+    port: ${MANAGEMENT_PORT:9090}
   endpoints:
     web:
       exposure:
-        # prometheus 是把指标交出去的端点（#121）：部署时它必须**只在监控网段可达**
-        # （走内网端口或前置代理限制），否则等于把内部指标公开——那是 #122 部署时的事，这里先写明
         include: health,info,prometheus
   endpoint:
     health:

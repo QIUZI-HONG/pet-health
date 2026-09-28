@@ -172,19 +172,32 @@ function traceHeaders(traceId?: string): Record<string, string> | undefined {
   return traceId ? { [TRACE_HEADER]: traceId } : undefined;
 }
 
+/**
+ * 可选参数收成一个对象。
+ *
+ * 为什么不是位置参数：它们都很少用（traceId 目前**没有任何调用方**，signal 只有四个页面用），
+ * 摊成四个位置参数后每个用到 signal 的调用点都得写 `undefined, undefined, signal` ——
+ * 那种调用点读起来像在填一张表，而不是在表达意图。
+ */
+export interface RequestOptions {
+  /** 前后端日志串联用；后端会把它当 `request_id` 回带。 */
+  traceId?: string;
+  /** 取消信号：页面用 `createLatestGuard` 领到的那个——发新请求会 abort 掉旧请求。 */
+  signal?: AbortSignal;
+}
+
 export const http = {
-  /** `signal`：页面用 `createLatestGuard` 领到的取消信号——新请求会把旧请求 abort 掉。 */
-  get<T>(url: string, params?: Record<string, unknown>, traceId?: string, signal?: AbortSignal): Promise<T> {
-    return send<T>({ method: "GET", url, params, headers: traceHeaders(traceId), signal });
+  get<T>(url: string, params?: Record<string, unknown>, options?: RequestOptions): Promise<T> {
+    return send<T>({ method: "GET", url, params, headers: traceHeaders(options?.traceId), signal: options?.signal });
   },
-  post<T>(url: string, body?: unknown, traceId?: string, signal?: AbortSignal): Promise<T> {
-    return send<T>({ method: "POST", url, data: body, headers: traceHeaders(traceId), signal });
+  post<T>(url: string, body?: unknown, options?: RequestOptions): Promise<T> {
+    return send<T>({ method: "POST", url, data: body, headers: traceHeaders(options?.traceId), signal: options?.signal });
   },
-  put<T>(url: string, body?: unknown, traceId?: string, signal?: AbortSignal): Promise<T> {
-    return send<T>({ method: "PUT", url, data: body, headers: traceHeaders(traceId), signal });
+  put<T>(url: string, body?: unknown, options?: RequestOptions): Promise<T> {
+    return send<T>({ method: "PUT", url, data: body, headers: traceHeaders(options?.traceId), signal: options?.signal });
   },
-  delete<T>(url: string, traceId?: string, signal?: AbortSignal): Promise<T> {
-    return send<T>({ method: "DELETE", url, headers: traceHeaders(traceId), signal });
+  delete<T>(url: string, options?: RequestOptions): Promise<T> {
+    return send<T>({ method: "DELETE", url, headers: traceHeaders(options?.traceId), signal: options?.signal });
   },
   /**
    * 直传原始字节（切片 #95 的上传路径）。

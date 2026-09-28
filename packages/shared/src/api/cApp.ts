@@ -67,7 +67,7 @@ export const cApp = {
 
   // ---- 宠物档案 ----
   listPets(includeDeleted = false, signal?: AbortSignal): Promise<Pet[]> {
-    return http.get<Pet[]>(`${BASE}/pets`, includeDeleted ? { deleted: true } : undefined, undefined, signal);
+    return http.get<Pet[]>(`${BASE}/pets`, includeDeleted ? { deleted: true } : undefined, { signal });
   },
   createPet(body: PetCreateRequest): Promise<Pet> {
     return http.post<Pet>(`${BASE}/pets`, body);
@@ -88,7 +88,7 @@ export const cApp = {
   // ---- 打卡（切片 #97，规则见 ADR-0018）----
   // date 是**业务日期**：省略=今天（当场录入），传过去 7 天内=补录。
   getCheckInDay(petId: number, date?: string, signal?: AbortSignal): Promise<CheckInDay> {
-    return http.get<CheckInDay>(`${BASE}/pets/${petId}/check-ins`, date ? { date } : undefined, undefined, signal);
+    return http.get<CheckInDay>(`${BASE}/pets/${petId}/check-ins`, date ? { date } : undefined, { signal });
   },
   submitCheckIn(petId: number, body: CheckInSubmitRequest): Promise<CheckInDay> {
     return http.post<CheckInDay>(`${BASE}/pets/${petId}/check-ins`, body);
@@ -97,17 +97,17 @@ export const cApp = {
     return http.delete<CheckInDay>(`${BASE}/pets/${petId}/check-ins/item?date=${date}&category=${category}`);
   },
   getCheckInStreak(petId: number, signal?: AbortSignal): Promise<CheckInStreak> {
-    return http.get<CheckInStreak>(`${BASE}/pets/${petId}/check-ins/streak`, undefined, undefined, signal);
+    return http.get<CheckInStreak>(`${BASE}/pets/${petId}/check-ins/streak`, undefined, { signal });
   },
 
   // ---- 健康评分（切片 #97，算法见 ADR-0018）----
   getHealthScore(petId: number, signal?: AbortSignal): Promise<HealthScore> {
-    return http.get<HealthScore>(`${BASE}/pets/${petId}/health-score`, undefined, undefined, signal);
+    return http.get<HealthScore>(`${BASE}/pets/${petId}/health-score`, undefined, { signal });
   },
 
   // ---- 防疫记录（切片 #99：疫苗/驱虫日期，疫苗提醒与评分「防疫」维度的数据源）----
   listEpidemicRecords(petId: number, signal?: AbortSignal): Promise<EpidemicRecord[]> {
-    return http.get<EpidemicRecord[]>(`${BASE}/pets/${petId}/epidemic-records`, undefined, undefined, signal);
+    return http.get<EpidemicRecord[]>(`${BASE}/pets/${petId}/epidemic-records`, undefined, { signal });
   },
   createEpidemicRecord(petId: number, body: EpidemicRecordInput): Promise<EpidemicRecord> {
     return http.post<EpidemicRecord>(`${BASE}/pets/${petId}/epidemic-records`, body);
@@ -126,10 +126,10 @@ export const cApp = {
       unread_only: params?.unreadOnly,
       page: params?.page,
       page_size: params?.pageSize,
-    }, undefined, signal);
+    }, { signal });
   },
   getMessageHighlights(limit = 6, signal?: AbortSignal): Promise<MessageView[]> {
-    return http.get<MessageView[]>(`${BASE}/messages/highlights`, { limit }, undefined, signal);
+    return http.get<MessageView[]>(`${BASE}/messages/highlights`, { limit }, { signal });
   },
   getUnreadCount(): Promise<{ unread: number; unread_reminders: number }> {
     return http.get(`${BASE}/messages/unread-count`);
@@ -143,8 +143,8 @@ export const cApp = {
   markAllMessagesRead(): Promise<{ unread: number }> {
     return http.put<{ unread: number }>(`${BASE}/messages/read-all`);
   },
-  listReminderSettings(): Promise<ReminderSetting[]> {
-    return http.get<ReminderSetting[]>(`${BASE}/messages/settings`);
+  listReminderSettings(signal?: AbortSignal): Promise<ReminderSetting[]> {
+    return http.get<ReminderSetting[]>(`${BASE}/messages/settings`, undefined, { signal });
   },
   updateReminderSetting(type: number, enabled: boolean): Promise<ReminderSetting[]> {
     return http.put<ReminderSetting[]>(`${BASE}/messages/settings`, { type, enabled });
@@ -171,7 +171,7 @@ export const cApp = {
   // 一次咨询 = 一次请求。红线命中时后端不经模型（结果里 red_flag_hits 非空）；
   // 到量只是提示，接口照常返回 —— 见 remaining_today 的说明。
   consultAi(petId: number, body: AiConsultRequest, signal?: AbortSignal): Promise<AiConsultView> {
-    return http.post<AiConsultView>(`${BASE}/pets/${petId}/ai-consults`, body, undefined, signal);
+    return http.post<AiConsultView>(`${BASE}/pets/${petId}/ai-consults`, body, { signal });
   },
 
   // ---- 文件（切片 #95，决策见 ADR-0020）----
