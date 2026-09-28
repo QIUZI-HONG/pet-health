@@ -18,6 +18,7 @@ const items: NavItem[] = [
   { name: "ai", label: "AI 管家", icon: "💬" },
   { name: "records", label: "健康档案", icon: "📋" },
   { name: "profile", label: "我的", icon: "👤" },
+  { name: "messages", label: "消息中心", icon: "🔔" },
 ];
 
 const route = useRoute();

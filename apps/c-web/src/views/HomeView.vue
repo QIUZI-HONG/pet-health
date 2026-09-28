@@ -16,14 +16,17 @@ import {
   type CheckInDay,
   type CheckInItemInput,
   type HealthScore,
+  type MessageView,
 } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
+import { useMessageStore } from "../stores/messages";
 import CheckInCard from "../components/CheckInCard.vue";
 import HealthScoreCard from "../components/HealthScoreCard.vue";
 import SessionGate from "../components/SessionGate.vue";
 import StateEmpty from "../components/states/StateEmpty.vue";
 
 const session = useSessionStore();
+const messageStore = useMessageStore();
 
 const pet = computed(() => session.activePet);
 
@@ -31,6 +34,8 @@ const score = ref<HealthScore | null>(null);
 const today = ref<CheckInDay | null>(null);
 const yesterday = ref<CheckInDay | null>(null);
 const streakDays = ref(0);
+/** 首页强提醒流：未读的健康提醒，按风险等级与指向时间排序（交付文档 4.16.2 画的 6 张卡）。 */
+const reminders = ref<MessageView[]>([]);
 const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref("");
@@ -63,14 +68,19 @@ async function load(petId: number): Promise<void> {
   loading.value = true;
   errorMessage.value = "";
   try {
-    const [scoreData, dayData, streakData] = await Promise.all([
+    const [scoreData, dayData, streakData, remindersData] = await Promise.all([
       cApp.getHealthScore(petId),
       cApp.getCheckInDay(petId),
       cApp.getCheckInStreak(petId),
+      cApp.getMessageHighlights(6),
     ]);
     score.value = scoreData;
     today.value = dayData;
     streakDays.value = streakData.streak_days;
+    reminders.value = remindersData;
+    // 这一页的强提醒流会**惰性补算**提醒，所以加载完要刷新一次未读角标——
+    // 未读数接口本身不补算（角标每次切页都拉，不该写库），不刷新的话角标会停在旧值（踩过）
+    await messageStore.refresh();
     // 昨天只为「和昨天一样」按钮服务；失败不影响主流程
     yesterday.value = await cApp.getCheckInDay(petId, dayBefore(dayData.date)).catch(() => null);
   } catch (error) {
@@ -86,13 +96,17 @@ async function submitCheckIn(items: CheckInItemInput[]): Promise<void> {
   errorMessage.value = "";
   try {
     today.value = await cApp.submitCheckIn(pet.value.id, { date: today.value.date, items });
-    // 打卡会重算评分，所以两条都要刷新
-    const [scoreData, streakData] = await Promise.all([
+    // 打卡会重算评分、也可能生成异常提醒，所以三条都要刷新
+    const [scoreData, streakData, remindersData] = await Promise.all([
       cApp.getHealthScore(pet.value.id),
       cApp.getCheckInStreak(pet.value.id),
+      cApp.getMessageHighlights(6),
     ]);
     score.value = scoreData;
     streakDays.value = streakData.streak_days;
+    reminders.value = remindersData;
+    // 打卡可能即时生成异常提醒，角标要跟着动（否则铃铛还是旧的）
+    await messageStore.refresh();
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "打卡失败，请稍后重试";
   } finally {
@@ -164,10 +178,38 @@ watch(
         <div class="ph-stack">
           <article class="ph-card">
             <h3 class="ph-card__title">需要你关注</h3>
+            <ul v-if="reminders.length" class="ph-reminders">
+              <li v-for="message in reminders" :key="message.id" class="ph-reminders__item">
+                <span
+                  class="ph-reminders__bar"
+                  :class="{
+                    'ph-reminders__bar--red': message.risk_level === 3,
+                    'ph-reminders__bar--yellow': message.risk_level === 2,
+                    'ph-reminders__bar--green': !message.risk_level || message.risk_level <= 1,
+                  }"
+                  aria-hidden="true"
+                />
+                <div class="ph-reminders__body">
+                  <p class="ph-reminders__title">{{ message.title }}</p>
+                  <p v-if="message.content" class="ph-reminders__content">{{ message.content }}</p>
+                  <div class="ph-reminders__actions">
+                    <RouterLink
+                      v-if="message.action_hint && message.action_target"
+                      class="ph-button ph-button--text"
+                      :to="message.action_target"
+                    >
+                      {{ message.action_hint }}
+                    </RouterLink>
+                    <RouterLink class="ph-button ph-button--text" :to="{ name: 'messages' }">看全部消息</RouterLink>
+                  </div>
+                </div>
+              </li>
+            </ul>
             <StateEmpty
+              v-else
               icon="🔔"
               title="暂时一切正常"
-              description="疫苗到期、饮水异常这类提醒会出现在这里。"
+              description="疫苗到期、体重异常这类提醒会自动出现在这里。"
             />
           </article>
 
@@ -232,6 +274,62 @@ watch(
 
 .ph-quick__label {
   font-weight: 600;
+}
+
+.ph-reminders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ph-space-3);
+}
+
+.ph-reminders__item {
+  display: flex;
+  gap: var(--ph-space-3);
+}
+
+.ph-reminders__bar {
+  width: 4px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--ph-color-border);
+}
+
+.ph-reminders__bar--red {
+  background: var(--ph-color-danger);
+}
+
+.ph-reminders__bar--yellow {
+  background: var(--ph-color-orange);
+}
+
+.ph-reminders__bar--green {
+  background: var(--ph-color-primary);
+}
+
+.ph-reminders__body {
+  min-width: 0;
+}
+
+.ph-reminders__title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.ph-reminders__content {
+  margin: var(--ph-space-1) 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ph-color-text-sub);
+}
+
+.ph-reminders__actions {
+  display: flex;
+  gap: var(--ph-space-2);
+  margin-top: var(--ph-space-1);
 }
 
 .ph-pet-list {

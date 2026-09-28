@@ -31,6 +31,7 @@ vi.mock("@pet-health/shared", async () => {
       register: vi.fn(),
       logout: vi.fn(),
       activatePet: vi.fn(),
+      getUnreadCount: vi.fn().mockResolvedValue({ unread: 0, unread_reminders: 0 }),
       createPet: vi.fn(),
       updatePet: vi.fn(),
       deletePet: vi.fn(),
@@ -104,7 +105,11 @@ describe("会话失败的分类", () => {
 
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: "/", name: "home", component: { template: "<div/>" } }],
+      routes: [
+        { path: "/", name: "home", component: { template: "<div/>" } },
+        // 顶栏的铃铛指向消息中心，路由表里没有它会渲染失败
+        { path: "/messages", name: "messages", component: { template: "<div/>" } },
+      ],
     });
     await router.push("/");
     await router.isReady();

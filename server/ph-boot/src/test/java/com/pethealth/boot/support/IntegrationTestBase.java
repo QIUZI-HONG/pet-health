@@ -79,6 +79,11 @@ public abstract class IntegrationTestBase {
      */
     @BeforeEach
     protected void cleanDatabase() {
+        // 顺序：先清业务数据再清主表（没有物理外键，但这个顺序读起来最清楚）
+        jdbc.execute("DELETE FROM `message`");
+        jdbc.execute("DELETE FROM `reminder_setting`");
+        jdbc.execute("DELETE FROM `archive_record`");
+        jdbc.execute("DELETE FROM `health_score`");
         jdbc.execute("DELETE FROM `pet`");
         jdbc.execute("DELETE FROM `user`");
         redis.getConnectionFactory().getConnection().serverCommands().flushDb();

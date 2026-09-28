@@ -4,13 +4,41 @@
  *
  * 通知入口先留着不做跳转——提醒体系（#56 / #99）还没实现，做成假的红点会骗人。
  */
+import { onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useSessionStore } from "../stores/session";
+import { useMessageStore } from "../stores/messages";
 import PetSwitcher from "./PetSwitcher.vue";
 
 const session = useSessionStore();
+const messages = useMessageStore();
 const route = useRoute();
 const router = useRouter();
+
+onMounted(() => {
+  if (session.hasSession) {
+    void messages.refresh();
+  }
+});
+// 路由变化时刷一次（看完消息回来角标要跟着掉）；登录态变化时重置
+watch(
+  () => route.fullPath,
+  () => {
+    if (session.hasSession) {
+      void messages.refresh();
+    }
+  },
+);
+watch(
+  () => session.hasSession,
+  (hasSession) => {
+    if (hasSession) {
+      void messages.refresh();
+    } else {
+      messages.clear();
+    }
+  },
+);
 
 async function onLogout(): Promise<void> {
   await session.logout();
@@ -26,7 +54,12 @@ async function onLogout(): Promise<void> {
     </div>
 
     <div class="ph-topbar__right">
-      <span class="ph-topbar__notice" title="提醒体系尚未实现（#56 / #99）">🔔</span>
+      <RouterLink class="ph-topbar__notice" :to="{ name: 'messages' }" title="消息中心">
+        🔔
+        <span v-if="messages.unread > 0" class="ph-topbar__badge">
+          {{ messages.unread > 99 ? "99+" : messages.unread }}
+        </span>
+      </RouterLink>
       <!-- 按 hasSession 而不是 isLoggedIn：后端不可用时（status=error）会话还在，
            这时显示「登录」会与内容区的「服务异常，请重新加载」自相矛盾 -->
       <template v-if="session.hasSession">
@@ -66,9 +99,24 @@ async function onLogout(): Promise<void> {
 }
 
 .ph-topbar__notice {
+  position: relative;
   font-size: 16px;
-  opacity: 0.45;
-  cursor: not-allowed;
+  color: var(--ph-color-text);
+  text-decoration: none;
+}
+
+.ph-topbar__badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  min-width: 16px;
+  padding: 0 4px;
+  background: var(--ph-color-danger);
+  border-radius: 999px;
+  color: var(--ph-color-surface);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
 }
 
 .ph-topbar__user {

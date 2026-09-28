@@ -23,6 +23,15 @@ export type CheckInSubmitRequest = Schemas["CheckInSubmitRequest"];
 export type CheckInStreak = Schemas["CheckInStreak"];
 export type HealthScore = Schemas["HealthScore"];
 export type HealthScoreDimension = Schemas["HealthScoreDimension"];
+export type MessageView = Schemas["MessageView"];
+/**
+ * 消息列表的分页结构：信封用契约生成的 `PageResult`，只有 `list` 的元素类型在契约里是 unknown，
+ * 这里收窄成 `MessageView`——**不手写整个分页类型**（AGENTS.md：前端不手写接口类型）。
+ */
+export type MessagePage = Omit<Schemas["PageResult"], "list"> & { list: MessageView[] };
+export type ReminderSetting = Schemas["ReminderSetting"];
+export type EpidemicRecord = Schemas["EpidemicRecord"];
+export type EpidemicRecordInput = Schemas["EpidemicRecordInput"];
 
 const BASE = "/api/v1/app";
 
@@ -87,5 +96,49 @@ export const cApp = {
   // ---- 健康评分（切片 #97，算法见 ADR-0018）----
   getHealthScore(petId: number): Promise<HealthScore> {
     return http.get<HealthScore>(`${BASE}/pets/${petId}/health-score`);
+  },
+
+  // ---- 防疫记录（切片 #99：疫苗/驱虫日期，疫苗提醒与评分「防疫」维度的数据源）----
+  listEpidemicRecords(petId: number): Promise<EpidemicRecord[]> {
+    return http.get<EpidemicRecord[]>(`${BASE}/pets/${petId}/epidemic-records`);
+  },
+  createEpidemicRecord(petId: number, body: EpidemicRecordInput): Promise<EpidemicRecord> {
+    return http.post<EpidemicRecord>(`${BASE}/pets/${petId}/epidemic-records`, body);
+  },
+  deleteEpidemicRecord(petId: number, recordId: number): Promise<void> {
+    return http.delete<void>(`${BASE}/pets/${petId}/epidemic-records/${recordId}`);
+  },
+
+  // ---- 消息中心（切片 #99，决策见 ADR-0019）----
+  // 读取会惰性补算一次提醒，所以这几个接口拿到的一定是最新的
+  listMessages(params?: { kind?: number; unreadOnly?: boolean; page?: number; pageSize?: number }):
+    Promise<MessagePage> {
+    return http.get<MessagePage>(`${BASE}/messages`, {
+      kind: params?.kind,
+      unread_only: params?.unreadOnly,
+      page: params?.page,
+      page_size: params?.pageSize,
+    });
+  },
+  getMessageHighlights(limit = 6): Promise<MessageView[]> {
+    return http.get<MessageView[]>(`${BASE}/messages/highlights`, { limit });
+  },
+  getUnreadCount(): Promise<{ unread: number; unread_reminders: number }> {
+    return http.get(`${BASE}/messages/unread-count`);
+  },
+  markMessageRead(messageId: number): Promise<MessageView> {
+    return http.put<MessageView>(`${BASE}/messages/${messageId}/read`);
+  },
+  deleteMessage(messageId: number): Promise<void> {
+    return http.delete<void>(`${BASE}/messages/${messageId}`);
+  },
+  markAllMessagesRead(): Promise<{ unread: number }> {
+    return http.put<{ unread: number }>(`${BASE}/messages/read-all`);
+  },
+  listReminderSettings(): Promise<ReminderSetting[]> {
+    return http.get<ReminderSetting[]>(`${BASE}/messages/settings`);
+  },
+  updateReminderSetting(type: number, enabled: boolean): Promise<ReminderSetting[]> {
+    return http.put<ReminderSetting[]>(`${BASE}/messages/settings`, { type, enabled });
   },
 };

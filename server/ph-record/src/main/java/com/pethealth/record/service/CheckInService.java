@@ -8,10 +8,13 @@ import com.pethealth.api.app.CheckInStreak;
 import com.pethealth.api.app.CheckInSubmitRequest;
 import com.pethealth.common.error.BusinessException;
 import com.pethealth.common.time.AppTime;
+import com.pethealth.common.util.JsonFields;
 import com.pethealth.record.domain.ArchiveRecord;
 import com.pethealth.record.domain.Pet;
+import com.pethealth.record.event.CheckInRecordedEvent;
 import com.pethealth.record.mapper.ArchiveRecordMapper;
 import com.pethealth.record.mapper.PetMapper;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,13 +65,16 @@ public class CheckInService {
     private final ArchiveRecordMapper recordMapper;
     private final PetMapper petMapper;
     private final HealthScoreService healthScoreService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public CheckInService(ArchiveRecordMapper recordMapper,
                           PetMapper petMapper,
-                          HealthScoreService healthScoreService) {
+                          HealthScoreService healthScoreService,
+                          ApplicationEventPublisher eventPublisher) {
         this.recordMapper = recordMapper;
         this.petMapper = petMapper;
         this.healthScoreService = healthScoreService;
+        this.eventPublisher = eventPublisher;
     }
 
     /** 查某一天的打卡状态。不传日期则按服务器当天（Asia/Shanghai）。 */
@@ -104,15 +110,24 @@ public class CheckInService {
      */
     @Transactional
     public CheckInDay submit(long userId, long petId, CheckInSubmitRequest request) {
-        requireOwnedPet(userId, petId);
+        Pet pet = requireOwnedPet(userId, petId);
         LocalDate date = LocalDate.parse(request.date());
         validateWindow(date);
         boolean backfilled = date.isBefore(AppTime.today());
 
+        List<Integer> abnormalCategories = new ArrayList<>();
         for (CheckInItemInput item : request.items()) {
             upsert(userId, petId, date, item, backfilled);
+            if (Boolean.TRUE.equals(item.abnormal())) {
+                abnormalCategories.add(item.category());
+            }
         }
         recalculateScores(petId, date);
+        if (!abnormalCategories.isEmpty()) {
+            // 发事件而不是直接调提醒模块：档案模块不该知道提醒存在（ADR-0006）
+            eventPublisher.publishEvent(new CheckInRecordedEvent(
+                    userId, petId, pet.getName(), date, abnormalCategories));
+        }
         return day(userId, petId, date);
     }
 
@@ -196,12 +211,19 @@ public class CheckInService {
             record.setAbnormal(abnormal ? 1 : 0);
             record.setBackfilled(backfilled ? 1 : 0);
             record.setSource(ArchiveRecord.SOURCE_USER);
+            // 体重的数值另存一列：趋势提醒要按它算变化幅度，不能让查询去解析 JSON
+            if (item.category() == CATEGORY_WEIGHT) {
+                record.setNumericValue(parseWeight(item.value()));
+            }
             recordMapper.insert(record);
             return;
         }
 
         existing.setContent(content);
         existing.setAbnormal(abnormal ? 1 : 0);
+        if (item.category() == CATEGORY_WEIGHT) {
+            existing.setNumericValue(parseWeight(item.value()));
+        }
         // 补录标记一旦为真就不再抹掉：这条记录确实是被补录的，事后改成「当场录入」是篡改
         if (backfilled) {
             existing.setBackfilled(1);
@@ -214,53 +236,35 @@ public class CheckInService {
      * 其余是选项），而交付文档的 DDL 本来就是 {@code content TEXT}。
      */
     private String buildContent(CheckInItemInput item) {
-        StringBuilder json = new StringBuilder("{\"status\":\"");
-        json.append(Boolean.TRUE.equals(item.abnormal()) ? "abnormal" : "normal").append('"');
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("status", Boolean.TRUE.equals(item.abnormal()) ? "abnormal" : "normal");
         if (item.value() != null && !item.value().isBlank()) {
-            json.append(",\"value\":\"").append(escape(item.value())).append('"');
+            fields.put("value", item.value());
         }
         if (item.note() != null && !item.note().isBlank()) {
-            json.append(",\"note\":\"").append(escape(item.note())).append('"');
+            fields.put("note", item.note());
         }
-        return json.append('}').toString();
+        return JsonFields.write(fields);
     }
 
-    private String escape(String raw) {
-        return raw.replace("\\", "\\\\").replace("\"", "\\\"");
+    /** 体重取值解析：解析不了就留空（不能因为一个数字格式问题让整次打卡失败）。 */
+    private java.math.BigDecimal parseWeight(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return new java.math.BigDecimal(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private String valueOf(ArchiveRecord record) {
-        return extract(record.getContent(), "value");
+        return JsonFields.read(record.getContent(), "value");
     }
 
     private String noteOf(ArchiveRecord record) {
-        return extract(record.getContent(), "note");
-    }
-
-    /** 极简 JSON 取值：只认我们自己写进去的两个字段，不引 JSON 库做通用解析。 */
-    private String extract(String content, String field) {
-        if (content == null) {
-            return null;
-        }
-        String key = "\"" + field + "\":\"";
-        int start = content.indexOf(key);
-        if (start < 0) {
-            return null;
-        }
-        int from = start + key.length();
-        StringBuilder value = new StringBuilder();
-        for (int i = from; i < content.length(); i++) {
-            char ch = content.charAt(i);
-            if (ch == '\\' && i + 1 < content.length()) {
-                value.append(content.charAt(i + 1));
-                i++;
-            } else if (ch == '"') {
-                break;
-            } else {
-                value.append(ch);
-            }
-        }
-        return value.toString();
+        return JsonFields.read(record.getContent(), "note");
     }
 
     private Map<Integer, ArchiveRecord> recordsOfDay(long petId, LocalDate date) {

@@ -48,7 +48,7 @@ async function mountShell(path: string): Promise<{ router: Router; wrapper: Retu
   return { router, wrapper };
 }
 
-const NAV_LABELS = ["首页", "服务", "AI 管家", "健康档案", "我的"];
+const NAV_LABELS = ["首页", "服务", "AI 管家", "健康档案", "我的", "消息中心"];
 
 describe("C 端框架与导航", () => {
   beforeEach(() => {

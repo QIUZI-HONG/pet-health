@@ -3,6 +3,7 @@ package com.pethealth.record.domain;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.pethealth.common.persistence.BaseEntity;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
@@ -21,6 +22,10 @@ public class ArchiveRecord extends BaseEntity {
     public static final int CATEGORY_HYGIENE = 6;
     public static final int CATEGORY_EPIDEMIC = 7;
 
+    /** 防疫分项的两种子类型（存在 content.kind 里）。 */
+    public static final String EPIDEMIC_VACCINE = "vaccine";
+    public static final String EPIDEMIC_DEWORM = "deworm";
+
     public static final int SOURCE_USER = 1;
     public static final int SOURCE_AI = 2;
     public static final int SOURCE_PROVIDER = 3;
@@ -29,6 +34,15 @@ public class ArchiveRecord extends BaseEntity {
     private Long userId;
     /** 业务日期：当场录入=当天，补录=补的那一天。 */
     private LocalDate recordDate;
+
+    /**
+     * 下次应接种日（防疫分项专用；空 = 不提醒）。
+     * 提醒规则要按它查「7 天内到期」，所以必须是独立的列而不是塞在 content 的 JSON 里。
+     */
+    private LocalDate dueOn;
+
+    /** 数值型分项的取值（体重等），趋势提醒要算变化幅度。 */
+    private BigDecimal numericValue;
     private Integer category;
     private String content;
     private Integer score;
@@ -59,6 +73,22 @@ public class ArchiveRecord extends BaseEntity {
 
     public void setRecordDate(LocalDate recordDate) {
         this.recordDate = recordDate;
+    }
+
+    public LocalDate getDueOn() {
+        return dueOn;
+    }
+
+    public void setDueOn(LocalDate dueOn) {
+        this.dueOn = dueOn;
+    }
+
+    public BigDecimal getNumericValue() {
+        return numericValue;
+    }
+
+    public void setNumericValue(BigDecimal numericValue) {
+        this.numericValue = numericValue;
     }
 
     public Integer getCategory() {

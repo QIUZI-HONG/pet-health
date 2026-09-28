@@ -20,5 +20,16 @@
       <artifactId>ph-common</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-api</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- 提醒规则要读宠物、防疫到期与体重趋势——走档案模块暴露的接口，不直连它的表（ADR-0006） -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-record</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 </project>
