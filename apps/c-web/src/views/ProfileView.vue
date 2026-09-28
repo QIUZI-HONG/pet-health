@@ -10,6 +10,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import { ApiError, cApp, formatDate, genderLabel, speciesLabel, type Pet } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
+import ComplianceCard from "../components/ComplianceCard.vue";
 import SessionGate from "../components/SessionGate.vue";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import StateError from "../components/states/StateError.vue";
@@ -296,6 +297,9 @@ function restorableUntil(pet: Pet): string {
       </div>
 
       <div class="ph-stack">
+        <!-- 合规（切片 #74）：条款入口 + 数据导出 + 注销 -->
+        <ComplianceCard />
+
         <article class="ph-card">
           <h3 class="ph-card__title">账号</h3>
           <ul class="ph-facts">

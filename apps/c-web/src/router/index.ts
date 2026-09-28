@@ -45,6 +45,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: "我的" },
       },
       {
+        path: "legal/:code",
+        name: "legal",
+        component: () => import("../views/LegalView.vue"),
+        meta: { title: "条款与说明" },
+      },
+      {
         path: "messages",
         name: "messages",
         component: () => import("../views/MessagesView.vue"),

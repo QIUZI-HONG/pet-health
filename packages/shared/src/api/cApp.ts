@@ -32,6 +32,8 @@ export type MessagePage = Omit<Schemas["PageResult"], "list"> & { list: MessageV
 export type ReminderSetting = Schemas["ReminderSetting"];
 export type EpidemicRecord = Schemas["EpidemicRecord"];
 export type EpidemicRecordInput = Schemas["EpidemicRecordInput"];
+export type AccountExportView = Schemas["AccountExportView"];
+export type ComplianceDocumentView = Schemas["ComplianceDocumentView"];
 export type AiConsultRequest = Schemas["AiConsultRequest"];
 export type AiConsultView = Schemas["AiConsultView"];
 export type FilePresignRequest = Schemas["FilePresignRequest"];
@@ -145,6 +147,23 @@ export const cApp = {
   },
   updateReminderSetting(type: number, enabled: boolean): Promise<ReminderSetting[]> {
     return http.put<ReminderSetting[]>(`${BASE}/messages/settings`, { type, enabled });
+  },
+
+  // ---- 合规（切片 #74，决策见 ADR-0025）----
+  // 文档正文由运营/法务在库里维护；`is_placeholder` 为 true 时界面必须显示「待法务定稿」，
+  // 不能把占位文字当生效条款展示。
+  listComplianceDocuments(): Promise<ComplianceDocumentView[]> {
+    return http.get<ComplianceDocumentView[]>(`${BASE}/compliance/documents`);
+  },
+  getComplianceDocument(code: string): Promise<ComplianceDocumentView> {
+    return http.get<ComplianceDocumentView>(`${BASE}/compliance/documents/${code}`);
+  },
+  exportAccount(): Promise<AccountExportView> {
+    return http.get<AccountExportView>(`${BASE}/users/me/export`);
+  },
+  // 注销：接口幂等，**确认是界面的事**（调用方必须先让用户确认一次）
+  deactivateAccount(): Promise<void> {
+    return http.post<void>(`${BASE}/users/me/deactivation`);
   },
 
   // ---- AI 咨询（切片 #98，决策见 ADR-0021/0024）----

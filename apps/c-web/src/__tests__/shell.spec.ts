@@ -63,7 +63,17 @@ describe("C 端框架与导航", () => {
 
     // 反向校验：真路由表里挂在框架下的子路由，必须都在左栏里
     const shell = realRoutes.find((route) => route.path === "/");
-    const childTitles = (shell?.children ?? []).map((child) => (child.meta?.title as string) ?? "");
+    // 次级页：从「我的」等入口进入，**故意不在左栏**。登记在这里的路径也必须真的存在，
+    // 否则白名单会慢慢烂掉（删了页面还留着名字，谁也发现不了）。
+    // 注意这里写的是**子路由的相对路径**（与路由表里的声明一致，不带前导斜杠）
+    const SECONDARY_PATHS = ["legal/:code"];
+    const children = shell?.children ?? [];
+    for (const path of SECONDARY_PATHS) {
+      expect(children.some((child) => child.path === path), `次级页 ${path} 不在路由表里了`).toBe(true);
+    }
+    const childTitles = children
+      .filter((child) => !SECONDARY_PATHS.includes(child.path))
+      .map((child) => (child.meta?.title as string) ?? "");
     expect(childTitles).toEqual(NAV_LABELS);
   });
 
