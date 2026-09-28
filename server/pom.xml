@@ -68,6 +68,7 @@
     <module>ph-catalog</module>
     <module>ph-order</module>
     <module>ph-record</module>
+    <module>ph-file</module>
     <module>ph-ai</module>
     <module>ph-reminder</module>
     <module>ph-privilege</module>

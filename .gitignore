@@ -36,6 +36,12 @@ coverage/
 !.vscode/extensions.json
 *.swp
 
+# ---- 运行时产生的数据 ----
+# 文件上传默认落在进程工作目录下（app.file.root，默认 data/files）：
+# 本地上传的照片、测试产生的图片，都不进版本库
+server/ph-boot/data/
+server/data/
+
 # ---- 本地环境 ----
 .env
 .env.local

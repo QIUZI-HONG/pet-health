@@ -168,6 +168,24 @@ export const http = {
   delete<T>(url: string, traceId?: string): Promise<T> {
     return send<T>({ method: "DELETE", url, headers: traceHeaders(traceId) });
   },
+  /**
+   * 直传原始字节（切片 #95 的上传路径）。
+   *
+   * **不走统一响应信封**：目标是我们自己签发的 `open` 域地址（将来是对象存储），成功返回 204 空体。
+   * 所以这里刻意绕开 `send`——按 `code === 0` 解包会把一个正常的 204 当成结构错误。
+   *
+   * 带 `Authorization` 也无妨（后端那一组接口不要求登录，授权在签名里），但**不依赖它**：
+   * 将来换成对象存储的直传地址时，多带一个头会被对方拒绝（签名不匹配），所以这里不带头。
+   */
+  async putRaw(url: string, body: Blob): Promise<void> {
+    await axios.put(url, body, {
+      timeout: UPLOAD_TIMEOUT_MS,
+      headers: { "Content-Type": body.type || "application/octet-stream" },
+    });
+  },
 };
+
+/** 上传超时比普通请求长：一张 10MB 的图在慢网络上 15 秒不够（后端的上传凭证有效期 30 分钟）。 */
+const UPLOAD_TIMEOUT_MS = 120_000;
 
 export type { Envelope };

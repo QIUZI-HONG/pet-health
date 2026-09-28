@@ -13,6 +13,11 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 /**
  * 集成测试基类：真实 MySQL 8.4 + Redis 8 + 真实 HTTP（ADR-0014）。
  *
@@ -58,7 +63,23 @@ public abstract class IntegrationTestBase {
         registry.add("app.auth.jwt-secret", () -> "integration-test-jwt-secret-not-for-real-use-0123456789");
         registry.add("app.crypto.enc-key", () -> TEST_ENC_KEY);
         registry.add("app.crypto.hmac-key", () -> TEST_HMAC_KEY);
+        // 文件落在一个随 JVM 进程生灭的临时目录：测试之间不互相污染，也不往工作目录里堆东西
+        registry.add("app.file.root", IntegrationTestBase::temporaryStorageRoot);
     }
+
+    /** 测试用的文件根目录；JVM 退出时由临时目录清理策略回收。 */
+    private static String temporaryStorageRoot() {
+        try {
+            if (STORAGE_ROOT == null) {
+                STORAGE_ROOT = Files.createTempDirectory("pet-health-files-test");
+            }
+            return STORAGE_ROOT.toString();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static Path STORAGE_ROOT;
 
     /** base64 的 32 字节，仅供测试。 */
     static final String TEST_ENC_KEY = "aW50ZWdyYXRpb24tdGVzdC1lbmMta2V5LTMyYnl0ZXM=";
@@ -80,6 +101,7 @@ public abstract class IntegrationTestBase {
     @BeforeEach
     protected void cleanDatabase() {
         // 顺序：先清业务数据再清主表（没有物理外键，但这个顺序读起来最清楚）
+        jdbc.execute("DELETE FROM `file_object`");
         jdbc.execute("DELETE FROM `message`");
         jdbc.execute("DELETE FROM `reminder_setting`");
         jdbc.execute("DELETE FROM `archive_record`");

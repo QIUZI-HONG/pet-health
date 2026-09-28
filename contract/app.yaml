@@ -2,9 +2,9 @@
 #
 # 消费方：C 端（桌面 Web）。公共组件（统一响应 / 错误码 / 分页）见 common.yaml。
 #
-# 状态：**账号与宠物档案已定**（切片 #94，第一块打通 HTTP → 领域 → 数据库的接口）。
+# 状态：**账号与宠物档案（#94）、打卡与评分（#97）、提醒与消息（#99）、文件（#95）已定义**。
 # 其余业务接口待地图上未裁决的决策：订单交易 #77（且卡在支付语义澄清）、券池 #53、
-# 核销 #55、裂变 #54、提醒 #56；AI 对话与分诊见 docs/design/ai-service.md。
+# 核销 #55、裂变 #54、标准目录 #75、服务者入驻 #78、AI 对话与分诊见 docs/design/ai-service.md。
 #
 # 契约先于代码（ADR-0005）：**前端类型由契约生成**（pnpm --filter @pet-health/shared gen:api），
 # **后端 DTO 手写**但必须与契约对齐。改了这里就要重跑生成，CI 会检查生成物是否同步。
@@ -42,6 +42,8 @@ tags:
     description: 档案记录（本期只做防疫：疫苗 / 驱虫日期）
   - name: message
     description: 消息中心（健康提醒 + 业务通知，决策见 ADR-0019）
+  - name: file
+    description: 文件元数据与上传凭证（切片 #95，决策见 ADR-0020；**字节不经这里**）
 
 security:
   - bearerAuth: []
@@ -755,6 +757,88 @@ paths:
         "404":
           $ref: "./common.yaml#/components/responses/NotFound"
 
+  /files/presign:
+    post:
+      tags: [file]
+      summary: 申请上传凭证（一次可多张）
+      description: |
+        返回每个文件的**直传地址**（带签名与有效期）——浏览器把字节直接 PUT 到那里，不经业务接口。
+
+        声明的 `mime` 与 `size_bytes` 只用于提前拦截；**落库以魔数判定与实际字节数为准**（ADR-0020）。
+
+        一次最多 9 张；上传完成后用 `file_id` 关联业务（打卡 / 防疫 / 证件 / 咨询 / 护理）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FilePresignRequest" }
+      responses:
+        "200":
+          description: 每个文件一条凭证
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/FilePresignView" }
+
+  /files:
+    get:
+      tags: [file]
+      summary: 我的文件列表
+      description: 只返回已落定的原图（缩略图是其派生物，不单独出现在列表里）。`url` 是签名读地址，有有效期。
+      parameters:
+        - name: pet_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: biz_type
+          in: query
+          description: 按用途过滤：checkin / epidemic / profile / ai_consult / care
+          schema: { type: string }
+      responses:
+        "200":
+          description: 文件列表（按 id 倒序，即最近上传在前）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/FileView" }
+
+  /files/{file_id}:
+    get:
+      tags: [file]
+      summary: 单个文件
+      responses:
+        "200":
+          description: 文件元数据（含签名读地址）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/FileView" }
+    delete:
+      tags: [file]
+      summary: 删除文件（软删，连同缩略图）
+      description: 字节一并从存储里删掉。**别人的文件按不存在处理**（40400）。
+      responses:
+        "200":
+          description: 已删除
+          content:
+            application/json:
+              schema: { $ref: "./common.yaml#/components/schemas/ApiResponse" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1181,3 +1265,69 @@ components:
       properties:
         type: { type: integer }
         enabled: { type: boolean }
+
+    FilePresignRequest:
+      type: object
+      required: [biz_type, items]
+      properties:
+        biz_type:
+          type: string
+          description: 业务用途。收窄取值是为了让「照片挂在哪」可查
+          enum: [checkin, epidemic, profile, ai_consult, care]
+        pet_id:
+          type: integer
+          format: int64
+          description: 关联宠物；证件类可以不挂
+        items:
+          type: array
+          minItems: 1
+          maxItems: 9
+          items:
+            type: object
+            required: [mime]
+            properties:
+              mime:
+                type: string
+                description: 客户端声明的类型，**只用于提前拦截**；落库以魔数判定为准
+                enum: [image/jpeg, image/png]
+              size_bytes:
+                type: integer
+                format: int64
+                description: 客户端声明的体积，同上
+              role:
+                type: string
+                description: original 原图 / closeup 局部特写（视觉模型要看清局部时另传一张）
+                enum: [original, closeup]
+                default: original
+
+    FilePresignView:
+      type: object
+      required: [file_id, upload_url, expires_at, max_bytes]
+      properties:
+        file_id: { type: integer, format: int64 }
+        upload_url:
+          type: string
+          description: 直传地址（相对地址，含签名与有效期）。PUT 到这个地址送字节
+          example: "/api/v1/open/files/12/content?token=up.1790600000.9f2c..."
+        expires_at: { type: string, example: "2026-09-28 21:30:00" }
+        max_bytes: { type: integer, format: int64, description: 单文件上限（字节）。前端可在选择阶段先拦一道 }
+        role: { type: string }
+
+    FileView:
+      type: object
+      required: [id, biz_type, role, mime, size_bytes]
+      properties:
+        id: { type: integer, format: int64 }
+        pet_id: { type: integer, format: int64, nullable: true }
+        biz_type: { type: string }
+        role: { type: string, enum: [original, closeup, thumb] }
+        mime: { type: string, enum: [image/jpeg, image/png] }
+        size_bytes: { type: integer, format: int64 }
+        width: { type: integer, nullable: true }
+        height: { type: integer, nullable: true }
+        url:
+          type: string
+          description: 原图的签名读地址（相对地址，有有效期）。文件私有，**前端不要缓存这个地址**
+        thumb_url:
+          type: string
+          description: 缩略图签名读地址；缩略图生成失败时回落到原图地址

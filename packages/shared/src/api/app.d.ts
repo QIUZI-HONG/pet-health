@@ -1285,6 +1285,161 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/files/presign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 申请上传凭证（一次可多张）
+         * @description 返回每个文件的**直传地址**（带签名与有效期）——浏览器把字节直接 PUT 到那里，不经业务接口。
+         *
+         *     声明的 `mime` 与 `size_bytes` 只用于提前拦截；**落库以魔数判定与实际字节数为准**（ADR-0020）。
+         *
+         *     一次最多 9 张；上传完成后用 `file_id` 关联业务（打卡 / 防疫 / 证件 / 咨询 / 护理）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FilePresignRequest"];
+                };
+            };
+            responses: {
+                /** @description 每个文件一条凭证 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["FilePresignView"][];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的文件列表
+         * @description 只返回已落定的原图（缩略图是其派生物，不单独出现在列表里）。`url` 是签名读地址，有有效期。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    pet_id?: number;
+                    /** @description 按用途过滤：checkin / epidemic / profile / ai_consult / care */
+                    biz_type?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 文件列表（按 id 倒序，即最近上传在前） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["FileView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 单个文件 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 文件元数据（含签名读地址） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["FileView"];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /**
+         * 删除文件（软删，连同缩略图）
+         * @description 字节一并从存储里删掉。**别人的文件按不存在处理**（40400）。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1652,6 +1807,72 @@ export interface components {
         ReminderSettingInput: {
             type: number;
             enabled: boolean;
+        };
+        FilePresignRequest: {
+            /**
+             * @description 业务用途。收窄取值是为了让「照片挂在哪」可查
+             * @enum {string}
+             */
+            biz_type: "checkin" | "epidemic" | "profile" | "ai_consult" | "care";
+            /**
+             * Format: int64
+             * @description 关联宠物；证件类可以不挂
+             */
+            pet_id?: number;
+            items: {
+                /**
+                 * @description 客户端声明的类型，**只用于提前拦截**；落库以魔数判定为准
+                 * @enum {string}
+                 */
+                mime: "image/jpeg" | "image/png";
+                /**
+                 * Format: int64
+                 * @description 客户端声明的体积，同上
+                 */
+                size_bytes?: number;
+                /**
+                 * @description original 原图 / closeup 局部特写（视觉模型要看清局部时另传一张）
+                 * @default original
+                 * @enum {string}
+                 */
+                role: "original" | "closeup";
+            }[];
+        };
+        FilePresignView: {
+            /** Format: int64 */
+            file_id: number;
+            /**
+             * @description 直传地址（相对地址，含签名与有效期）。PUT 到这个地址送字节
+             * @example /api/v1/open/files/12/content?token=up.1790600000.9f2c...
+             */
+            upload_url: string;
+            /** @example 2026-09-28 21:30:00 */
+            expires_at: string;
+            /**
+             * Format: int64
+             * @description 单文件上限（字节）。前端可在选择阶段先拦一道
+             */
+            max_bytes: number;
+            role?: string;
+        };
+        FileView: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            pet_id?: number | null;
+            biz_type: string;
+            /** @enum {string} */
+            role: "original" | "closeup" | "thumb";
+            /** @enum {string} */
+            mime: "image/jpeg" | "image/png";
+            /** Format: int64 */
+            size_bytes: number;
+            width?: number | null;
+            height?: number | null;
+            /** @description 原图的签名读地址（相对地址，有有效期）。文件私有，**前端不要缓存这个地址** */
+            url?: string;
+            /** @description 缩略图签名读地址；缩略图生成失败时回落到原图地址 */
+            thumb_url?: string;
         };
         ApiResponse: {
             /** @description 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes） */

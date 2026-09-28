@@ -13,7 +13,7 @@
 开工前先读四样：
 
 1. **[CONTEXT.md](CONTEXT.md)** —— 领域术语表。**命名以它为准**；「商家」「商户」「店铺」「merchant」是禁用词，统一说「服务者」。
-2. **[docs/adr/](docs/adr/)** —— 已定的架构决策（当前 17 条）。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
+2. **[docs/adr/](docs/adr/)** —— 已定的架构决策（当前 20 条）。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
 3. **[地图 #52](https://github.com/QIUZI-HONG/pet-health/issues/52)** —— 哪些决策已定、哪些还没定、下一步该做什么。
 4. **[docs/conventions.md](docs/conventions.md)** —— 实现级约定（分页 / 脱敏 / 加密 / 迁移 / 越权口径），以及每条约定落在哪个 ADR。
 
@@ -23,7 +23,7 @@
 pet-health/
 ├── CONTEXT.md              领域术语表（命名以它为准）
 ├── docs/
-│   ├── adr/                架构决策记录（当前 17 条）
+│   ├── adr/                架构决策记录（当前 20 条）
 │   ├── agents/             工程技能配置（issue tracker / 领域文档规则 / triage 标签）
 │   ├── design/             AI 层的完整方案（ai-service.md）
 │   ├── conventions.md      项目级约定：分页 / 脱敏 / 缓存 / 重试 / 金额精度…
@@ -42,6 +42,7 @@ pet-health/
 │   ├── ph-catalog/         服务项 / 号源 / 档期
 │   ├── ph-order/           订单 / 状态机 / 核销 / 对账
 │   ├── ph-record/          宠物 / 档案 / 评分 / 打卡（宠物已实现）
+│   ├── ph-file/            文件与对象存储：上传凭证 / 直传 / 缩略图（切片 #95，ADR-0020）
 │   ├── ph-ai/              AI 服务的客户端 / 配额 / 熔断 / 留痕
 │   ├── ph-reminder/        提醒 / 消息中心
 │   ├── ph-privilege/       券池 / 邀请 / 积分
@@ -130,7 +131,7 @@ cd server && ./mvnw -B verify
 
 已验证：
 
-- `cd server && ./mvnw -B verify` —— **12 个 Maven 模块**（另有 1 个聚合 POM）全部编译通过；**51 个测试全绿**
+- `cd server && ./mvnw -B verify` —— **13 个 Maven 模块**（另有 1 个聚合 POM）全部编译通过；**93 个测试全绿**
   （12 个纯单元测试 + 39 个跑在 Testcontainers 起的真实 MySQL 8.4 / Redis 8 上的接口测试，见 ADR-0014）
 - `pnpm -r test && pnpm -r build` —— C 端 14 个组件测试（导航与四态组件）通过；三个 Web 端构建通过，
   其中 C 端的构建会先跑硬编码色值检查（ADR-0015）

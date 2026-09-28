@@ -14,7 +14,7 @@ export type * from "./api/common";
 // 按端划分的接口调用。领域类型从各自的 cApp/providerApp 里显式带出来：
 // 不能用 `export type *` 直接转出 app.d.ts / provider.d.ts——它们和 common.d.ts 都导出了
 // `paths` / `components` / `operations` 这些同名成员，批量转出会报「重复导出」。
-export { cApp } from "./api/cApp";
+export { cApp, uploadFiles } from "./api/cApp";
 export type {
   CheckInDay,
   CheckInItem,
@@ -23,6 +23,9 @@ export type {
   CheckInSubmitRequest,
   EpidemicRecord,
   EpidemicRecordInput,
+  FilePresignRequest,
+  FilePresignView,
+  FileView,
   HealthScore,
   HealthScoreDimension,
   LoginRequest,

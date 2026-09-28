@@ -2,17 +2,74 @@
 #
 # 消费方：外部系统（对象存储上传回调等）。公共组件见 common.yaml。
 #
-# 状态：**尚未定义。** 取决于 #84（文件与对象存储）——上传回调是这个前缀下的第一个接口。
+# 状态：**文件直传与读图已定**（切片 #95，ADR-0020）。
 # 注意：ADR-0002 之后没有支付通道，所以不存在支付回调。
 
 openapi: 3.1.0
 
 info:
   title: 宠物 AI 健康管理平台 · 对外回调
-  version: 0.1.0
-  description: 路由前缀 `/api/v1/open/**`。公共组件见 `common.yaml`。
+  version: 0.2.0
+  description: |
+    路由前缀 `/api/v1/open/**`。公共组件见 `common.yaml`。
+
+    **这一组接口不要求登录**：授权在签名里（ADR-0020）。前端 `<img src>` 带不了 `Authorization` 头，
+    而对象存储的直传地址也不认识我们的 Token——所以校验一律做在签名与数据库那一行之间。
+
+    返回的**不是** `ApiResponse` 信封：二进制就是二进制，套一层 JSON 只会让 `<img>` 用不了。
 
 servers:
   - url: /api/v1/open
 
-paths: {}
+paths:
+  /files/{file_id}/content:
+    put:
+      summary: 直传落定（local 驱动；cos 驱动将来由回调走同一条服务方法）
+      description: |
+        请求体是**原始字节**，不是 multipart——直传的意义就是不让文件穿过业务逻辑。
+
+        校验顺序：签名与有效期 → 状态（只能落定一次）→ 魔数类型 → 体积。
+        类型判定不信 `Content-Type` 请求头，按文件头几个字节判（JPEG `FF D8 FF` / PNG 8 字节签名）。
+      parameters:
+        - name: file_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: token
+          in: query
+          required: true
+          description: 上传凭证，由 `POST /api/v1/app/files/presign` 签发，含过期时间
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "204":
+          description: 已落定（含缩略图已生成）
+        "400":
+          description: 凭证失效 / 类型不支持 / 超出体积
+
+  /files/{file_id}:
+    get:
+      summary: 读图（原图或缩略图，各自有各自的签名地址）
+      parameters:
+        - name: file_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: token
+          in: query
+          required: true
+          description: 读凭证（签名内包含用途，**上传凭证不能拿来读图**）
+          schema: { type: string }
+      responses:
+        "200":
+          description: 图片字节
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+        "404":
+          description: 文件不存在、凭证不匹配或已过期（不区分，免得给探测者反馈）
+

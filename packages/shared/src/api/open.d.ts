@@ -3,7 +3,113 @@
  * Do not make direct changes to the file.
  */
 
-export type paths = Record<string, never>;
+export interface paths {
+    "/files/{file_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 直传落定（local 驱动；cos 驱动将来由回调走同一条服务方法）
+         * @description 请求体是**原始字节**，不是 multipart——直传的意义就是不让文件穿过业务逻辑。
+         *
+         *     校验顺序：签名与有效期 → 状态（只能落定一次）→ 魔数类型 → 体积。
+         *     类型判定不信 `Content-Type` 请求头，按文件头几个字节判（JPEG `FF D8 FF` / PNG 8 字节签名）。
+         */
+        put: {
+            parameters: {
+                query: {
+                    /** @description 上传凭证，由 `POST /api/v1/app/files/presign` 签发，含过期时间 */
+                    token: string;
+                };
+                header?: never;
+                path: {
+                    file_id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            responses: {
+                /** @description 已落定（含缩略图已生成） */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 凭证失效 / 类型不支持 / 超出体积 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读图（原图或缩略图，各自有各自的签名地址） */
+        get: {
+            parameters: {
+                query: {
+                    /** @description 读凭证（签名内包含用途，**上传凭证不能拿来读图**） */
+                    token: string;
+                };
+                header?: never;
+                path: {
+                    file_id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 图片字节 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/jpeg": string;
+                        "image/png": string;
+                    };
+                };
+                /** @description 文件不存在、凭证不匹配或已过期（不区分，免得给探测者反馈） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+}
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: never;

@@ -9,6 +9,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import { ApiError, cApp, formatDate, genderLabel, speciesLabel, type EpidemicRecord } from "@pet-health/shared";
 import SessionGate from "../components/SessionGate.vue";
+import PhotoUploader from "../components/PhotoUploader.vue";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import StateError from "../components/states/StateError.vue";
 import { useSessionStore } from "../stores/session";
@@ -187,6 +188,14 @@ function kindLabel(kind: number): string {
             </div>
           </form>
         </article>
+
+        <!-- 照片（切片 #95）：体检单、疫苗本、患处特写这些「纸面材料」的落点 -->
+        <PhotoUploader
+          :pet-id="session.activePet?.id ?? null"
+          biz-type="profile"
+          title="档案照片"
+          hint="疫苗本、体检单、患处照片都可以。一次可选多张：JPEG / PNG，单张不超过 10MB，最多 9 张。"
+        />
 
         <article class="ph-card">
           <h3 class="ph-card__title">宠物信息</h3>

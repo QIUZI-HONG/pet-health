@@ -16,6 +16,10 @@ export default defineConfig({
     alias: {
       "@pet-health/shared": fileURLToPath(new URL("../../packages/shared/src/index.ts", import.meta.url)),
       "@pet-health/ui": fileURLToPath(new URL("../../packages/ui/src/index.ts", import.meta.url)),
+      // 单测要能把网络出口打桩（上传路径的测试就是这么做的）。workspace 下 axios 只装在
+      // packages/shared；不归一到同一份，测试文件里的 vi.mock("axios") 与 shared 源码 import
+      // 的 axios 会解析到不同路径，桩静默失效——表现为「请求像是发出去了，但断言什么都看不到」。
+      axios: fileURLToPath(new URL("../../packages/shared/node_modules/axios", import.meta.url)),
     },
   },
   test: {

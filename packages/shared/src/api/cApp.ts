@@ -32,6 +32,9 @@ export type MessagePage = Omit<Schemas["PageResult"], "list"> & { list: MessageV
 export type ReminderSetting = Schemas["ReminderSetting"];
 export type EpidemicRecord = Schemas["EpidemicRecord"];
 export type EpidemicRecordInput = Schemas["EpidemicRecordInput"];
+export type FilePresignRequest = Schemas["FilePresignRequest"];
+export type FilePresignView = Schemas["FilePresignView"];
+export type FileView = Schemas["FileView"];
 
 const BASE = "/api/v1/app";
 
@@ -141,4 +144,55 @@ export const cApp = {
   updateReminderSetting(type: number, enabled: boolean): Promise<ReminderSetting[]> {
     return http.put<ReminderSetting[]>(`${BASE}/messages/settings`, { type, enabled });
   },
+
+  // ---- 文件（切片 #95，决策见 ADR-0020）----
+  // 上传分两步：先取凭证，再把字节直传到凭证给的地址（**不经业务接口**）。
+  // 下载也不用这个客户端：`url` / `thumb_url` 是签名地址，直接塞给 `<img src>` 即可。
+  presignFiles(body: FilePresignRequest): Promise<FilePresignView[]> {
+    return http.post<FilePresignView[]>(`${BASE}/files/presign`, body);
+  },
+  listFiles(params?: { petId?: number; bizType?: string }): Promise<FileView[]> {
+    return http.get<FileView[]>(`${BASE}/files`, {
+      pet_id: params?.petId,
+      biz_type: params?.bizType,
+    });
+  },
+  deleteFile(fileId: number): Promise<void> {
+    return http.delete<void>(`${BASE}/files/${fileId}`);
+  },
 };
+
+/**
+ * 「拍照 → 拷到电脑 → 批量上传」的一条龙（切片 #95 的验收标准）。
+ *
+ * <p>一次申请凭证、逐个直传。选中的文件里但凡有一个不合规（类型/体积），申请阶段就整体被拒——
+ * 这是有意的：**批量上传时用户不想一个个试**，一次说清哪里不对。
+ */
+export async function uploadFiles(options: {
+  petId?: number;
+  /** 取值来自契约的枚举，不手写字符串——写错了编译期就红，而不是等到上传被拒（切片 #95） */
+  bizType: NonNullable<FilePresignRequest["biz_type"]>;
+  files: File[];
+  onProgress?: (done: number, total: number) => void;
+}): Promise<FileView[]> {
+  const presigned = await cApp.presignFiles({
+    biz_type: options.bizType,
+    pet_id: options.petId,
+    items: options.files.map((file) => ({
+      mime: file.type === "image/png" ? "image/png" : "image/jpeg",
+      size_bytes: file.size,
+      role: "original",
+    })),
+  });
+
+  let done = 0;
+  for (const [index, file] of options.files.entries()) {
+    const target = presigned[index];
+    if (!target) break;
+    await http.putRaw(target.upload_url, file);
+    done += 1;
+    options.onProgress?.(done, options.files.length);
+  }
+
+  return cApp.listFiles({ petId: options.petId, bizType: options.bizType });
+}

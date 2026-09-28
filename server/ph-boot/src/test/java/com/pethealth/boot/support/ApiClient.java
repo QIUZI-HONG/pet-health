@@ -112,6 +112,25 @@ public final class ApiClient {
         return exchange(HttpMethod.POST, path, rawBody, accessToken);
     }
 
+    /**
+     * 直传原始字节（切片 #95 的上传路径）。
+     *
+     * <p>刻意用 {@code application/octet-stream} 而不是真实图片类型：**后端必须按魔数判定类型**，
+     * 用真实类型发反而会把「它其实只看了请求头」这种实现错误掩盖过去（ADR-0020）。
+     */
+    public ApiCall putBinary(String path, byte[] content) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+        ResponseEntity<String> response = rest.exchange(path, HttpMethod.PUT,
+                new HttpEntity<>(content, headers), String.class);
+        return toApiCall(response);
+    }
+
+    /** 读图：返回二进制响应本身，调用方断言状态码与字节。 */
+    public ResponseEntity<byte[]> getBinary(String path) {
+        return rest.exchange(path, HttpMethod.GET, HttpEntity.EMPTY, byte[].class);
+    }
+
     private ApiCall exchange(HttpMethod method, String path, Object body, String accessToken) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -120,6 +139,10 @@ public final class ApiClient {
         }
         ResponseEntity<String> response = rest.exchange(path, method,
                 new HttpEntity<>(body, headers), String.class);
+        return toApiCall(response);
+    }
+
+    private ApiCall toApiCall(ResponseEntity<String> response) {
         try {
             JsonNode json = objectMapper.readTree(response.getBody() == null ? "{}" : response.getBody());
             return new ApiCall(response.getStatusCode().value(), json);

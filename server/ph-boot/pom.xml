@@ -52,6 +52,11 @@
     </dependency>
     <dependency>
       <groupId>com.pethealth</groupId>
+      <artifactId>ph-file</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.pethealth</groupId>
       <artifactId>ph-ai</artifactId>
       <version>${project.version}</version>
     </dependency>

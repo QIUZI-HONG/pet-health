@@ -76,6 +76,20 @@ app:
     # 轮换期间才配：解密先试当前密钥，失败再试它（ADR-0013）
     enc-key-previous: ${FIELD_ENC_KEY_PREVIOUS:}
 
+
+# ---- 文件与对象存储（ADR-0020）----
+# 本期是本地盘驱动；生产换 cos 驱动要改 driver 并补实现（欠账记在 ADR-0020 与 #122）。
+  file:
+    driver: ${FILE_STORAGE_DRIVER:local}
+    # 落盘的根目录；相对路径按进程工作目录解析（server/ 下跑就是 server/data/files）
+    root: ${FILE_STORAGE_ROOT:data/files}
+    # 交付文档 13.2：单图 ≤ 10MB、一次最多 9 张
+    max-bytes: ${FILE_MAX_BYTES:10485760}
+    max-count: ${FILE_MAX_COUNT:9}
+    # 上传凭证 30 分钟够慢网络传完 9 张图；读地址 10 分钟，与「详情缓存 1 分钟」同量级
+    presign-ttl: ${FILE_PRESIGN_TTL:30m}
+    read-ttl: ${FILE_READ_TTL:10m}
+
 # ---- AI 服务（ADR-0009：模型调用在独立的 ai/ 服务里，本后端只是它的客户端）----
 # 完整设计见 docs/design/ai-service.md。这些是**技术参数**，改要重启；
 # 业务可调项（提示词/红线词/分级规则/降级开关）在数据库里，运营后台改（ADR-0010）。
