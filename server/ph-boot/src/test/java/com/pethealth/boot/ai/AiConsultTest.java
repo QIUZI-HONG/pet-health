@@ -91,7 +91,8 @@ class AiConsultTest extends IntegrationTestBase {
                  "need_hospital":true,"care_tips":["禁食 4 小时"],"citations":[],"images_used":0,
                  "red_flag_hits":[],"guard_hits":[],"red_flag_check":"ok","degraded":false,
                  "degrade_reason":null,"model_name":"deepseek-flash","model_version":"deepseek-flash",
-                 "prompt_version":"p0-code","latency_ms":4177}
+                 "prompt_version":"p0-code","latency_ms":4177,
+                 "prompt_tokens":1830,"completion_tokens":642}
                 """));
         RECEIVED.clear();
 
@@ -108,8 +109,11 @@ class AiConsultTest extends IntegrationTestBase {
         assertThat(data.path("latency_ms").asInt()).isEqualTo(4177);
         assertThat(data.path("disclaimer").asText()).contains("不能替代兽医诊断");
 
-        // 留痕：模型与提示词版本、延迟、问题密文
+        // 留痕：模型与提示词版本、延迟、问题密文，以及**本轮 token 用量**
+        // （日预算告警按它估算花费，ADR-0026）
         var row = jdbc.queryForMap("SELECT * FROM ai_consult WHERE pet_id = ?", petId);
+        assertThat(((Number) row.get("prompt_tokens")).intValue()).isEqualTo(1830);
+        assertThat(((Number) row.get("completion_tokens")).intValue()).isEqualTo(642);
         assertThat(row.get("model_version")).isEqualTo("deepseek-flash");
         assertThat(row.get("prompt_version")).isEqualTo("p0-code");
         assertThat(((Number) row.get("latency_ms")).intValue()).isEqualTo(4177);

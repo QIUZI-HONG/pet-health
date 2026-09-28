@@ -106,6 +106,9 @@ public class AiServiceClient {
             String modelName,
             String modelVersion,
             String promptVersion,
-            int latencyMs) {
+            int latencyMs,
+            /** 本轮实际消耗的 token（红线短路与降级是 0）；日预算告警按它估算花费（ADR-0026）。 */
+            int promptTokens,
+            int completionTokens) {
     }
 }

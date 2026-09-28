@@ -140,7 +140,9 @@ public class AiConsultService {
                     2, List.of(), DEGRADED_ADVICE, true, List.of(), List.of(),
                     0, List.of(), List.of(), "ok",
                     true, DEGRADE_CODE_AI_UNREACHABLE, e.getMessage(),
-                    "", "", "", 0);
+                    "", "", "", 0,
+                    // 连不上 AI 服务：这一轮没有 token 消耗（也没花钱）
+                    0, 0);
         }
     }
 
@@ -169,6 +171,9 @@ public class AiConsultService {
         record.setModelVersion(trim(response.modelVersion(), 64));
         record.setPromptVersion(trim(response.promptVersion(), 64));
         record.setLatencyMs(response.latencyMs());
+        // token 用量进留痕：日预算告警按它估算当天花费（ADR-0026），也是模型换代/提示词改版的归因依据
+        record.setPromptTokens(response.promptTokens());
+        record.setCompletionTokens(response.completionTokens());
         consultMapper.insert(record);
         return record;
     }

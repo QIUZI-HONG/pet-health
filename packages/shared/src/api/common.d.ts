@@ -76,20 +76,6 @@ export interface components {
             };
             content?: never;
         };
-        /** @description AI 服务超时（60001）—— 可重试一次，仍失败转人工 */
-        AiTimeout: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content?: never;
-        };
-        /** @description AI 分析失败（60002）—— 返回降级话术，不向用户报错 */
-        AiFailed: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content?: never;
-        };
     };
     parameters: {
         Page: number;

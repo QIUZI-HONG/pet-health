@@ -109,5 +109,10 @@ ai:
     # 交付文档 F006：免费用户每日 3 次
     free-per-day: ${AI_FREE_QUOTA_PER_DAY:3}
   budget:
-    # 日预算熔断：超限转纯规则通道 + 告警。默认 50 元是占位值，需按真实用户量校准
+    # 日预算**只告警不熔断**（ADR-0026）：超限记 WARN 与运营日志，不切断模型——在知识检索层落地前，
+    # 熔断等于把咨询降级成固定话术。默认 50 元是占位值，需按真实用户量校准（#119 的埋点出来后一起做）
     daily-cny: ${AI_DAILY_BUDGET_CNY:50}
+    # 单价按真实账单校准（元 / 1000 token）。**留空 = 按 0 算，告警不会响**（启动时有 WARN 提示）——
+    # 宁可估成 0 也不瞎编一个价格进日志。输入与输出分开：推理型模型的输出单价通常是输入的几倍
+    prompt-cny-per-1k: ${AI_PROMPT_CNY_PER_1K:}
+    completion-cny-per-1k: ${AI_COMPLETION_CNY_PER_1K:}

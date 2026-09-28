@@ -9,7 +9,14 @@
  * 用户回到站内就能看到；不要写成「实时推送」（ADR-0019）。
  */
 import { computed, ref, watch } from "vue";
-import { ApiError, cApp, formatDateTime, type MessageView, type ReminderSetting } from "@pet-health/shared";
+import {
+  ApiError,
+  cApp,
+  createLatestGuard,
+  formatDateTime,
+  type MessageView,
+  type ReminderSetting,
+} from "@pet-health/shared";
 import { useMessageStore } from "../stores/messages";
 import { useSessionStore } from "../stores/session";
 import SessionGate from "../components/SessionGate.vue";
@@ -35,7 +42,15 @@ const hasMore = ref(false);
  */
 const unreadCount = computed(() => messageStore.unread);
 
+/**
+ * 并发守卫：快速切「只看未读」或连点「加载更多」时，先发的请求可能后回来。
+ * 不拦的话会把上一轮的 page2 追加到重新过滤后的 page1 后面（重复 + 乱序），
+ * 或者用旧筛选的结果盖掉新筛选的（统一实现见 shared 的 createLatestGuard）。
+ */
+const latest = createLatestGuard();
+
 async function load(append = false): Promise<void> {
+  const seq = latest.claim();
   loading.value = !append;
   errorMessage.value = "";
   try {
@@ -44,12 +59,14 @@ async function load(append = false): Promise<void> {
       cApp.listMessages({ unreadOnly: unreadOnly.value, page: current, pageSize: 20 }),
       cApp.listReminderSettings(),
     ]);
+    if (!latest.isCurrent(seq)) return;
     messages.value = append ? [...messages.value, ...result.list] : result.list;
     page.value = current;
     hasMore.value = result.has_more;
     settings.value = settingList;
     await messageStore.refresh();
   } catch (error) {
+    if (!latest.isCurrent(seq)) return;
     if (error instanceof ApiError) {
       errorMessage.value = error.message;
       requestId.value = error.requestId;
@@ -57,7 +74,9 @@ async function load(append = false): Promise<void> {
       errorMessage.value = "加载失败，请稍后重试";
     }
   } finally {
-    loading.value = false;
+    if (latest.isCurrent(seq)) {
+      loading.value = false;
+    }
   }
 }
 

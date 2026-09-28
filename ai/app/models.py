@@ -61,3 +61,7 @@ class ConsultResponse(BaseModel):
     model_version: str = ""
     prompt_version: str = ""
     latency_ms: int = 0
+    # 本轮实际消耗的 token（红线短路与降级路径记 0：那两条没调模型）。
+    # Java 侧落 ai_consult 的两列，日预算告警按它们估算花费（ADR-0026）
+    prompt_tokens: int = 0
+    completion_tokens: int = 0

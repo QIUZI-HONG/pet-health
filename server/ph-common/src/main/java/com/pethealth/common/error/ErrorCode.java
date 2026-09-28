@@ -22,12 +22,9 @@ public enum ErrorCode {
     SERVER_ERROR(50000, "服务器内部错误", HttpStatus.INTERNAL_SERVER_ERROR),
     SERVICE_UNAVAILABLE(50300, "服务不可用", HttpStatus.SERVICE_UNAVAILABLE),
 
-    // AI 的降级是硬要求：超时与失败都不向上抛错，前端按文案提示（contract/common.yaml 的 AiTimeout / AiFailed）。
-    // **保留但当前没有产出路径**：降级一律走 HTTP 200 + `degraded=true` + 按降级码映射的中文，
-    // 用户看到的是一句人话而不是错误码——这一层不再需要「超时/失败」两个码去驱动前端分支。
-    // （测试报告 D28：契约里为它们定义了响应，实现里却从未抛出。要么将来用起来，要么连同契约一起删。）
-    AI_TIMEOUT(60001, "AI 服务超时", HttpStatus.OK),
-    AI_FAILED(60002, "AI 分析失败", HttpStatus.OK),
+    // AI 的降级**不产生错误码**：一律 HTTP 200 + `degraded=true` + 按 `degrade_code` 映射的一句中文
+    // （ADR-0021 / ADR-0026）。交付文档 8.2 的 60001 / 60002 因此不再定义——理由与后续触发点
+    // 写在 ADR-0026，别把它们加回来。
 
     // 70001 / 70002（支付失败 / 订单已支付）暂时不定义：ADR-0002 定了不做线上收款，
     // 这两个码的语义等支付澄清后再定（见地图 #52 的 Notes 首节）。

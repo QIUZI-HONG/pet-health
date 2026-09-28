@@ -34,6 +34,11 @@ vi.mock("@pet-health/shared", () => ({
   },
   ApiError: class ApiError extends Error {},
   http: {},
+  // 并发守卫是纯逻辑、没有外部依赖：用真实现，别在桩里再写一份（写一份就有一份会和真实现分叉）
+  createLatestGuard: () => {
+    let latest = 0;
+    return { claim: () => (latest += 1), isCurrent: (token: number) => token === latest };
+  },
 }));
 
 async function mountShell(path: string): Promise<{ router: Router; wrapper: ReturnType<typeof mount> }> {

@@ -7,7 +7,16 @@
  * 完整的档案分项与时间轴属 #102，那一块如实显示空态。
  */
 import { computed, reactive, ref, watch } from "vue";
-import { ApiError, cApp, formatDate, genderLabel, speciesLabel, todayIso, type EpidemicRecord } from "@pet-health/shared";
+import {
+  ApiError,
+  cApp,
+  createLatestGuard,
+  formatDate,
+  genderLabel,
+  speciesLabel,
+  todayIso,
+  type EpidemicRecord,
+} from "@pet-health/shared";
 import SessionGate from "../components/SessionGate.vue";
 import PhotoUploader from "../components/PhotoUploader.vue";
 import StateEmpty from "../components/states/StateEmpty.vue";
@@ -39,20 +48,20 @@ const pet = computed(() => session.activePet);
  * 挂在新宠物的标题下（确定性错误，不是竞态）；首页那种「空态先闪一下」也是同一原因。
  * 序号用于丢弃过期响应——先发的请求后回来，会把新宠物的数据盖掉。
  */
-let loadSeq = 0;
+const latest = createLatestGuard();
 
 async function load(): Promise<void> {
   if (!pet.value) return;
-  const seq = (loadSeq += 1);
+  const seq = latest.claim();
   loading.value = true;
   errorMessage.value = "";
   records.value = [];
   try {
     const list = await cApp.listEpidemicRecords(pet.value.id);
-    if (seq !== loadSeq) return;
+    if (!latest.isCurrent(seq)) return;
     records.value = list;
   } catch (error) {
-    if (seq !== loadSeq) return;
+    if (!latest.isCurrent(seq)) return;
     if (error instanceof ApiError) {
       errorMessage.value = error.message;
       requestId.value = error.requestId;
@@ -60,7 +69,7 @@ async function load(): Promise<void> {
       errorMessage.value = "加载失败，请稍后重试";
     }
   } finally {
-    if (seq === loadSeq) {
+    if (latest.isCurrent(seq)) {
       loading.value = false;
     }
   }

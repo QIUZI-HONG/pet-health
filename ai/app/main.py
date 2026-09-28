@@ -257,4 +257,7 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
         model_version=result.model_version,
         prompt_version=settings.prompt_version,
         latency_ms=result.latency_ms,
+        # 真实用量：日预算告警与「分级漂移」归因都看它（ADR-0026）
+        prompt_tokens=result.prompt_tokens,
+        completion_tokens=result.completion_tokens,
     )

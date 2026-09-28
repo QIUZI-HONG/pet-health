@@ -37,5 +37,12 @@
       <artifactId>ph-record</artifactId>
       <version>${project.version}</version>
     </dependency>
+
+    <!-- 本模块的单元测试：只有纯函数（例如日预算的估算算术），不启 Spring 容器 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>

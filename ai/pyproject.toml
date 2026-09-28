@@ -29,7 +29,11 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# live 标记：真打模型，默认不跑（需要 key 与网络）。本地验证用：
-#   AI_LIVE_TEST=1 pytest -m live
-markers = ["live: 需要真实模型与网络的端到端测试"]
-addopts = "-m 'not live' -q"
+# 两个「要真模型」的标记，默认都不跑（需要 key 与网络）：
+#   pytest -m live   —— 单次调用的端到端（有没有工具调用这一层）
+#   pytest -m eval   —— 发布门槛：跑评测集算准确率与红色召回率，落报告（ADR-0021）
+markers = [
+    "live: 需要真实模型与网络的端到端测试",
+    "eval: 发布门槛——真打模型跑评测集（准确率 ≥70%、红色召回 100%）",
+]
+addopts = "-m 'not live and not eval' -q"

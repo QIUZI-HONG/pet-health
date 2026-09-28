@@ -30,6 +30,9 @@ public class AiConsult extends BaseEntity {
     private String modelVersion;
     private String promptVersion;
     private Integer latencyMs;
+    /** 本轮实际消耗的 token（红线短路与降级记 0）。日预算告警按它估算花费（ADR-0026）。 */
+    private Integer promptTokens;
+    private Integer completionTokens;
 
     public Long getUserId() {
         return userId;
@@ -173,5 +176,21 @@ public class AiConsult extends BaseEntity {
 
     public void setLatencyMs(Integer latencyMs) {
         this.latencyMs = latencyMs;
+    }
+
+    public Integer getPromptTokens() {
+        return promptTokens;
+    }
+
+    public void setPromptTokens(Integer promptTokens) {
+        this.promptTokens = promptTokens;
+    }
+
+    public Integer getCompletionTokens() {
+        return completionTokens;
+    }
+
+    public void setCompletionTokens(Integer completionTokens) {
+        this.completionTokens = completionTokens;
     }
 }

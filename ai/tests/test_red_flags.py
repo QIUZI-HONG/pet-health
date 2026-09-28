@@ -212,9 +212,12 @@ def test_guardrail_rewrites_model_output(monkeypatch):
     body = TestClient(main.app).post(
         "/internal/consult", json=make_request("今天吐了一次，精神还行"), headers=TOKEN).json()
 
-    assert "剂量请遵医嘱" in body["action_suggestion"]
+    # 「剂量 + 药名」现在整句改写：推荐某种药本身就是处方行为，保留下来的半句仍然是建议
+    assert body["action_suggestion"] == "具体处理与用药请由兽医面诊决定。"
     assert "2.5mg" not in body["action_suggestion"]
+    assert "蒙脱石散" not in body["action_suggestion"]
     assert body["guard_hits"], "护栏命中必须留痕，否则事后无法归因"
+    assert any(hit.startswith("drug:") for hit in body["guard_hits"]), body["guard_hits"]
     assert body["possible_causes"] == [], "确诊类表述被整句剔除"
     assert body["care_tips"] == ["禁食 4 小时"], "正常的照护建议不受影响"
 

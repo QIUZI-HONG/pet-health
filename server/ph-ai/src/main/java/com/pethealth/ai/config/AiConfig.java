@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Configuration;
 
 /** AI 客户端的装配点。 */
 @Configuration
-@EnableConfigurationProperties({AiServiceProperties.class, AiQuotaProperties.class})
+@EnableConfigurationProperties({AiServiceProperties.class, AiQuotaProperties.class,
+        AiBudgetProperties.class})
 public class AiConfig {
 }

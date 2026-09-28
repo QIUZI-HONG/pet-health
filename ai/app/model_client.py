@@ -61,6 +61,9 @@ class TriageResult:
     model_name: str = ""
     model_version: str = ""
     latency_ms: int = 0
+    #: 本轮实际消耗的 token（供应商在响应里给 `usage`）。日预算告警要用它（ADR-0026）
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 def _validate_arguments(raw: str) -> dict:
@@ -136,6 +139,16 @@ async def _chat(messages: list[dict], model: str) -> dict:
         # 不接住就会逃出上面的 try，变成未捕获异常 500——而本文件头的第 4 条纪律是
         # 「失败一律降级、不向上抛错」（测试报告里 AI 侧的同批缺陷）
         raise ModelUnavailable(f"模型响应不是合法 JSON：{response.text[:120]}") from exc
+
+
+def _usage_of(body: dict) -> tuple[int, int]:
+    """从响应里取 token 用量。供应商没给（或给了怪形状）就记 0，不让它影响主流程。"""
+    usage = body.get("usage")
+    if not isinstance(usage, dict):
+        return 0, 0
+    prompt = usage.get("prompt_tokens")
+    completion = usage.get("completion_tokens")
+    return (prompt if isinstance(prompt, int) else 0, completion if isinstance(completion, int) else 0)
 
 
 def _extract_tool_arguments(body: dict) -> tuple[str, str]:
@@ -241,8 +254,14 @@ async def assess(
 
     # 第一次 + 最多 ai_max_repair_retry 次修复重试。
     # 重试时补一句「必须调用工具」——模型偶尔会直接用文字回答（#61 说的二次失败要拔高风险）。
+    prompt_tokens = 0
+    completion_tokens = 0
     for attempt in range(settings.ai_max_repair_retry + 1):
         body = await _chat(messages, model)
+        # 用量按次累加：修复重试也是真实的钱（哪怕这一轮最后判无效）
+        used_prompt, used_completion = _usage_of(body)
+        prompt_tokens += used_prompt
+        completion_tokens += used_completion
         try:
             raw_arguments, model_version = _extract_tool_arguments(body)
             fields = _validate_arguments(raw_arguments)
@@ -257,6 +276,13 @@ async def assess(
             continue
 
         latency_ms = int((time.perf_counter() - started) * 1000)
-        return TriageResult(model_name=model, model_version=model_version, latency_ms=latency_ms, **fields)
+        return TriageResult(
+            model_name=model,
+            model_version=model_version,
+            latency_ms=latency_ms,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            **fields,
+        )
 
     raise ModelOutputInvalid(str(last_error))
