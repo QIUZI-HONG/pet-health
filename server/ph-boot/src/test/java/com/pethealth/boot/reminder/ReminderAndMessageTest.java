@@ -451,6 +451,33 @@ class ReminderAndMessageTest extends IntegrationTestBase {
     }
 
     @Test
+    @DisplayName("删除提醒后再次物化不会 500：同键的行被复活（切片 #99 的缺陷回归）")
+    void deletingThenRematerializingDoesNotBreak() {
+        String token = register("13200000030");
+        long petId = api.createPet(token, "豆豆");
+
+        ApiClient.ApiCall first = api.get("/api/v1/app/messages?page=1&page_size=10", token);
+        assertThat(first.code()).isZero();
+        JsonNode items = first.data().path("list");
+        assertThat(items).isNotEmpty();
+        long messageId = items.get(0).path("id").asLong();
+
+        assertThat(api.delete("/api/v1/app/messages/" + messageId, token).code()).isZero();
+
+        // 删除是软删，而 uk_dedup 是物理唯一键：再物化时若走 insert 就会撞键报 500
+        ApiClient.ApiCall again = api.get("/api/v1/app/messages?page=1&page_size=10", token);
+        assertThat(again.code()).as("再次读取消息中心不该报错：" + again.body()).isZero();
+        assertThat(again.data().path("list").toString())
+                .as("被划掉的这条在同一个窗口里不再回来（删除按钮要真的有用）")
+                .doesNotContain(items.get(0).path("title").asText());
+
+        // 首页强提醒流走的是另一条读取路径，同样要能扛住
+        assertThat(api.get("/api/v1/app/messages/highlights?limit=6", token).code()).isZero();
+        // 未读角标不补算，但它读的是同一张表，顺手确认没被牵连
+        assertThat(api.get("/api/v1/app/messages/unread-count", token).code()).isZero();
+    }
+
+    @Test
     @DisplayName("删掉防疫记录后不再提醒")
     void deletingEpidemicRecordStopsReminder() {
         String token = register("13200000023");

@@ -72,7 +72,21 @@ describe("打卡卡", () => {
     expect(mount(CheckInCard, { props: { day: makeDay(), streakDays: 5 } }).text()).toContain("连续 5 天");
   });
 
-  it("点行内展开 → 勾「不太正常」→ 保存，提交里带 abnormal: true", async () => {
+  it("线值要翻译成中文：界面不出现 normal / low / high（切片 #97 的缺陷回归）", async () => {
+  const day = makeDay();
+  day.items[0] = { ...day.items[0], filled: true, value: "8.25" };
+  day.items[1] = { ...day.items[1], filled: true, value: "normal" };
+  day.items[2] = { ...day.items[2], filled: true, value: "low" };
+  const wrapper = mount(CheckInCard, { props: { day, streakDays: 1 } });
+
+  const text = wrapper.text();
+  expect(text).toContain("8.25");
+  expect(text).toContain("正常");
+  expect(text).toContain("偏少");
+  expect(text, "英文线值不该出现在界面上").not.toMatch(/normal|low|high/);
+});
+
+it("点行内展开 → 勾「不太正常」→ 保存，提交里带 abnormal: true", async () => {
     const wrapper = mount(CheckInCard, { props: { day: makeDay(), streakDays: 0 } });
 
     await wrapper.findAll(".ph-checkin__line")[2].trigger("click");     // 第 3 行 = 排泄

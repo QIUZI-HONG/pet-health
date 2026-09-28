@@ -334,6 +334,15 @@ public class ReminderGenerator {
     private int upsert(ReminderSourceApi.PetBrief pet, Candidate candidate) {
         Message existing = messageMapper.selectOne(Wrappers.<Message>lambdaQuery()
                 .eq(Message::getDedupKey, candidate.dedupKey()));
+        if (existing == null) {
+            // 可能是一条被用户删掉的同键消息：uk_dedup 是**物理**唯一键，软删行仍占着它。
+            // 这里**跳过**而不是复活：ADR-0019 说「删除不等于关闭该类型」——意思是别的窗口照常生成，
+            // 而这一条是用户亲手划掉的，同一个窗口里再塞回去等于删除按钮没用。
+            // （曾经的实现是直接 insert，撞唯一键报 500，把用户永久挡在消息中心外面。）
+            if (messageMapper.findByDedupKeyIncludingDeleted(candidate.dedupKey()) != null) {
+                return 0;
+            }
+        }
         if (existing != null) {
             existing.setTitle(candidate.title());
             existing.setContent(candidate.content());

@@ -20,6 +20,16 @@ public interface MessageMapper extends BaseMapper<Message> {
             """)
     int countUnread(@Param("userId") long userId);
 
+    /**
+     * 按幂等键找消息，**包含已软删的**。
+     *
+     * <p>为什么要绕过逻辑删除：{@code uk_dedup} 是物理唯一键，软删的行**仍然占着那个键**。
+     * 用户删掉一条提醒后，同一条件再满足时（例如「今天还没记录」今天还在），
+     * 生成器必须能看见这条已删的行——否则会去 insert，撞唯一键报 500（切片 #99 的缺陷）。
+     */
+    @Select("SELECT * FROM message WHERE dedup_key = #{dedupKey} LIMIT 1")
+    Message findByDedupKeyIncludingDeleted(@Param("dedupKey") String dedupKey);
+
     /** 其中健康提醒的未读数（首页与消息中心分开展示）。 */
     @Select("""
             SELECT COUNT(1) FROM message

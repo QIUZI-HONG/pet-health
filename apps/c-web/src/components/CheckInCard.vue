@@ -96,13 +96,23 @@ function submitSameAsYesterday(): void {
   }
 }
 
+/** 结构化取值的显示文案。契约里 `value` 是**线值**（normal / low / high），
+ *  直接渲染会把英文枚举摆到用户面前（切片 #97 的缺陷：点了「全部正常」后界面显示 `normal`）。 */
+const VALUE_LABELS: Record<string, string> = {
+  normal: "正常",
+  low: "偏少",
+  high: "偏多",
+};
+
 function statusText(item: CheckInItem): string {
   if (!item.filled) return "未记录";
   if (item.abnormal) {
     // 异常项要让人一眼看到「哪里不对」——优先显示备注，没有备注就只说异常
     return item.note ? `异常 · ${item.note}` : "已标注异常";
   }
-  return item.value ? item.value : "已记录";
+  if (!item.value) return "已记录";
+  // 体重这类自由输入的值原样显示（用户自己填的 8.25 不需要翻译）
+  return VALUE_LABELS[item.value] ?? item.value;
 }
 </script>
 
