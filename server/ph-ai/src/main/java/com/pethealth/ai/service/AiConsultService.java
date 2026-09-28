@@ -3,6 +3,7 @@ package com.pethealth.ai.service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.pethealth.ai.client.AiServiceClient;
 import com.pethealth.ai.config.AiQuotaProperties;
+import com.pethealth.ai.config.AiServiceProperties;
 import com.pethealth.ai.domain.AiConsult;
 import com.pethealth.ai.mapper.AiConsultMapper;
 import com.pethealth.api.app.AiConsultRequest;
@@ -49,7 +50,10 @@ public class AiConsultService {
     private static final String DEGRADED_ADVICE =
             "AI 服务暂时不可用，为避免耽误，建议尽快咨询兽医；情况紧急请直接送医。";
 
-    /** 一次咨询最多带几张图：模型看太多图会明显变慢，而慢在网络不好的时候等于降级。 */
+    /** Java 侧连不上 AI 服务时的降级码（与 Python 侧的四个码同一命名空间）。 */
+    private static final String DEGRADE_CODE_AI_UNREACHABLE = "ai_service_unreachable";
+
+    /** 一次咨询最多带几张图：与契约的 {@code file_ids maxItems} 以及 Python 侧的上限对齐。 */
     private static final int MAX_IMAGES = 4;
 
     private final AiServiceClient client;
@@ -59,10 +63,11 @@ public class AiConsultService {
     private final FieldCipher fieldCipher;
     private final ObjectMapper objectMapper;
     private final AiQuotaProperties quota;
+    private final AiServiceProperties serviceProperties;
 
     public AiConsultService(AiServiceClient client, AiConsultMapper consultMapper, AiPetApi petApi,
                             FileUrlApi fileUrlApi, FieldCipher fieldCipher, ObjectMapper objectMapper,
-                            AiQuotaProperties quota) {
+                            AiQuotaProperties quota, AiServiceProperties serviceProperties) {
         this.client = client;
         this.consultMapper = consultMapper;
         this.petApi = petApi;
@@ -70,6 +75,7 @@ public class AiConsultService {
         this.fieldCipher = fieldCipher;
         this.objectMapper = objectMapper;
         this.quota = quota;
+        this.serviceProperties = serviceProperties;
     }
 
     public AiConsultView consult(long userId, long petId, AiConsultRequest request) {
@@ -79,14 +85,26 @@ public class AiConsultService {
         List<Long> fileIds = request.fileIds() == null ? List.of() : request.fileIds();
         List<String> mediaUrls = fileIds.isEmpty()
                 ? List.of()
-                : fileUrlApi.readUrls(userId, fileIds.stream().limit(MAX_IMAGES).toList());
+                : absolute(fileUrlApi.readUrls(userId, fileIds.stream().limit(MAX_IMAGES).toList()));
 
         String traceId = TraceIds.currentTraceId();
         AiServiceClient.ConsultResponse response = callAi(userId, pet, request.question(), mediaUrls, traceId);
 
-        AiConsult record = save(userId, petId, request.question(), mediaUrls.size(), response, traceId);
+        // 留痕里的图片张数用 AI 服务**实际送进模型**的张数，不是我们交出去的张数（测试报告 D27）
+        AiConsult record = save(userId, petId, request.question(), response.imagesUsed(), response, traceId);
         // 计数取「含本次在内」的当天行数；请求被拒（越权、参数错）本就到不了这里，不消耗额度
         return toView(record, response, countToday(userId));
+    }
+
+    /**
+     * 签名读地址是**相对路径**（{@code /api/v1/open/files/…}），浏览器按当前站点解析没问题，
+     * 但 AI 服务没有「我们的站点」这个概念——它得自己去把图片取回来（Python 侧 `inline_images`），
+     * 相对路径取不到，而且失败是**静默的**：模型基于「没看到图」给出格式正常的回答。
+     * 所以出站前补成 AI 服务可达的绝对地址（测试报告 D7）。
+     */
+    private List<String> absolute(List<String> urls) {
+        String base = serviceProperties.appBaseUrl();
+        return urls.stream().map(url -> url.startsWith("http") ? url : base + url).toList();
     }
 
     /** 调 AI 服务；失败时给出降级答复（不抛错，不向用户报错）。 */
@@ -114,7 +132,7 @@ public class AiConsultService {
             return new AiServiceClient.ConsultResponse(
                     2, List.of(), DEGRADED_ADVICE, true, List.of(), List.of(),
                     0, List.of(), List.of(), "ok",
-                    true, "java_client: " + e.getMessage(),
+                    true, DEGRADE_CODE_AI_UNREACHABLE, e.getMessage(),
                     "", "", "", 0);
         }
     }
@@ -137,13 +155,46 @@ public class AiConsultService {
         record.setGuardHits(toJson(response.guardHits()));
         record.setRedFlagCheck(response.redFlagCheck() == null ? "ok" : response.redFlagCheck());
         record.setDegraded(response.degraded() ? 1 : 0);
-        record.setDegradeReason(trim(response.degradeReason(), 256));
+        // 留痕表存**内部明细**（含降级码与异常/上游原文），供事后归因；
+        // 给用户看的那句话在 toView 里按降级码映射（测试报告 D6）
+        record.setDegradeReason(trim(internalReason(response), 256));
         record.setModelName(trim(response.modelName(), 64));
         record.setModelVersion(trim(response.modelVersion(), 64));
         record.setPromptVersion(trim(response.promptVersion(), 64));
         record.setLatencyMs(response.latencyMs());
         consultMapper.insert(record);
         return record;
+    }
+
+    /** 内部明细：{@code 降级码: 具体原因}。留痕归因用，不对外。 */
+    private String internalReason(AiServiceClient.ConsultResponse response) {
+        if (!response.degraded()) {
+            return null;
+        }
+        String code = response.degradeCode() == null ? "degraded" : response.degradeCode();
+        return response.degradeReason() == null ? code : code + ": " + response.degradeReason();
+    }
+
+    /**
+     * 降级码 → 给用户看的一句话。
+     *
+     * <p>为什么不让上游的 {@code degrade_reason} 直接出给用户：那个字段里是异常类名、
+     * 上游原始响应、甚至**模型返回的原始文本**（参数不是合法 JSON 时会带上原文片段）——
+     * 既有内部信息泄漏，也可能带着没有过护栏的医疗内容（测试报告 D6）。
+     * 用户只需要知道「这次的结果是什么性质、该做什么」。
+     */
+    private String userFacingReason(AiServiceClient.ConsultResponse response) {
+        if (!response.degraded()) {
+            return null;
+        }
+        String code = response.degradeCode() == null ? "" : response.degradeCode();
+        return switch (code) {
+            case "image_not_supported" -> "当前没有能看图的模型，这次只按文字描述判断";
+            case "image_unavailable" -> "这次没能读到你的图片，只按文字描述判断";
+            case "model_output_invalid" -> "模型这次没有按格式回答，已按更保守的结论给你";
+            case DEGRADE_CODE_AI_UNREACHABLE -> "AI 服务暂时不可用，已按更保守的建议给你";
+            default -> "AI 服务暂时不可用，已按更保守的建议给你";
+        };
     }
 
     /**
@@ -172,7 +223,7 @@ public class AiConsultService {
                 response.careTips() == null ? List.of() : response.careTips(),
                 response.redFlagHits() == null ? List.of() : response.redFlagHits(),
                 response.degraded(),
-                response.degradeReason(),
+                userFacingReason(response),
                 response.modelVersion(),
                 response.promptVersion(),
                 response.latencyMs(),

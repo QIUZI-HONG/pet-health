@@ -165,7 +165,9 @@ class AiConsultTest extends IntegrationTestBase {
         assertThat(call.data().path("degraded").asBoolean()).isFalse();
         assertThat(RECEIVED).hasSize(1);
         assertThat(RECEIVED.get(0))
-                .as("发给 AI 服务的应当是签名读地址，而不是 file_id 或外链")
+                .as("发给 AI 服务的应当是**绝对**签名读地址——AI 服务要自己去把图取回来、"
+                        + "内联给模型（相对路径它取不到，测试报告 D7）")
+                .contains("http://127.0.0.1:")
                 .contains("/api/v1/open/files/" + fileId)
                 .contains("token=");
         assertThat(((Number) jdbc.queryForMap("SELECT image_count FROM ai_consult WHERE pet_id = ?", petId)
@@ -217,7 +219,38 @@ class AiConsultTest extends IntegrationTestBase {
 
         var row = jdbc.queryForMap("SELECT degraded, degrade_reason FROM ai_consult WHERE pet_id = ?", petId);
         assertThat(((Number) row.get("degraded")).intValue()).isEqualTo(1);
-        assertThat(row.get("degrade_reason").toString()).contains("java_client");
+        // 留痕表里存的是**内部明细**（降级码 + 原因），给用户看的中文按码映射（测试报告 D6）
+        assertThat(row.get("degrade_reason").toString()).contains("ai_service_unreachable");
+        assertThat(call.data().path("degrade_reason").asText())
+                .as("用户看到的是人话，不是内部异常名：" + call.data())
+                .isEqualTo("AI 服务暂时不可用，已按更保守的建议给你");
+    }
+
+    @Test
+    @DisplayName("降级原因里的内部细节不进用户可见文案（模型原文、异常类名都挡在留痕里）")
+    void degradedReasonIsNotLeakedToUser() {
+        String token = api.registerAndGetAccessToken(PHONE);
+        long petId = api.createPet(token, "豆豆");
+
+        // 桩服务回一条「降级 + 明细里带模型原文与内部异常名」的响应（真实降级路径就是这样）
+        RESPONDER.set(body -> new StubReply(200, """
+                {"risk_level":3,"possible_causes":[],"action_suggestion":"建议立即就医","need_hospital":true,
+                 "care_tips":[],"citations":[],"images_used":0,"red_flag_hits":[],"guard_hits":[],
+                 "red_flag_check":"ok","degraded":true,"degrade_code":"model_output_invalid",
+                 "degrade_reason":"ModelOutputInvalid: 工具参数不是合法 JSON：risk_level=true 疑似胰腺炎",
+                 "model_name":"deepseek-flash","model_version":"v1","prompt_version":"p0-code","latency_ms":0}
+                """));
+
+        ApiClient.ApiCall call = api.post("/api/v1/app/pets/" + petId + "/ai-consults",
+                new AiConsultRequest("今天吐了两次", null), token);
+
+        String reason = call.data().path("degrade_reason").asText();
+        assertThat(reason).isEqualTo("模型这次没有按格式回答，已按更保守的结论给你");
+        assertThat(reason).doesNotContain("ModelOutputInvalid", "JSON", "胰腺炎");
+
+        // 留痕里保留明细，供事后归因
+        assertThat(jdbc.queryForMap("SELECT degrade_reason FROM ai_consult WHERE pet_id = ?", petId)
+                .get("degrade_reason").toString()).contains("model_output_invalid");
     }
 
     @Test

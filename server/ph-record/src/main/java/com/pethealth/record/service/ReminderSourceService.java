@@ -18,8 +18,9 @@ import java.util.List;
 /**
  * {@link ReminderSourceApi} 的实现：把提醒生成所需的三类查询收在这里。
  *
- * <p>查询都用 MyBatis-Plus 的 Wrapper 完成，逻辑删除自动过滤；体重区间用一条聚合查询，
- * 不走「查全部再在内存里算」——记录会越攒越多。
+ * <p>查询都用 MyBatis-Plus 的 Wrapper 完成，逻辑删除自动过滤。体重区间目前是**把窗口内的
+ * 体重记录取回来再算 min/max**（窗口只有 7 天，一条宠物最多 7 行）——量级对得起这样写；
+ * 换成整表统计时要改成 SQL 聚合。
  */
 @Service
 public class ReminderSourceService implements ReminderSourceApi {

@@ -38,13 +38,13 @@ class ValidationTest extends IntegrationTestBase {
     @DisplayName("注册：手机号格式、密码强度都要拦")
     void registerValidation() {
         assertParamInvalid(api.post("/api/v1/app/auth/register", new RegisterRequest("12345", ApiClient.DEFAULT_PASSWORD, null)),
-                "phone");
+                "手机号");
         assertParamInvalid(api.post("/api/v1/app/auth/register", new RegisterRequest("13800138000", "short", null)),
-                "password");
+                "密码");
         assertParamInvalid(api.post("/api/v1/app/auth/register", new RegisterRequest("13800138000", "onlyletters", null)),
-                "password");
+                "密码");
         assertParamInvalid(api.post("/api/v1/app/auth/register", new RegisterRequest("13800138000", "12345678", null)),
-                "password");
+                "密码");
     }
 
     @Test
@@ -53,14 +53,14 @@ class ValidationTest extends IntegrationTestBase {
         String token = api.registerAndGetAccessToken("13800138101");
 
         assertParamInvalid(api.post("/api/v1/app/pets",
-                new PetCreateRequest("   ", 1, null, 0, null, null, null, null, null, null), token), "name");
+                new PetCreateRequest("   ", 1, null, 0, null, null, null, null, null, null), token), "昵称");
         assertParamInvalid(api.post("/api/v1/app/pets",
-                new PetCreateRequest("豆豆", 3, null, 0, null, null, null, null, null, null), token), "species");
+                new PetCreateRequest("豆豆", 3, null, 0, null, null, null, null, null, null), token), "物种");
         assertParamInvalid(api.post("/api/v1/app/pets",
-                new PetCreateRequest("豆豆", 1, null, 0, null, "abc", null, null, null, null), token), "weight");
+                new PetCreateRequest("豆豆", 1, null, 0, null, "abc", null, null, null, null), token), "体重");
         assertParamInvalid(api.post("/api/v1/app/pets",
                 new PetCreateRequest("豆豆", 1, null, 0, AppTime.today().plusDays(1), null, null, null, null, null),
-                token), "birthday");
+                token), "生日");
     }
 
     @Test
@@ -129,10 +129,17 @@ class ValidationTest extends IntegrationTestBase {
         assertThat(call.code()).isEqualTo(40100);
     }
 
-    private void assertParamInvalid(ApiClient.ApiCall call, String field) {
+    /**
+     * 断言「参数错误」：状态 400 / 业务码 40001 / **文案里能看出是哪个字段**。
+     *
+     * <p>这里断言的是中文片段而不是英文字段键：`message` 是「前端直接展示」的文案，
+     * 早先会拼成「weight 体重需小于 1000」这种把内部标识甩给用户的样子（测试报告 D25），
+     * 现在字段名只进日志、用户看到的是完整的中文句子。
+     */
+    private void assertParamInvalid(ApiClient.ApiCall call, String messageFragment) {
         assertThat(call.status()).as(call.body().toPrettyString()).isEqualTo(400);
         assertThat(call.code()).isEqualTo(40001);
-        assertThat(call.message()).contains(field);
+        assertThat(call.message()).as(call.body().toPrettyString()).contains(messageFragment);
     }
 
 }

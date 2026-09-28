@@ -21,7 +21,10 @@ from . import guardrails, model_client, prompts, red_flags
 from .config import settings
 from .models import ConsultRequest, ConsultResponse
 
-app = FastAPI(title="pet-health-ai", version="0.3.0")
+# 关掉交互式文档与 openapi.json：那张表把内部接口的请求结构免费送给任何能访问到这个进程的人，
+# 而这正是 require_internal_token 的注释里说「不能让未鉴权调用方探查」的东西（测试报告 D17）。
+app = FastAPI(title="pet-health-ai", version="0.3.0",
+              docs_url=None, redoc_url=None, openapi_url=None)
 
 logger = logging.getLogger("pet_health_ai")
 
@@ -44,9 +47,23 @@ def require_internal_token(x_internal_token: str | None = Header(default=None)) 
         raise HTTPException(status_code=401, detail="invalid internal token")
 
 
-@app.get("/internal/health")
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    """给探针用的裸健康检查：**只回一句话**，不带配置与能力信息。
+
+    与 `/internal/health` 分开：探针（容器编排、负载均衡）不需要知道模型配没配、
+    有没有视觉能力，而那些信息对探测者是情报。
+    """
+    return {"status": "ok"}
+
+
+@app.get("/internal/health", dependencies=[Depends(require_internal_token)])
 def health() -> dict[str, object]:
-    """健康检查顺带报出「模型配好了没、具备哪些能力」，省得靠猜。"""
+    """健康检查顺带报出「模型配好了没、具备哪些能力」，省得靠猜。
+
+    **需要内部令牌**：它描述的是我们的配置状态（有没有 key、用的哪个模型），
+    不是给公网看的（测试报告 D17）。
+    """
     return {
         "status": "ok",
         "model_configured": bool(settings.ai_api_key),
@@ -140,7 +157,26 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             "如情况紧急请直接送医。",
             need_hospital=True,
             degraded=True,
-            degrade_reason=f"image_not_supported: {exc}",
+            degrade_code="image_not_supported",
+            degrade_reason=f"{type(exc).__name__}: {exc}",
+            care_tips=[f"已收到 {image_count} 张图片，但本轮没有分析它们。"],
+            images_used=0,
+            red_flag_check="ok" if rule_set.available else "unavailable",
+            model_name=settings.ai_model_grading,
+            prompt_version=settings.prompt_version,
+        )
+    except model_client.ImageUnavailable as exc:
+        # 有能看图的模型，但图片没取回来（签名过期、后端不可达、体积超限）。
+        # 与上一类分开留痕：一个是「模型不能看图」，一个是「我们没把图送到」。
+        _log_degraded("image_unavailable", req.trace_id, exc)
+        return ConsultResponse(
+            risk_level=2,
+            action_suggestion="这次没能读到你的图片，请先用文字描述症状（部位、多久、有没有变化）；"
+            "如情况紧急请直接送医。",
+            need_hospital=True,
+            degraded=True,
+            degrade_code="image_unavailable",
+            degrade_reason=f"{type(exc).__name__}: {exc}",
             care_tips=[f"已收到 {image_count} 张图片，但本轮没有分析它们。"],
             images_used=0,
             red_flag_check="ok" if rule_set.available else "unavailable",
@@ -155,7 +191,8 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             action_suggestion=DEGRADED_SUGGESTION,
             need_hospital=True,
             degraded=True,
-            degrade_reason=f"model_unavailable: {exc}",
+            degrade_code="model_unavailable",
+            degrade_reason=f"{type(exc).__name__}: {exc}",
             images_used=0,
             red_flag_check="ok" if rule_set.available else "unavailable",
             model_name=settings.ai_model_grading,
@@ -169,7 +206,10 @@ async def consult(req: ConsultRequest) -> ConsultResponse:
             action_suggestion=DEGRADED_SUGGESTION,
             need_hospital=True,
             degraded=True,
-            degrade_reason=f"model_output_invalid: {exc}",
+            degrade_code="model_output_invalid",
+            # 这个明细里**可能含模型的原始输出**（参数不是合法 JSON 时会带上原文片段），
+            # 所以它只进日志与留痕表；用户看到的是 Java 按 degrade_code 映射的中文（测试报告 D6）
+            degrade_reason=f"{type(exc).__name__}: {exc}",
             images_used=0,
             red_flag_check="ok" if rule_set.available else "unavailable",
             model_name=settings.ai_model_grading,

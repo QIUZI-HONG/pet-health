@@ -117,6 +117,120 @@ class CheckInAndScoreTest extends IntegrationTestBase {
     }
 
     @Test
+    @DisplayName("体重不合法一律 40001：abc / 0 / -5 / 99999 / 三位小数（测试报告 D1）")
+    void weightValueIsValidated() {
+        String token = register("13500000031");
+        long petId = api.createPet(token, "豆豆");
+
+        for (String bad : List.of("abc", "0", "-5", "99999", "8.256", "１２", "1e2")) {
+            ApiClient.ApiCall call = submit(token, petId, today(), item(1, false, bad, null));
+            assertThat(call.status()).as("体重「%s」应被拒", bad).isEqualTo(400);
+            assertThat(call.code()).as("体重「%s」应返回 40001", bad).isEqualTo(40001);
+            assertThat(call.message()).contains("体重");
+        }
+        // 一条都没落库：校验发生在写之前
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM archive_record WHERE pet_id = ? AND category = 1", Integer.class, petId))
+                .isZero();
+
+        // 合法值照常：建档与打卡同一口径（0.01–999.99，最多两位小数）
+        assertThat(submit(token, petId, today(), item(1, false, "8.25", null)).code()).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT numeric_value FROM archive_record WHERE pet_id = ? AND category = 1",
+                BigDecimal.class, petId)).isEqualByComparingTo("8.25");
+
+        // 非体重分项的线值不受影响（normal / low / high 照旧）
+        assertThat(submit(token, petId, today(), item(2, false, "low", null)).code()).isZero();
+
+        // 体重**留空**是合法意图（「这一项先不记」），不是填错：它不该被拦
+        String other = register("13500000035");
+        long otherPet = api.createPet(other, "豆豆");
+        assertThat(submit(other, otherPet, today(), item(1, false, null, null)).code()).isZero();
+    }
+
+    @Test
+    @DisplayName("撤销后再提交同一分项：复活那一行，不再撞唯一键（测试报告 D2）")
+    void resubmitAfterUndoRevivesTheRow() {
+        String token = register("13500000032");
+        long petId = api.createPet(token, "豆豆");
+
+        assertThat(submit(token, petId, today(), item(2, false, "normal", null)).code()).isZero();
+        String undoUrl = "/api/v1/app/pets/" + petId + "/check-ins/item?date=" + today() + "&category=2";
+        assertThat(api.delete(undoUrl, token).code()).isZero();
+
+        // 「填错 → 撤销 → 重新填」是必然路径：撤销是逻辑删除，uk_checkin_slot 仍占着那一行，
+        // 早先会撞唯一键报 50000（已复现）。修法是在同一槽上复活，而不是新插一行。
+        ApiClient.ApiCall again = submit(token, petId, today(), item(2, true, "low", "有点软"));
+        assertThat(again.status()).as(again.body().toPrettyString()).isEqualTo(200);
+        assertThat(again.code()).isZero();
+        assertThat(again.data().path("completed_count").asInt()).isEqualTo(1);
+
+        // 只有一行活记录，且内容是新的
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT content, abnormal, is_deleted FROM archive_record WHERE pet_id = ? AND category = 2", petId);
+        assertThat(row.get("is_deleted")).isEqualTo(0);
+        assertThat(row.get("abnormal")).isEqualTo(1);
+        assertThat(row.get("content").toString()).contains("有点软");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM archive_record WHERE pet_id = ? AND category = 2", Integer.class, petId))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("格式对但不存在的日期：40001，不是 50000（测试报告 D11）")
+    void impossibleDatesAreRejectedAsParamInvalid() {
+        String token = register("13500000033");
+        long petId = api.createPet(token, "豆豆");
+
+        // 注意：日期要用**字符串**传（`LocalDate.of(2026, 2, 31)` 在 Java 侧同样抛异常，
+        // 那样测的是测试代码自己）。契约里 date 就是字符串，用户传得进来的正是这种值。
+        ApiClient.ApiCall call = api.post("/api/v1/app/pets/" + petId + "/check-ins",
+                new CheckInSubmitRequest("2026-02-31", List.of(item(2, false, "normal", null))), token);
+
+        assertThat(call.status()).isEqualTo(400);
+        assertThat(call.code()).isEqualTo(40001);
+        assertThat(call.message()).contains("日期");
+    }
+
+    @Test
+    @DisplayName("同一宠物同一天并发提交：不报 500（当日评分行的唯一键冲突被接住，测试报告 D19）")
+    void concurrentSubmitsOnSameDayDoNotFail() throws Exception {
+        String token = register("13500000034");
+        long petId = api.createPet(token, "豆豆");
+        int threads = 4;
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        java.util.List<Integer> codes = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        try {
+            for (int i = 0; i < threads; i++) {
+                // 第 1 项是体重：它的取值必须是数字（「填 normal」现在会被 400 拦下，这正是 D1 的修复）
+                int category = i + 1;
+                String value = category == 1 ? "8.20" : "normal";
+                pool.submit(() -> {
+                    try {
+                        start.await();
+                        // 两个并发写会同时算当天的 health_score：查不到就插 → 撞 uk_pet_calc_date，
+                        // 早先是未捕获的 DuplicateKeyException（50000）
+                        codes.add(submit(token, petId, today(), item(category, false, value, null)).status());
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            }
+            start.countDown();
+            pool.shutdown();
+            assertThat(pool.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(codes).hasSize(threads).allMatch(status -> status == 200);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM health_score WHERE pet_id = ? AND calc_date = ?",
+                Integer.class, petId, today())).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("撤销：填错了能撤，重复撤销也返回成功（幂等）")
     void undoIsIdempotent() {
         String token = register("13500000005");

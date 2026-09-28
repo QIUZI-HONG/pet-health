@@ -1,6 +1,7 @@
 package com.pethealth.account.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pethealth.account.auth.AccountStatus;
 import com.pethealth.account.auth.JwtService;
 import com.pethealth.common.api.ApiResponse;
 import com.pethealth.common.error.BusinessException;
@@ -52,10 +53,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final ObjectMapper objectMapper;
+    private final AccountStatus accountStatus;
 
-    public JwtAuthenticationFilter(JwtService jwtService, ObjectMapper objectMapper) {
+    public JwtAuthenticationFilter(JwtService jwtService, ObjectMapper objectMapper,
+                                   AccountStatus accountStatus) {
         this.jwtService = jwtService;
         this.objectMapper = objectMapper;
+        this.accountStatus = accountStatus;
     }
 
     @Override
@@ -92,6 +96,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (pathDomain != null && access.domain() != pathDomain) {
                 // 域不匹配当作没登录，而不是 403：403 等于告诉调用方「这个 Token 是有效的，只是用错了地方」
                 return new BusinessException(ErrorCode.UNAUTHORIZED, "当前登录身份不能访问该端的接口");
+            }
+            // 已注销/禁用的账号等于未登录：判在鉴权层**这一处**，业务代码就不必各自记得查状态。
+            // 注销时签发过的 Access Token 在到期前签名仍有效，靠这一句作废（ADR-0012 的补充）
+            if (!accountStatus.isActive(access.userId())) {
+                return new BusinessException(ErrorCode.UNAUTHORIZED, "账号已注销或禁用");
             }
             CurrentUser.set(access.userId(), access.domain());
             TraceIds.putOperatorId(access.userId());

@@ -7,7 +7,7 @@
  *   2. 响应体 `code === 0` → **直接把 `data` 交给调用方**，调用方看不到信封；
  *   3. `code !== 0` → 抛 `ApiError`，业务错误**不重试**（用户点了重试才重试）；
  *   4. `code === 40101`（Token 过期）→ 用 Refresh 换一对新令牌后**重发原请求一次**；
- *      换不到就清掉会话并抛错，让页面显示「请先登录」；
+ *      换不到就清掉令牌并广播「会话失效」（见 sessionEvents.ts），页面回到未登录；
  *   5. 网络层失败（断网、后端没起来）→ 自动重试一次。
  *
  * 刷新是**单飞的**：并发请求同时收到 40101 时只会发一次 refresh，其余等它——否则多个请求
@@ -16,6 +16,7 @@
 import axios, { AxiosError, type AxiosInstance, type AxiosRequestConfig } from "axios";
 import type { components } from "../api/common";
 import { ApiError } from "./errors";
+import { notifySessionExpired } from "./sessionEvents";
 import { tokenStore } from "./tokenStore";
 
 /**
@@ -100,6 +101,17 @@ function toApiError(error: AxiosError<Envelope>): ApiError {
   });
 }
 
+/**
+ * 会话结束：清掉令牌，并**通知上层**把会话状态一起清掉。
+ *
+ * 只清令牌是不够的——界面读的是会话 store（user / pets / 状态标记），
+ * 不同步就会停在「看起来已登录、实际每个请求都 401」的错位上（测试报告 D15）。
+ */
+function endSession(): void {
+  tokenStore.clear();
+  notifySessionExpired();
+}
+
 /** 可重试的是「这次没成，下次可能成」的失败：网络类，以及 50000/50300 这种服务端临时故障。
  *  参数错误、越权、冲突这些业务错误重试只会重复同样的失败，所以不重试。 */
 function isRetryable(error: ApiError): boolean {
@@ -126,7 +138,7 @@ async function send<T>(config: AxiosRequestConfig, attempt = 0): Promise<T> {
       return send<T>(config, attempt + 1);
     }
     if (apiError.isTokenExpired) {
-      tokenStore.clear();
+      endSession();
     }
     throw apiError;
   } catch (error) {
@@ -141,7 +153,7 @@ async function send<T>(config: AxiosRequestConfig, attempt = 0): Promise<T> {
       return send<T>(config, attempt + 1);
     }
     if (apiError.isTokenExpired) {
-      tokenStore.clear();
+      endSession();
     }
     if (isRetryable(apiError) && attempt === 0) {
       return send<T>(config, attempt + 1);

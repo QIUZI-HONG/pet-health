@@ -8,9 +8,11 @@ import com.pethealth.api.app.CheckInStreak;
 import com.pethealth.api.app.CheckInSubmitRequest;
 import com.pethealth.common.error.BusinessException;
 import com.pethealth.common.time.AppTime;
+import com.pethealth.common.trace.TraceIds;
 import com.pethealth.common.util.JsonFields;
 import com.pethealth.record.domain.ArchiveRecord;
 import com.pethealth.record.domain.Pet;
+import com.pethealth.record.domain.Weight;
 import com.pethealth.record.event.CheckInRecordedEvent;
 import com.pethealth.record.mapper.ArchiveRecordMapper;
 import com.pethealth.record.mapper.PetMapper;
@@ -18,6 +20,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -111,7 +114,7 @@ public class CheckInService {
     @Transactional
     public CheckInDay submit(long userId, long petId, CheckInSubmitRequest request) {
         Pet pet = requireOwnedPet(userId, petId);
-        LocalDate date = LocalDate.parse(request.date());
+        LocalDate date = AppTime.parseDate(request.date());
         validateWindow(date);
         boolean backfilled = date.isBefore(AppTime.today());
 
@@ -192,43 +195,24 @@ public class CheckInService {
         }
     }
 
+    /**
+     * 写一个分项。**一条原子 SQL 搞定三种情况**（同槽更新 / 撤销后复活 / 新增）：
+     *
+     * <ul>
+     *   <li>「先查再写」在并发下会撞 {@code uk_checkin_slot}，而撞唯一键会把整个事务标记成
+     *       rollback-only——接住异常也救不回来，提交时照样 500（已复现）；</li>
+     *   <li>撤销是逻辑删除，但唯一键占着那个槽，所以复活必须由「冲突时 UPDATE」来完成；</li>
+     *   <li>体重的值先过 {@link Weight}：非法值在这里就被挡下（40001），
+     *       不再静默存成 null 让趋势算出荒谬数字（测试报告 D1）。</li>
+     * </ul>
+     */
     private void upsert(long userId, long petId, LocalDate date, CheckInItemInput item, boolean backfilled) {
-        ArchiveRecord existing = recordMapper.selectOne(Wrappers.<ArchiveRecord>lambdaQuery()
-                .eq(ArchiveRecord::getPetId, petId)
-                .eq(ArchiveRecord::getRecordDate, date)
-                .eq(ArchiveRecord::getCategory, item.category()));
-
         boolean abnormal = Boolean.TRUE.equals(item.abnormal());
-        String content = buildContent(item);
+        BigDecimal weight = item.category() == CATEGORY_WEIGHT ? Weight.parse(item.value()) : null;
 
-        if (existing == null) {
-            ArchiveRecord record = new ArchiveRecord();
-            record.setPetId(petId);
-            record.setUserId(userId);
-            record.setRecordDate(date);
-            record.setCategory(item.category());
-            record.setContent(content);
-            record.setAbnormal(abnormal ? 1 : 0);
-            record.setBackfilled(backfilled ? 1 : 0);
-            record.setSource(ArchiveRecord.SOURCE_USER);
-            // 体重的数值另存一列：趋势提醒要按它算变化幅度，不能让查询去解析 JSON
-            if (item.category() == CATEGORY_WEIGHT) {
-                record.setNumericValue(parseWeight(item.value()));
-            }
-            recordMapper.insert(record);
-            return;
-        }
-
-        existing.setContent(content);
-        existing.setAbnormal(abnormal ? 1 : 0);
-        if (item.category() == CATEGORY_WEIGHT) {
-            existing.setNumericValue(parseWeight(item.value()));
-        }
-        // 补录标记一旦为真就不再抹掉：这条记录确实是被补录的，事后改成「当场录入」是篡改
-        if (backfilled) {
-            existing.setBackfilled(1);
-        }
-        recordMapper.updateById(existing);
+        recordMapper.upsertCheckIn(petId, userId, date, item.category(), buildContent(item),
+                abnormal ? 1 : 0, backfilled ? 1 : 0, weight,
+                AppTime.now(), TraceIds.currentOperatorId(), TraceIds.currentTraceId());
     }
 
     /**
@@ -245,18 +229,6 @@ public class CheckInService {
             fields.put("note", item.note());
         }
         return JsonFields.write(fields);
-    }
-
-    /** 体重取值解析：解析不了就留空（不能因为一个数字格式问题让整次打卡失败）。 */
-    private java.math.BigDecimal parseWeight(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        try {
-            return new java.math.BigDecimal(value.trim());
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 
     private String valueOf(ArchiveRecord record) {

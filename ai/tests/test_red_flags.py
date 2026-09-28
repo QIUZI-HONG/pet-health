@@ -11,10 +11,11 @@
 import pytest
 
 from app import main, red_flags
-from app.config import settings
 from app.red_flags import RedFlag
 
-TOKEN = {"X-Internal-Token": settings.internal_token}
+from .conftest import TEST_INTERNAL_TOKEN
+
+TOKEN = {"X-Internal-Token": TEST_INTERNAL_TOKEN}
 
 
 def rule(code="RF-001", pattern="中毒", variants=(), species="all", age="all", level=3) -> RedFlag:
@@ -216,3 +217,33 @@ def test_guardrail_rewrites_model_output(monkeypatch):
     assert body["guard_hits"], "护栏命中必须留痕，否则事后无法归因"
     assert body["possible_causes"] == [], "确诊类表述被整句剔除"
     assert body["care_tips"] == ["禁食 4 小时"], "正常的照护建议不受影响"
+
+
+def test_empty_rule_table_is_reported_as_unavailable(monkeypatch):
+    """词表查得到、但一条都没有 —— 同样是「这一层没生效」，不能报 ok。
+
+    真实缺陷（D5）：表被清空、迁移没跑、运营把 enabled 全关，都会走到这里；
+    原先 `available=True` 写死，于是红线层实际不存在、对外却报「已检查」，
+    而红线正是「红色 100% 召回」那条验收标准的机械保障。
+    """
+    monkeypatch.setattr(red_flags, "_query", list)
+
+    result = red_flags.load_rules(force=True)
+
+    assert result.rules == ()
+    assert result.available is False
+    assert "空" in result.detail
+
+
+def test_non_empty_rule_table_reports_available(monkeypatch):
+    """对照：有规则时才是 available。"""
+    monkeypatch.setattr(
+        red_flags,
+        "_query",
+        lambda: [RedFlag("RF-001", "中毒", (), "all", "all", 3, "立即送医")],
+    )
+
+    result = red_flags.load_rules(force=True)
+
+    assert len(result.rules) == 1
+    assert result.available is True

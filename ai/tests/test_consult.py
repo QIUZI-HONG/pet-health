@@ -10,6 +10,7 @@
 
 import asyncio
 import json
+from typing import ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,9 +20,11 @@ from app.config import settings
 from app.model_client import ModelOutputInvalid, ModelUnavailable, TriageResult
 from app.models import ConsultInput, ConsultRequest, PetContext
 
+from .conftest import TEST_INTERNAL_TOKEN
+
 client = TestClient(main.app)
 
-TOKEN = {"X-Internal-Token": settings.internal_token}
+TOKEN = {"X-Internal-Token": TEST_INTERNAL_TOKEN}
 
 
 def make_request(text: str = "今天吐了两次，精神还行", media_urls: list[str] | None = None) -> dict:
@@ -37,7 +40,7 @@ def make_request(text: str = "今天吐了两次，精神还行", media_urls: li
 
 
 def test_health_reports_capabilities():
-    body = client.get("/internal/health").json()
+    body = client.get("/internal/health", headers=TOKEN).json()
     assert body["status"] == "ok"
     # 版本号唯一来源是 settings（prompts.py 不再维护第二份）
     assert body["prompt_version"] == settings.prompt_version
@@ -192,7 +195,9 @@ def test_image_request_degrades_when_no_vision_model(monkeypatch):
     ).json()
 
     assert body["degraded"] is True
-    assert body["degrade_reason"].startswith("image_not_supported")
+    # degrade_code 是机器可读的码（用户可见的中文由 Java 侧映射），明细在 degrade_reason 里
+    assert body["degrade_code"] == "image_not_supported"
+    assert "VisionUnavailable" in body["degrade_reason"]
     assert body["images_used"] == 0
     assert "图片" in body["action_suggestion"]
     assert calls == []
@@ -207,7 +212,9 @@ def test_model_unavailable_degrades_to_conservative_advice(monkeypatch):
     body = client.post("/internal/consult", json=make_request(), headers=TOKEN).json()
 
     assert body["degraded"] is True
-    assert body["degrade_reason"].startswith("model_unavailable")
+    assert body["degrade_code"] == "model_unavailable"
+    # 明细里有异常类名，**这些不能出给用户**：Java 侧按 degrade_code 映射用户文案（测试报告 D6）
+    assert "ConnectTimeout" in body["degrade_reason"]
     assert body["need_hospital"] is True
     # 降级不等于报错：HTTP 仍然是 200，前端拿到的是一句人话
     assert body["risk_level"] == 2
@@ -224,7 +231,7 @@ def test_invalid_model_output_escalates_risk(monkeypatch):
     body = client.post("/internal/consult", json=make_request(), headers=TOKEN).json()
 
     assert body["degraded"] is True
-    assert body["degrade_reason"].startswith("model_output_invalid")
+    assert body["degrade_code"] == "model_output_invalid"
     assert body["risk_level"] == 3
 
 
@@ -304,3 +311,161 @@ def test_live_model_call_returns_tool_call():
     assert result.action_suggestion
     assert result.model_name
     assert result.latency_ms > 0
+
+
+# ---------------------------------------------------------------- 缺陷回归（2026-09-28 测试报告）
+
+
+@pytest.mark.parametrize(
+    "risk",
+    ['true', 'false', '2.0', '"3"', 'null', '[]'],
+)
+def test_validate_rejects_non_integer_risk_level(risk):
+    """risk_level 必须是 1/2/3 的整数。
+
+    这组用例来自一个真实缺陷（D4）：Python 里 `True == 1`，所以 `{"risk_level": true}` 原先能通过
+    `risk_level not in (1, 2, 3)` 的检查，再被 pydantic 转成 1——**一个类型错误的分级被当成「绿」放行**。
+    浮点与字符串同理（`2.0 in (1,2,3)` 也为真）。红线/分级是安全相关字段，宁可降级也不能猜。
+    """
+    payload = json.dumps({"risk_level": json.loads(risk), "action_suggestion": "观察"})
+    with pytest.raises(ModelOutputInvalid):
+        model_client._validate_arguments(payload)
+
+
+def test_red_level_forces_need_hospital():
+    """判红就必须建议就医：模型说「不用去医院」也照样置真（交付文档 9.5「红色必带就医建议」）。"""
+    fields = model_client._validate_arguments(
+        json.dumps({"risk_level": 3, "need_hospital": False, "action_suggestion": "观察一下"})
+    )
+    assert fields["risk_level"] == 3
+    assert fields["need_hospital"] is True
+
+
+def test_chat_treats_non_json_body_as_unavailable(monkeypatch):
+    """200 但不是 JSON：必须降级，不能变成未捕获异常 500（本文件头第 5 条纪律）。"""
+
+    class FakeResponse:
+        status_code = 200
+        text = "<html>gateway</html>"
+
+        def json(self):
+            raise json.JSONDecodeError("Expecting value", "<html>gateway</html>", 0)
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(model_client.httpx, "AsyncClient", lambda **kwargs: FakeClient())
+
+    with pytest.raises(ModelUnavailable):
+        asyncio.run(model_client._chat([{"role": "user", "content": "hi"}], "m"))
+
+
+def test_extract_tool_arguments_survives_malformed_shape():
+    """tool_calls 缺 function.arguments 时是降级，不是 KeyError。"""
+    with pytest.raises(ModelOutputInvalid):
+        model_client._extract_tool_arguments({"choices": [{"message": {"tool_calls": [{}]}}], "model": "m"})
+    with pytest.raises(ModelOutputInvalid):
+        model_client._extract_tool_arguments({"choices": [{"message": {"tool_calls": ["oops"]}}], "model": "m"})
+
+
+def test_inline_images_converts_to_data_url(monkeypatch):
+    """图片要取回本地、内联成 data URL：模型供应商拉不到我们内网的签名地址（D7）。"""
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 32
+
+    class FakeResponse:
+        status_code: int = 200
+        content: bytes = png
+        headers: ClassVar[dict[str, str]] = {"content-type": "image/png"}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.requested = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url):
+            self.requested.append(url)
+            return FakeResponse()
+
+    monkeypatch.setattr(model_client.httpx, "AsyncClient", FakeClient)
+
+    inlined = asyncio.run(model_client.inline_images(["http://127.0.0.1:8080/api/v1/open/files/1?token=t"]))
+
+    assert len(inlined) == 1
+    assert inlined[0].startswith("data:image/png;base64,")
+
+
+def test_inline_images_rejects_non_image(monkeypatch):
+    """取回的不是图片（或压根没取到）：明确抛 ImageUnavailable，好让上层如实告诉用户「图没看」。"""
+
+    class FakeResponse:
+        status_code: int = 200
+        content: bytes = b"<html>login</html>"
+        headers: ClassVar[dict[str, str]] = {"content-type": "text/html"}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url):
+            return FakeResponse()
+
+    monkeypatch.setattr(model_client.httpx, "AsyncClient", FakeClient)
+
+    with pytest.raises(model_client.ImageUnavailable):
+        asyncio.run(model_client.inline_images(["http://127.0.0.1:8080/x"]))
+
+
+def test_image_unavailable_degrades_distinctly(monkeypatch):
+    """取不到图与「模型看不见图」是两件事，降级码要分开，事后归因才分得清。"""
+
+    async def fake_assess(**kwargs):
+        raise model_client.ImageUnavailable("图片下载失败（ConnectError）")
+
+    monkeypatch.setattr(main.model_client, "assess", fake_assess)
+
+    body = client.post(
+        "/internal/consult",
+        json=make_request(media_urls=["http://127.0.0.1:8080/api/v1/open/files/9?token=x"]),
+        headers=TOKEN,
+    ).json()
+
+    assert body["degraded"] is True
+    assert body["degrade_code"] == "image_unavailable"
+    assert body["images_used"] == 0
+
+
+# ---------------------------------------------------------------- 对外暴露面
+
+
+def test_docs_and_openapi_are_disabled():
+    """内部服务的请求结构不外泄：交互式文档与 openapi.json 一律关闭（D17）。"""
+    assert client.get("/docs").status_code == 404
+    assert client.get("/openapi.json").status_code == 404
+
+
+def test_healthz_is_open_but_bare():
+    """探针用的 /healthz 不需要令牌，但也不吐配置与能力信息。"""
+    body = client.get("/healthz").json()
+    assert body == {"status": "ok"}
+
+
+def test_internal_health_requires_token():
+    assert client.get("/internal/health").status_code == 401

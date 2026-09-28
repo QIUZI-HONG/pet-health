@@ -18,6 +18,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import jakarta.validation.ConstraintViolationException;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -45,26 +46,58 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(e.getErrorCode(), e.getMessage()));
     }
 
+    /**
+     * 请求体字段校验失败。
+     *
+     * <p>**返回给用户的只有注解自带的那句中文**（例如「密码需 8–32 位，且同时包含字母与数字」），
+     * 不再拼上英文字段键——契约说 {@code message} 是「前端直接展示」的文案，
+     * 而「weight 体重需小于 1000」这种把内部标识甩给用户的消息，是 2026-09-28 测试报告里的 D25。
+     * 字段名进日志，排查时照样能对上。
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException e) {
-        String detail = e.getBindingResult().getFieldErrors().stream()
-                .map(this::describe)
-                .collect(Collectors.joining("; "));
+    public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException e,
+                                                              HttpServletRequest request) {
+        List<FieldError> errors = e.getBindingResult().getFieldErrors();
+        log.info("参数校验失败 path={} fields={} traceId={}", request.getRequestURI(),
+                errors.stream().map(FieldError::getField).collect(Collectors.joining(",")),
+                TraceIds.currentTraceId());
+        String detail = errors.stream()
+                .map(FieldError::getDefaultMessage)
+                .filter(message -> message != null && !message.isBlank())
+                .collect(Collectors.joining("；"));
         return badRequest(detail);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ApiResponse<Void>> handleConstraintViolation(ConstraintViolationException e) {
+    public ResponseEntity<ApiResponse<Void>> handleConstraintViolation(ConstraintViolationException e,
+                                                                      HttpServletRequest request) {
+        log.info("参数校验失败（方法级）path={} violations={} traceId={}", request.getRequestURI(),
+                e.getConstraintViolations().size(), TraceIds.currentTraceId());
         String detail = e.getConstraintViolations().stream()
-                .map(v -> v.getPropertyPath() + " " + v.getMessage())
-                .collect(Collectors.joining("; "));
+                .map(v -> v.getMessage())
+                .filter(message -> message != null && !message.isBlank())
+                .collect(Collectors.joining("；"));
         return badRequest(detail);
     }
 
+    /**
+     * 参数缺失、类型不对、请求体不是合法 JSON。
+     *
+     * <p>三类分开给话术：缺参数与取值不合法是**调用方自己的问题**，把参数名（契约里的名字）告诉它
+     * 才帮得上忙；而框架的原始异常消息里带内部类名、字段路径、Java 参数名，一律只进日志。
+     */
     @ExceptionHandler({MissingServletRequestParameterException.class, MethodArgumentTypeMismatchException.class,
             HttpMessageNotReadableException.class})
-    public ResponseEntity<ApiResponse<Void>> handleMalformedRequest(Exception e) {
-        return badRequest("请求参数无法解析：" + e.getMessage());
+    public ResponseEntity<ApiResponse<Void>> handleMalformedRequest(Exception e, HttpServletRequest request) {
+        log.info("请求无法解析 path={} traceId={} detail={}", request.getRequestURI(),
+                TraceIds.currentTraceId(), e.getMessage());
+        if (e instanceof MissingServletRequestParameterException missing) {
+            return badRequest("缺少必填参数：" + missing.getParameterName());
+        }
+        if (e instanceof MethodArgumentTypeMismatchException mismatch) {
+            return badRequest("参数 " + mismatch.getName() + " 的取值不合法");
+        }
+        return badRequest("请求体格式不正确（不是合法的 JSON）");
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
@@ -96,9 +129,5 @@ public class GlobalExceptionHandler {
                 : detail;
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.fail(ErrorCode.PARAM_INVALID, message));
-    }
-
-    private String describe(FieldError error) {
-        return error.getField() + " " + error.getDefaultMessage();
     }
 }

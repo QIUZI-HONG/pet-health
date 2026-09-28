@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.pethealth.api.app.HealthScoreDimension;
 import com.pethealth.api.app.HealthScoreView;
 import com.pethealth.common.time.AppTime;
+import com.pethealth.common.trace.TraceIds;
 import com.pethealth.record.domain.HealthScore;
 import com.pethealth.record.domain.Pet;
 import com.pethealth.record.mapper.ArchiveRecordMapper;
@@ -116,28 +117,28 @@ public class HealthScoreService {
         upsert(petId, calcDate, compute(pet, calcDate));
     }
 
+    /**
+     * 写入当日行。**一条原子 SQL**（{@code ON DUPLICATE KEY UPDATE}），不做「先查再插/改」。
+     *
+     * <p>并发提交（双击、双标签页、打卡与防疫同时写）在旧实现下会撞 {@code uk_pet_calc_date}，
+     * 而撞唯一键会把事务标记成 rollback-only——接住异常也救不回来，提交时照样 50000
+     * （2026-09-28 测试报告的并发用例实测：4 个并发提交里 2 个 500）。原子 upsert 从根上避开。
+     */
     private void upsert(long petId, LocalDate calcDate, Computed computed) {
-        HealthScore existing = healthScoreMapper.selectOne(Wrappers.<HealthScore>lambdaQuery()
-                .eq(HealthScore::getPetId, petId)
-                .eq(HealthScore::getCalcDate, calcDate));
-
-        HealthScore score = existing == null ? new HealthScore() : existing;
-        score.setPetId(petId);
-        score.setCalcDate(calcDate);
-        // 没有任何记录时总分记 0：接口层用 total_score=null 表达「暂无数据」，库里不存 NULL 语义的分数
-        score.setTotalScore(computed.totalScore() == null ? 0 : computed.totalScore());
-        score.setPhysiology(scoreOf(computed, "physiology"));
-        score.setBehavior(scoreOf(computed, "behavior"));
-        score.setHygiene(scoreOf(computed, "hygiene"));
-        score.setEpidemic(scoreOf(computed, "epidemic"));
-        score.setElderly(scoreOf(computed, "elderly"));
-        score.setIncludedDimensions(computed.includedCount());
-
-        if (existing == null) {
-            healthScoreMapper.insert(score);
-        } else {
-            healthScoreMapper.updateById(score);
-        }
+        healthScoreMapper.upsertScore(
+                petId,
+                calcDate,
+                // 没有任何记录时总分记 0：接口层用 total_score=null 表达「暂无数据」，库里不存 NULL 语义的分数
+                computed.totalScore() == null ? 0 : computed.totalScore(),
+                scoreOf(computed, "physiology"),
+                scoreOf(computed, "behavior"),
+                scoreOf(computed, "hygiene"),
+                scoreOf(computed, "epidemic"),
+                scoreOf(computed, "elderly"),
+                computed.includedCount(),
+                AppTime.now(),
+                TraceIds.currentOperatorId(),
+                TraceIds.currentTraceId());
     }
 
     /**

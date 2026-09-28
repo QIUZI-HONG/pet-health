@@ -1,6 +1,8 @@
 package com.pethealth.record.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.pethealth.common.time.AppTime;
+import com.pethealth.common.trace.TraceIds;
 import com.pethealth.record.api.ProfileExportApi;
 import com.pethealth.record.domain.ArchiveRecord;
 import com.pethealth.record.domain.HealthScore;
@@ -68,17 +70,33 @@ public class ProfileExportService implements ProfileExportApi {
     }
 
     /**
-     * 注销时软删全部宠物。
+     * 注销时软删该用户的全部宠物**与它们名下的档案**（打卡/防疫记录、健康评分）。
      *
-     * <p>**用软删而不是物理删**：注销后用户仍可能行使「导出」权利，也可能有历史订单要留痕；
+     * <p>三条都做，是因为契约里写的就是「宠物与档案软删」（`app.yaml` 的注销说明），
+     * 而早先的实现只软删了宠物——档案还在，只是没人再查得到（2026-09-28 测试报告 D12）。
+     *
+     * <p>宠物走 {@link PetMapper#softDelete} 而不是 {@code deleteById}：前者会写 {@code deleted_at}，
+     * 也就是「30 天内可恢复」这个承诺的起点；漏写会让这只宠物既不在列表里、也不在回收站里。
+     *
+     * <p>不物理删除：注销后用户仍可能行使「导出」权利，历史也另有留痕用途；
      * 物理删除的窗口留给数据清理任务（V9 的迁移注释里写了这条分工）。
      */
     @Override
     @Transactional
     public int softDeleteAll(long userId) {
         List<Pet> pets = petMapper.selectList(Wrappers.<Pet>lambdaQuery().eq(Pet::getUserId, userId));
+        var now = AppTime.now();
+        long operatorId = TraceIds.currentOperatorId();
+        String traceId = TraceIds.currentTraceId();
         for (Pet pet : pets) {
-            petMapper.deleteById(pet.getId());
+            recordMapper.softDeleteByPet(pet.getId(), now, operatorId, traceId);
+            scoreMapper.update(null, Wrappers.<HealthScore>lambdaUpdate()
+                    .eq(HealthScore::getPetId, pet.getId())
+                    .set(HealthScore::getIsDeleted, 1)
+                    .set(HealthScore::getUpdatedAt, now)
+                    .set(HealthScore::getUpdatedBy, operatorId)
+                    .set(HealthScore::getTraceId, traceId));
+            petMapper.softDelete(pet.getId(), userId, now, operatorId, traceId);
         }
         return pets.size();
     }

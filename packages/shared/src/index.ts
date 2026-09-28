@@ -48,6 +48,7 @@ export type {
 export { http } from "./http/client";
 export { ApiError } from "./http/errors";
 export { tokenStore } from "./http/tokenStore";
+export { onSessionExpired } from "./http/sessionEvents";
 export type { SessionTokens } from "./http/tokenStore";
 
 // 展示格式化与字典：日期格式、日期加减、物种/性别这些标签各页面共用一份（docs/conventions.md）

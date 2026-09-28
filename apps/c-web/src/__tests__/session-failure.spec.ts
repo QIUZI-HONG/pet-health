@@ -156,3 +156,30 @@ describe("会话失败的分类", () => {
     expect(wrapper.text()).toContain("去登录");
   });
 });
+
+/**
+ * 会话失效的广播（测试报告 D15）。
+ *
+ * 请求层（packages/shared）不认识会话 store，所以由它广播、应用在启动时注册处理。
+ * 这里验的是「广播一到，会话状态就收干净」——否则界面会停在「看起来已登录、实际每个请求 401」。
+ */
+describe("会话失效广播", () => {
+  it("收到广播后，身份与宠物一起清掉，状态回到未登录", () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const session = useSessionStore();
+    session.$patch({
+      status: "authenticated",
+      hasSession: true,
+      user: { id: 1, nickname: "我", phone: "138****8000", gender: 0 } as never,
+      pets: [{ id: 9, name: "豆豆" }] as never,
+    });
+
+    session.markSessionExpired();
+
+    expect(session.status).toBe("anonymous");
+    expect(session.hasSession).toBe(false);
+    expect(session.user).toBeNull();
+    expect(session.pets).toEqual([]);
+  });
+});

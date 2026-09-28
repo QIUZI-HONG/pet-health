@@ -4,11 +4,20 @@ import "@pet-health/ui/tokens.css";
 import "./styles/app.css";
 import App from "./App.vue";
 import { router } from "./router";
+import { onSessionExpired } from "@pet-health/shared";
 import { useSessionStore } from "./stores/session";
+import { useMessageStore } from "./stores/messages";
 
 const app = createApp(App);
 app.use(createPinia());
 app.use(router);
+
+// 刷新令牌也换不回来时，请求层会广播「会话失效」：这里把身份与未读角标一起清掉，
+// 界面立刻回到未登录，而不是继续显示「已登录」（测试报告 D15）
+onSessionExpired(() => {
+  useSessionStore().markSessionExpired();
+  useMessageStore().clear();
+});
 
 // 启动时拉一次会话：有本地令牌就换出用户与宠物，没有就是匿名（不发请求）。
 // 失败不阻塞渲染——页面自己按状态显示空态 / 无权限态。

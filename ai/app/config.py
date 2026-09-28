@@ -38,10 +38,16 @@ class Settings(BaseSettings):
     # （40 / 120 / 900 / 1500 token 都实测踩过）。一次带图的真实分级用了 1083 个输出 token
     # （其中 reasoning 510），所以默认留到 3000——上限只是上限，不生成的 token 不计费。
     ai_max_output_tokens: int = 3000
-    # 单次最多送几张图。图片直接进模型上下文，太多了既费 token 也没帮助。
-    ai_max_images: int = 3
+    # 单次最多送几张图。**与契约的 file_ids maxItems: 4 对齐**——两边不一致时，
+    # 第 4 张会被静默丢掉（用户以为传了 4 张，模型只看了 3 张）。图片直接进模型上下文，
+    # 4 张已经是够用的上限（测试报告 D27）。
+    ai_max_images: int = 4
     ai_timeout_seconds: float = 20.0
     ai_max_repair_retry: int = 1
+    # 图片要从 Java 侧取回来再内联给模型（供应商拉不到我们的内网地址）：单张下载超时与体积上限。
+    # 上限与 ph-file 的 10MB 上传上限不是一个概念——这里限制的是「进模型上下文的那份」。
+    ai_image_timeout_seconds: float = 10.0
+    ai_max_image_bytes: int = 5_000_000
 
     # ---- 能力开关（实测记录见 ADR-0017）----
     # 图片：**flash 可以**（红/蓝方块颜色都能正确识别，不给图则答「无法确定」；pro 不行），

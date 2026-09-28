@@ -73,7 +73,10 @@
 }
 ```
 
-`degraded=true` 时，Java 侧映射到交付文档的错误码 **60001**（超时→可重试/转人工）或 **60002**（失败→降级提示）。
+`degraded=true` 时，AI 服务给一个机器可读的 `degrade_code`
+（`image_not_supported` / `image_unavailable` / `model_unavailable` / `model_output_invalid`），
+Java 侧据此映射成给用户看的中文并把码与明细写进留痕；上游异常类名与模型原文只进留痕，不下发。
+（交付文档的 **60001/60002** 目前没有产出路径——降级一律 200 + `degraded`，见 `ErrorCode` 的注释。）
 
 ## 3. 处理链路
 

@@ -59,13 +59,14 @@ public class EpidemicRecordService {
     @Transactional
     public EpidemicRecordView create(long userId, long petId, EpidemicRecordInput input) {
         requireOwnedPet(userId, petId);
-        LocalDate givenOn = LocalDate.parse(input.givenOn());
+        // 日期一律走 AppTime.parseDate：格式对但日子不存在（2026-02-31）要给 40001 而不是 50000
+        LocalDate givenOn = AppTime.parseDate(input.givenOn());
         if (givenOn.isAfter(AppTime.today())) {
-            throw BusinessException.paramInvalid("given_on 不能晚于今天");
+            throw BusinessException.paramInvalid("接种日期不能晚于今天");
         }
         LocalDate dueOn = input.nextDueOn() == null || input.nextDueOn().isBlank()
                 ? null
-                : LocalDate.parse(input.nextDueOn());
+                : AppTime.parseDate(input.nextDueOn());
         if (dueOn != null && dueOn.isBefore(givenOn)) {
             throw BusinessException.paramInvalid("下次应接种日期不能早于本次日期");
         }

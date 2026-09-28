@@ -94,6 +94,21 @@ export const useSessionStore = defineStore("session", {
       }
     },
 
+    /**
+     * 会话失效（请求层刷新也换不回来时广播过来）。
+     *
+     * 与 logout 的区别：logout 是用户主动退出（会通知服务端），这里是身份已经作废，
+     * 只做清态——令牌在请求层已经清掉了，这里把界面状态收干净，别停在「看起来已登录」。
+     */
+    markSessionExpired(): void {
+      this.user = null;
+      this.pets = [];
+      this.hasSession = false;
+      this.status = "anonymous";
+      this.errorMessage = "";
+      this.errorRequestId = "";
+    },
+
     async login(phone: string, password: string): Promise<void> {
       const tokens = await cApp.login({ phone, password });
       this.applyTokens(tokens);

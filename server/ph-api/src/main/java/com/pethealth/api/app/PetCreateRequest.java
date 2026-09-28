@@ -1,13 +1,10 @@
 package com.pethealth.api.app;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.validation.constraints.DecimalMax;
-import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
@@ -17,6 +14,10 @@ import java.time.LocalDate;
  *
  * <p>「慢病描述在 {@code is_chronic=true} 时必填」是跨字段规则，注解表达不了，
  * 由 service 校验——硬塞进注解只会让报错信息变得读不懂。
+ *
+ * <p>{@code weight} 的形态与范围同理**不在这里写第二遍**：规则只有一份，
+ * 在 {@code ph-record} 的 {@code Weight} 值对象里（打卡与建档共用）。注解里再抄一份，
+ * 改一处忘一处就是测试报告 D1 的成因（打卡路径当时没有校验，垃圾体重被写进趋势）。
  */
 public record PetCreateRequest(
 
@@ -38,9 +39,6 @@ public record PetCreateRequest(
 
         LocalDate birthday,
 
-        @Pattern(regexp = "^\\d{1,3}(\\.\\d{1,2})?$", message = "体重需为最多两位小数的数字")
-        @DecimalMin(value = "0.01", message = "体重需大于 0")
-        @DecimalMax(value = "999.99", message = "体重需小于 1000")
         String weight,
 
         @Size(max = 512, message = "头像地址最长 512 个字符")

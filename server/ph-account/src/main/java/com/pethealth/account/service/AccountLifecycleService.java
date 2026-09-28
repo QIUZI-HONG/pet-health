@@ -1,5 +1,6 @@
 package com.pethealth.account.service;
 
+import com.pethealth.account.auth.AccountStatus;
 import com.pethealth.account.domain.User;
 import com.pethealth.account.mapper.UserMapper;
 import com.pethealth.api.app.AccountExportView;
@@ -38,15 +39,18 @@ public class AccountLifecycleService {
     private final ProfileExportApi profileExportApi;
     private final MessageQueryApi messageQueryApi;
     private final FieldCipher fieldCipher;
+    private final AccountStatus accountStatus;
 
     public AccountLifecycleService(UserMapper userMapper, AccountService accountService,
                                    ProfileExportApi profileExportApi,
-                                   MessageQueryApi messageQueryApi, FieldCipher fieldCipher) {
+                                   MessageQueryApi messageQueryApi, FieldCipher fieldCipher,
+                                   AccountStatus accountStatus) {
         this.userMapper = userMapper;
         this.accountService = accountService;
         this.profileExportApi = profileExportApi;
         this.messageQueryApi = messageQueryApi;
         this.fieldCipher = fieldCipher;
+        this.accountStatus = accountStatus;
     }
 
     /** 导出：账号资料 + 宠物档案 + 消息。 */
@@ -99,7 +103,9 @@ public class AccountLifecycleService {
         userMapper.updateById(user);
 
         int pets = profileExportApi.softDeleteAll(userId);
-        log.info("账号已注销 user_id={} 软删宠物 {} 只", userId, pets);
+        // 让已签发的 Access Token 立刻作废：状态判在鉴权层一处，其它模块不必各自记得查
+        accountStatus.markDisabled(userId);
+        log.info("账号已注销 user_id={} 软删宠物 {} 只（含名下档案）", userId, pets);
     }
 
     private User require(long userId) {

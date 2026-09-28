@@ -72,7 +72,15 @@ def load_rules(force: bool = False) -> LoadResult:
         return _cache[1]
 
     try:
-        result = LoadResult(rules=tuple(_query()), available=True)
+        rules = tuple(_query())
+        # **查得到但一条没有**，与「查不到」同样是这一层没生效：表被清空、迁移没跑、
+        # 运营把 enabled 全关了，都会走到这里。早先这里写死 available=True，
+        # 于是红线层实际不存在、对外却报「已检查」——安全网静默失效（测试报告 D5）。
+        result = LoadResult(
+            rules=rules,
+            available=bool(rules),
+            detail="" if rules else "词表为空（enabled 的规则数为 0）",
+        )
     except Exception as exc:  # noqa: BLE001 —— DB 故障的种类不值得在这里穷举，一律视为「这一层不可用」
         logger.warning("红线词表加载失败，本次不生效：%s", exc)
         result = LoadResult(rules=(), available=False, detail=str(exc))

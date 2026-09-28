@@ -2,7 +2,7 @@
 /**
  * 顶栏：当前宠物 + 通知 + 账号（ADR-0016 定的三段）。
  *
- * 通知入口先留着不做跳转——提醒体系（#56 / #99）还没实现，做成假的红点会骗人。
+ * 通知入口跳消息中心（#99 已实现），红点数字取未读数的实时值——不是装饰。
  */
 import { onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";

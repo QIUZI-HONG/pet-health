@@ -2,18 +2,25 @@ package com.pethealth.record.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.pethealth.record.domain.ArchiveRecord;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 档案记录（打卡）的数据访问。
+ * 档案记录（打卡与防疫）的数据访问。
  *
- * <p>普通查询走 MyBatis-Plus（逻辑删除自动过滤）；下面两条是手写 SQL，
- * **必须自己带 {@code is_deleted = 0}**——逻辑删除插件不管手写 SQL（ADR-0011）。
+ * <p>普通查询走 MyBatis-Plus（逻辑删除自动过滤）；手写 SQL
+ * **必须自己写 {@code is_deleted = 0}**——逻辑删除插件不管手写 SQL（ADR-0011）。
+ *
+ * <p>打卡的写入是例外：{@link #upsertCheckIn} 一条 SQL 吃掉「更新 / 复活 / 新增」三种情况。
+ * 那里绕开了逻辑删除，因为 {@code uk_checkin_slot} 是物理唯一键，**撤销过的行仍占着那个槽**。
  */
 @Mapper
 public interface ArchiveRecordMapper extends BaseMapper<ArchiveRecord> {
@@ -29,12 +36,63 @@ public interface ArchiveRecordMapper extends BaseMapper<ArchiveRecord> {
                              @Param("category") int category);
 
     /**
-     * 窗口内「日期 × 分项」粒度的聚合。
+     * 写一条打卡分项：**一条 SQL 完成「同槽更新 / 复活 / 新增」**。
      *
-     * <p>为什么不是直接按分项聚合：一个维度覆盖多个分项（生理 = 体重 + 饮食 + 排泄），
-     * 完整度要算「该维有记录的**天数**」——那是各分项日期的**并集**，不是各自天数的最大值。
-     * 按分项聚合回来只能取 max，会把「同一天只记了排泄」的日子漏掉（踩过）。
+     * <p>为什么不用「先查再插/改」：`uk_checkin_slot` 是物理唯一键（槽 = 宠物 + 日期 + 分项），
+     * 查与写之间的窗口里，另一个并发请求可以插进同一槽——撞唯一键会**把当前事务标记成
+     * rollback-only**，接住异常也没用，提交时照样 500（并发用例实测：4 个并发提交里 2 个 500）。
+     * `ON DUPLICATE KEY UPDATE` 从根上避开这个竞态。
+     *
+     * <p>同时它天然覆盖「撤销后重填」：撤掉的行 {@code is_deleted = 1}，但 {@code checkin_slot}
+     * 不含这个字段，冲突时走 UPDATE 分支并把它复活（2026-09-28 测试报告 D2）。
+     * 语义是「撤销 = 这条记错了，重填就是改这一条」，所以复活而不是新插一行。
+     *
+     * <p>{@code backfilled} 用 {@code IF} 而不是直接覆盖：补录标记一旦为真就不再抹掉
+     * （事后改成「当场录入」是篡改）。
      */
+    @Insert("""
+            INSERT INTO archive_record
+                (pet_id, user_id, record_date, category, content, abnormal, backfilled, numeric_value,
+                 source, created_at, updated_at, created_by, updated_by, trace_id, is_deleted)
+            VALUES
+                (#{petId}, #{userId}, #{date}, #{category}, #{content}, #{abnormal}, #{backfilled},
+                 #{numericValue}, 1, #{now}, #{now}, #{operatorId}, #{operatorId}, #{traceId}, 0)
+            ON DUPLICATE KEY UPDATE
+                content = VALUES(content),
+                abnormal = VALUES(abnormal),
+                numeric_value = VALUES(numeric_value),
+                backfilled = IF(backfilled = 1 OR VALUES(backfilled) = 1, 1, 0),
+                is_deleted = 0,
+                updated_at = VALUES(updated_at),
+                updated_by = VALUES(updated_by),
+                trace_id = VALUES(trace_id)
+            """)
+    int upsertCheckIn(@Param("petId") long petId,
+                      @Param("userId") long userId,
+                      @Param("date") LocalDate date,
+                      @Param("category") int category,
+                      @Param("content") String content,
+                      @Param("abnormal") int abnormal,
+                      @Param("backfilled") int backfilled,
+                      @Param("numericValue") BigDecimal numericValue,
+                      @Param("now") LocalDateTime now,
+                      @Param("operatorId") long operatorId,
+                      @Param("traceId") String traceId);
+
+    /** 软删一只宠物的全部档案记录（打卡与防疫），注销链路用。返回受影响行数。 */
+    @Update("""
+            UPDATE archive_record
+               SET is_deleted = 1,
+                   updated_at = #{now},
+                   updated_by = #{operatorId},
+                   trace_id = #{traceId}
+             WHERE pet_id = #{petId} AND is_deleted = 0
+            """)
+    int softDeleteByPet(@Param("petId") long petId,
+                        @Param("now") LocalDateTime now,
+                        @Param("operatorId") long operatorId,
+                        @Param("traceId") String traceId);
+
     /**
      * 防疫记录的概况：记录条数 + 最早的到期日。一次查询就够（{@code EpidemicSummary}）。
      *
@@ -52,6 +110,13 @@ public interface ArchiveRecordMapper extends BaseMapper<ArchiveRecord> {
     record EpidemicSummary(int totalCount, java.time.LocalDate earliestDue) {
     }
 
+    /**
+     * 窗口内「日期 × 分项」粒度的聚合。
+     *
+     * <p>为什么不是直接按分项聚合：一个维度覆盖多个分项（生理 = 体重 + 饮食 + 排泄），
+     * 完整度要算「该维有记录的**天数**」——那是各分项日期的**并集**，不是各自天数的最大值。
+     * 按分项聚合回来只能取 max，会把「同一天只记了排泄」的日子漏掉（踩过）。
+     */
     @Select("""
             SELECT record_date  AS recordDate,
                    category     AS category,

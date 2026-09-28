@@ -10,6 +10,7 @@ import com.pethealth.reminder.mapper.MessageMapper;
 import com.pethealth.reminder.mapper.ReminderSettingMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -368,7 +369,15 @@ public class ReminderGenerator {
         message.setActionHint(candidate.actionHint());
         message.setActionTarget(candidate.actionTarget());
         message.setChannelState("in_site");
-        messageMapper.insert(message);
+        try {
+            messageMapper.insert(message);
+        } catch (DuplicateKeyException e) {
+            // 上面的「先查后插」之间有一个窗口：首页同时拉列表与强提醒流（或批算与用户请求并发）时，
+            // 两边都查不到就都插入，后一个撞 uk_dedup 报 50000，而这条消息其实已经生成了。
+            // 接住即可——同一个去重键本来就只该有一条消息（2026-09-28 测试报告 D9）。
+            log.info("提醒去重键并发命中，已有同键消息 dedup_key={}", candidate.dedupKey());
+            return 0;
+        }
         return 1;
     }
 

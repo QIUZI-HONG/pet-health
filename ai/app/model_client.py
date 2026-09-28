@@ -12,9 +12,13 @@
    带图请求由调用方降级——不要硬发给看不见图的模型，那会得到「无法确定」这种看似正常的错误答案。
 3. **工具调用只能 `tool_choice=auto`**。思考模式拒绝强制指定（HTTP 400），
    所以「模型没调工具」是正常分支，要重试一次而不是当成崩溃。
-4. **失败一律降级、不向上抛错**。模型不可用时用户拿到的是保守建议，不是 500。
+4. **图片必须先取回本地再内联**。签名读地址指向我们自己的后端，供应商拉不到；
+   直接把地址交出去会得到一个「看起来正常、其实没看图」的答案（`inline_images` 有说明）。
+5. **失败一律降级、不向上抛错**。模型不可用时用户拿到的是保守建议，不是 500；
+   连「200 但不是 JSON」「tool_calls 缺字段」这类形状异常也要降级，不能变成 500。
 """
 
+import base64
 import json
 import time
 from dataclasses import dataclass, field
@@ -26,11 +30,19 @@ from .prompts import REPORT_TOOL
 
 
 class ModelUnavailable(Exception):
-    """传输层失败：超时、连不上、非 2xx。调用方据此降级。"""
+    """传输层失败：超时、连不上、非 2xx、响应体根本不是 JSON。调用方据此降级。"""
 
 
 class VisionUnavailable(Exception):
     """带图请求但当前没有能看图的模型。调用方据此明确降级并告知用户。"""
+
+
+class ImageUnavailable(Exception):
+    """有图、也有能看图的模型，但**图片取不回来**（签名地址失效、后端不可达、体积超限）。
+
+    与 `VisionUnavailable` 分开：那一个是「模型不能看图」，这一个是「我们没把图送到」，
+    事后归因要能区分（测试报告 D7）。
+    """
 
 
 class ModelOutputInvalid(Exception):
@@ -62,8 +74,12 @@ def _validate_arguments(raw: str) -> dict:
         raise ModelOutputInvalid("工具参数不是对象")
 
     risk_level = data.get("risk_level")
-    if risk_level not in (1, 2, 3):
-        raise ModelOutputInvalid(f"risk_level 越界：{risk_level!r}")
+    # **`bool` 要单独挡住**：Python 里 `True == 1`，`True in (1, 2, 3)` 是 True——
+    # 模型回 `{"risk_level": true}` 会被当成「绿」放行。分级是安全相关的字段，
+    # 宁可降级也不能让一个类型错误的分级走到用户面前（测试报告 D4）。
+    # 同理拒掉 `2.0` / `"3"`：契约里它就是一个 1..3 的整数。
+    if isinstance(risk_level, bool) or not isinstance(risk_level, int) or risk_level not in (1, 2, 3):
+        raise ModelOutputInvalid(f"risk_level 必须是 1/2/3 的整数，实际是 {risk_level!r}")
 
     action = data.get("action_suggestion")
     if not isinstance(action, str) or not action.strip():
@@ -76,11 +92,15 @@ def _validate_arguments(raw: str) -> dict:
             raise ModelOutputInvalid(f"期望数组，实际是 {type(value).__name__}")
         return [str(item)[:200] for item in value[:limit]]
 
+    # 红色**必带就医建议**（交付文档 9.5 / ADR-0021）：模型说不用去医院也照样置真。
+    # 默认值只兜「字段缺失」，兜不住「模型明确给了 false 但判了红」。
+    need_hospital = bool(data.get("need_hospital", risk_level >= 2)) or risk_level >= 3
+
     return {
         "risk_level": risk_level,
         "possible_causes": string_list(data.get("possible_causes"), 3),
         "action_suggestion": action.strip()[:500],
-        "need_hospital": bool(data.get("need_hospital", risk_level >= 2)),
+        "need_hospital": need_hospital,
         "care_tips": string_list(data.get("care_tips"), 3),
     }
 
@@ -109,14 +129,20 @@ async def _chat(messages: list[dict], model: str) -> dict:
 
     if response.status_code >= 400:
         raise ModelUnavailable(f"模型返回 HTTP {response.status_code}：{response.text[:160]}")
-    return response.json()
+    try:
+        return response.json()
+    except ValueError as exc:
+        # 200 但不是 JSON：`json.JSONDecodeError` 不是 `httpx.HTTPError` 的子类，
+        # 不接住就会逃出上面的 try，变成未捕获异常 500——而本文件头的第 4 条纪律是
+        # 「失败一律降级、不向上抛错」（测试报告里 AI 侧的同批缺陷）
+        raise ModelUnavailable(f"模型响应不是合法 JSON：{response.text[:120]}") from exc
 
 
 def _extract_tool_arguments(body: dict) -> tuple[str, str]:
     """从响应里取出工具参数与模型版本。没有工具调用 → 抛 ModelOutputInvalid。"""
     try:
         choice = body["choices"][0]
-    except (KeyError, IndexError) as exc:
+    except (KeyError, IndexError, TypeError) as exc:
         raise ModelOutputInvalid("响应结构不符合预期") from exc
 
     tool_calls = choice.get("message", {}).get("tool_calls") or []
@@ -125,7 +151,14 @@ def _extract_tool_arguments(body: dict) -> tuple[str, str]:
         # finish_reason=length 且没有 content，几乎总是输出预算被 reasoning 吃掉了
         raise ModelOutputInvalid(f"模型没有调用工具（finish_reason={finish}）")
 
-    return tool_calls[0]["function"]["arguments"], str(body.get("model", ""))
+    # 形状异常（不是 list、缺 function.arguments）也要降级，不能 KeyError/TypeError 逃出去
+    first = tool_calls[0]
+    if not isinstance(first, dict):
+        raise ModelOutputInvalid("工具调用的形状不符合预期")
+    arguments = first.get("function", {}).get("arguments")
+    if not isinstance(arguments, str):
+        raise ModelOutputInvalid("工具调用里没有 arguments")
+    return arguments, str(body.get("model", ""))
 
 
 def _user_content(user_prompt: str, images: list[str]) -> str | list[dict]:
@@ -136,6 +169,44 @@ def _user_content(user_prompt: str, images: list[str]) -> str | list[dict]:
     for url in images:
         blocks.append({"type": "image_url", "image_url": {"url": url}})
     return blocks
+
+
+def _data_url(content: bytes, content_type: str) -> str:
+    """内联成 data URL：模型供应商只需要能解码 base64，不需要能访问我们的内网。"""
+    encoded = base64.b64encode(content).decode("ascii")
+    return f"data:{content_type};base64,{encoded}"
+
+
+async def inline_images(urls: list[str]) -> list[str]:
+    """把图片取回来、转成 data URL 交给模型。
+    
+    **为什么不能把签名读地址直接交给供应商**：那个地址指向我们自己的后端
+    （本地是 127.0.0.1、线上是内网），供应商拉不到——而且是**静默失败**：
+    模型基于「看不到图」给出一个格式完全正常的回答，用户以为照片被看过了。
+    这种「看起来正常的错误答案」比报错危险得多（测试报告 D7）。
+    
+    取不到就抛 `ImageUnavailable`：调用方据此明确告诉用户「图片这轮没分析」，
+    而不是假装看过。张数、类型、体积都在这里把关，别把 10MB 的原图塞进上下文。
+    """
+    if not urls:
+        return []
+    inlined: list[str] = []
+    async with httpx.AsyncClient(timeout=settings.ai_image_timeout_seconds) as client:
+        for url in urls:
+            try:
+                response = await client.get(url)
+            except httpx.HTTPError as exc:
+                raise ImageUnavailable(f"图片下载失败（{type(exc).__name__}）") from exc
+            if response.status_code != 200:
+                raise ImageUnavailable(f"图片下载失败（HTTP {response.status_code}）")
+            content_type = (response.headers.get("content-type") or "").split(";")[0].strip()
+            if not content_type.startswith("image/"):
+                raise ImageUnavailable(f"取回的不是图片（content-type={content_type or '未知'}）")
+            if len(response.content) > settings.ai_max_image_bytes:
+                raise ImageUnavailable(
+                    f"图片超过 {settings.ai_max_image_bytes} 字节上限（{len(response.content)}）")
+            inlined.append(_data_url(response.content, content_type))
+    return inlined
 
 
 async def assess(
@@ -157,6 +228,8 @@ async def assess(
         if not settings.ai_supports_image or not settings.ai_vision_model:
             raise VisionUnavailable("当前供应商/模型不支持图片输入")
         model = settings.ai_vision_model
+        # 取回字节内联：供应商拉不到我们内网的签名地址（见 inline_images 的说明）
+        images = await inline_images(images)
     model = model or settings.ai_model_grading
     messages = [
         {"role": "system", "content": system_prompt},

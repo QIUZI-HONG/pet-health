@@ -474,6 +474,18 @@ class ReminderAndMessageTest extends IntegrationTestBase {
         ApiClient.ApiCall future = api.post("/api/v1/app/pets/" + petId + "/epidemic-records",
                 new EpidemicRecordInput(1, "狂犬疫苗", today().plusDays(1).toString(), null), ownerToken);
         assertThat(future.status()).isEqualTo(400);
+
+        // 格式对但日子不存在（2026-02-31）：要 40001，不是 50000（测试报告 D11；
+        // 两个日期字段都要走同一处解析）
+        ApiClient.ApiCall impossible = api.post("/api/v1/app/pets/" + petId + "/epidemic-records",
+                new EpidemicRecordInput(1, "狂犬疫苗", "2026-02-31", null), ownerToken);
+        assertThat(impossible.status()).isEqualTo(400);
+        assertThat(impossible.code()).isEqualTo(40001);
+
+        ApiClient.ApiCall impossibleDue = api.post("/api/v1/app/pets/" + petId + "/epidemic-records",
+                new EpidemicRecordInput(1, "狂犬疫苗", today().toString(), "2026-02-31"), ownerToken);
+        assertThat(impossibleDue.status()).isEqualTo(400);
+        assertThat(impossibleDue.code()).isEqualTo(40001);
     }
 
     @Test

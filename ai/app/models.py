@@ -50,6 +50,11 @@ class ConsultResponse(BaseModel):
     # 红线预检本身是否生效：ok / unavailable。不可用时**不静默放行**，Java 侧据此告警。
     red_flag_check: str = "ok"
     degraded: bool = False
+    # 降级的**机器可读原因**（image_not_supported / image_unavailable / model_unavailable /
+    # model_output_invalid）。给用户看的中文由 Java 侧按这个码映射——原因里的细节
+    # （异常类名、上游原始响应、模型原始输出）不能出现在用户可见的文案里（测试报告 D6）。
+    degrade_code: str | None = None
+    # 内部明细：只进日志与留痕，**不进用户可见文案**。
     degrade_reason: str | None = None
     model_name: str = ""
     model_version: str = ""

@@ -72,22 +72,46 @@ class AccountLifecycleTest extends IntegrationTestBase {
         ApiClient.ApiCall again = api.register(PHONE);
         assertThat(again.code()).as("注销后手机号应可重新注册：" + again.body()).isZero();
 
-        // 2) 旧令牌的签名仍然有效（JWT 的固有代价），但账号资料这条路径要拒绝已注销用户
-        ApiClient.ApiCall me = api.get("/api/v1/app/users/me", token);
-        assertThat(me.code()).as("注销后不该还能读资料：" + me.body()).isEqualTo(40100);
+        // 2) 旧令牌立刻作废：**所有**受保护路径都拒绝，不只是账号资料那条
+        //    （早先只有 /users/me 判了状态，注销后的令牌仍能读消息与导出 —— 测试报告 D13）
+        for (String path : new String[]{"/api/v1/app/users/me", "/api/v1/app/pets",
+                "/api/v1/app/messages?page=1&page_size=10", "/api/v1/app/users/me/export"}) {
+            ApiClient.ApiCall call = api.get(path, token);
+            assertThat(call.code()).as("注销后 %s 不该还能读：%s", path, call.body()).isEqualTo(40100);
+        }
 
-        // 3) 宠物软删：新账号名下没有宠物
+        // 3) 宠物与其档案一起软删（契约写的是「宠物与档案软删」），且写下了 deleted_at
+        //    ——那是「30 天内可恢复」这个承诺的起点（测试报告 D12）
+        assertThat(jdbc.queryForMap("SELECT is_deleted, deleted_at FROM pet WHERE id = ?", petId))
+                .satisfies(row -> {
+                    assertThat(row.get("is_deleted")).isEqualTo(1);
+                    assertThat(row.get("deleted_at")).isNotNull();
+                });
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM archive_record WHERE pet_id = ? AND is_deleted = 0",
+                Integer.class, petId)).isZero();
+
+        // 4) 新账号名下没有宠物（软删的查不到）
         String newToken = again.data().path("access_token").asText();
         assertThat(api.get("/api/v1/app/pets", newToken).data()).isEmpty();
     }
 
     @Test
-    @DisplayName("重复注销不报错（接口幂等）")
+    @DisplayName("注销是幂等的：同一账号再执行一次不会二次匿名化；但令牌已失效，重放会得到 40100")
     void deactivationIsIdempotent() {
         String token = api.registerAndGetAccessToken("13900004002");
         assertThat(api.post("/api/v1/app/users/me/deactivation", null, token).code()).isZero();
-        assertThat(api.post("/api/v1/app/users/me/deactivation", null, token).code())
-                .as("网络重试下的第二次调用不该报错")
-                .isEqualTo(0);
+
+        // 注销那一刻起，这枚令牌就不再是身份了（鉴权层判账号状态，测试报告 D13）——
+        // 所以「重放注销请求」得到的是 40100（未登录），而不是又一次成功。
+        // 幂等体现在数据上：状态、匿名化标记、宠物软删都只发生一次（下面按库里的值确认）。
+        ApiClient.ApiCall again = api.post("/api/v1/app/users/me/deactivation", null, token);
+        assertThat(again.code()).as("注销后令牌立即失效：" + again.body()).isEqualTo(40100);
+
+        var user = jdbc.queryForMap("SELECT status, nickname, deactivated_at FROM `user` WHERE id = "
+                + "(SELECT id FROM `user` WHERE nickname = '已注销用户' ORDER BY id DESC LIMIT 1)");
+        assertThat(((Number) user.get("status")).intValue()).isEqualTo(2);
+        assertThat(user.get("nickname")).isEqualTo("已注销用户");
+        assertThat(user.get("deactivated_at")).isNotNull();
     }
 }

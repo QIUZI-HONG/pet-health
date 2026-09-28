@@ -10,6 +10,7 @@ import com.pethealth.common.trace.TraceIds;
 import com.pethealth.record.api.AiPetApi;
 import com.pethealth.record.api.PetQueryApi;
 import com.pethealth.record.domain.Pet;
+import com.pethealth.record.domain.Weight;
 import com.pethealth.record.mapper.PetMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -95,7 +96,7 @@ public class PetService implements PetQueryApi, AiPetApi {
 
         if (request.name() != null) {
             if (request.name().isBlank()) {
-                throw BusinessException.paramInvalid("name 宠物昵称不能为空");
+                throw BusinessException.paramInvalid("宠物昵称不能为空");
             }
             pet.setName(request.name().trim());
         }
@@ -234,19 +235,20 @@ public class PetService implements PetQueryApi, AiPetApi {
     /** 生日不能晚于今天——将来还能再校验一条「不能早于 1990」，现在没有依据，不编。 */
     private void validateBirthday(LocalDate birthday) {
         if (birthday != null && birthday.isAfter(AppTime.today())) {
-            throw BusinessException.paramInvalid("birthday 不能晚于今天");
+            throw BusinessException.paramInvalid("生日不能晚于今天");
         }
     }
 
     /**
-     * 体重统一保留两位小数。DB 是 {@code DECIMAL(6,2)}，读回来的值天然是两位；
-     * 但**建档/编辑的响应用的是内存里的实体**，不归一化就会返回 {@code "12.5"}——
-     * 同一个字段两个接口给出两种格式，前端没法写。
+     * 体重解析与校验都走 {@link Weight}——范围（0.01–999.99）与形状只在那一个类里定义。
+     *
+     * <p>这里只补一件事：**归一化到两位小数**。DB 是 {@code DECIMAL(6,2)}，读回来的值天然是两位；
+     * 而建档/编辑的响应用的是内存里的实体，不归一化就会返回 {@code "12.5"}——同一个字段两个接口
+     * 给出两种格式，前端没法写。（{@link Weight} 已限死最多两位小数，所以这里不会截断用户的值。）
      */
     private BigDecimal toWeight(String weight) {
-        return weight == null || weight.isBlank()
-                ? null
-                : new BigDecimal(weight.trim()).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal parsed = Weight.parse(weight);
+        return parsed == null ? null : parsed.setScale(2, RoundingMode.HALF_UP);
     }
 
     private String trimToNull(String value) {

@@ -213,8 +213,8 @@ public class AccountService {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "账号不存在");
         }
         if (user.getStatus() != null && user.getStatus() == User.STATUS_DISABLED) {
-            // 注销/禁用的账号：旧 Access Token 在到期前仍能通过签名校验，所以这里要再判一次状态。
-            // 彻底的做法是在鉴权层每请求查一次用户状态（多一次库查询），属 #121 的范围。
+            // 账号状态的**权威判定在鉴权层**（JwtAuthenticationFilter + AccountStatus），
+            // 这一句只是本模块内的兜底（比如将来有定时任务直接调 service，不经过过滤器）
             throw BusinessException.unauthorized("账号已注销或禁用");
         }
         return user;

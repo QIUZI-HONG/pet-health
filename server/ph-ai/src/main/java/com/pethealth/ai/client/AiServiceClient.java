@@ -99,6 +99,8 @@ public class AiServiceClient {
             List<String> guardHits,
             String redFlagCheck,
             boolean degraded,
+            /** 机器可读的降级原因码；给用户的中文由 {@code AiConsultService} 映射。 */
+            String degradeCode,
             String degradeReason,
             String modelName,
             String modelVersion,

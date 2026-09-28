@@ -18,8 +18,12 @@ uvicorn app.main:app --reload --port 8000
 验证：
 
 ```bash
-curl -s localhost:8000/internal/health
+# 探针：不需要令牌，只回一句话
+curl -s localhost:8000/healthz
 # {"status":"ok"}
+
+# 能力矩阵：需要内部令牌（它描述我们的配置状态，不是给公网看的）
+curl -s -H "X-Internal-Token: $INTERNAL_TOKEN" localhost:8000/internal/health
 ```
 
 ## 当前进度
@@ -29,7 +33,7 @@ curl -s localhost:8000/internal/health
 | 能力 | 状态 |
 | --- | --- |
 | 文本分级 | ✅ 真调用，工具调用出结构化结果，失败一律降级 |
-| 硬红线预检 | ⬜ 词典要入库（[#103](https://github.com/QIUZI-HONG/pet-health/issues/103)），现在靠提示词铁律 |
+| 硬红线预检 | ✅ 判据在 `knowledge_red_flag`（ADR-0021），命中即判红且**不调模型**；词表的运营侧维护属 [#103](https://github.com/QIUZI-HONG/pet-health/issues/103) |
 | 知识检索（L1/L2/L3） | ⬜ 未实现，所以 `citations` 恒为空——不编造条目 ID |
 | 图片 | ✅ 走 `ai_vision_model`（当前 flash；**pro 看不见图**）。没配视觉模型时明确降级并告知 |
 | 语音 / 向量 | ❌ 该供应商没有这两个端点 |

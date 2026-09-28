@@ -1340,7 +1340,10 @@ export interface paths {
         put?: never;
         /**
          * 注销账号
-         * @description **幂等**：重复调用不报错（网络重试下的第二次调用不该失败）。
+         * @description **幂等**：同一账号重复执行不会二次匿名化、不会重复软删（按账号状态短路）。
+         *
+         *     注意副作用：**注销后这枚令牌立刻失效**（鉴权层判账号状态），所以「重放注销请求」得到的是
+         *     40100（未登录）而不是又一次成功——注销是终点，客户端收到成功就该清掉本地会话。
          *
          *     做的事：状态置禁用（登录与刷新令牌立刻拒绝）→ 手机号与昵称匿名化
          *     （**让出唯一键，同一手机号可重新注册**）→ 宠物与档案软删。
@@ -2140,6 +2143,12 @@ export interface components {
             red_flag_hits?: string[];
             /** @description true 表示这是降级答复（AI 服务超时或不可用），不是模型结论 */
             degraded: boolean;
+            /**
+             * @description 给**用户看**的一句中文（例如「AI 服务暂时不可用，已按更保守的建议给你」）。
+             *     机器可读的降级原因码与上游明细在服务端留痕里（`ai_consult.degrade_reason`），不下发——
+             *     那里有异常类名与模型原文，既不该给用户看，也可能带着没过护栏的内容。
+             * @example AI 服务暂时不可用，已按更保守的建议给你
+             */
             degrade_reason?: string | null;
             model_version?: string;
             /** @description 归因分级漂移要看它（ADR-0021） */

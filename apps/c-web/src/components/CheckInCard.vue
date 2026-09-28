@@ -174,7 +174,7 @@ function statusText(item: CheckInItem): string {
               maxlength="6"
               placeholder="体重 kg，例如 12.50"
             />
-            <span v-if="weightInvalid" class="ph-field__hint">体重填 0.01–999.99 之间的数字，最多两位小数。</span>
+            <span v-if="weightInvalid" class="ph-field__hint">体重需为 0.01–999.99 之间的数字，最多两位小数。</span>
             <label class="ph-checkin__switch">
               <input v-model="draft.abnormal" type="checkbox" />
               <span>这次不太正常</span>

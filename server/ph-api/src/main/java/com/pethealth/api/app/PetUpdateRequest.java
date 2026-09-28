@@ -1,11 +1,8 @@
 package com.pethealth.api.app;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.validation.constraints.DecimalMax;
-import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
@@ -34,9 +31,6 @@ public record PetUpdateRequest(
 
         LocalDate birthday,
 
-        @Pattern(regexp = "^\\d{1,3}(\\.\\d{1,2})?$", message = "体重需为最多两位小数的数字")
-        @DecimalMin(value = "0.01", message = "体重需大于 0")
-        @DecimalMax(value = "999.99", message = "体重需小于 1000")
         String weight,
 
         @Size(max = 512, message = "头像地址最长 512 个字符")
