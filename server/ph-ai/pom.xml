@@ -20,5 +20,22 @@
       <artifactId>ph-common</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-api</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- 图片参与判断：AI 服务要用图，而图是私有的，读地址由文件模块签发（ADR-0020/0021） -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-file</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- 分级要看品种/年龄/慢病：拿宠物快照，但仍不碰 pet 表（ADR-0006 的接口调用） -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-record</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 </project>

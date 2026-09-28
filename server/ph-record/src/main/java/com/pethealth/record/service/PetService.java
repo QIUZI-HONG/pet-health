@@ -7,6 +7,7 @@ import com.pethealth.api.app.PetView;
 import com.pethealth.common.error.BusinessException;
 import com.pethealth.common.time.AppTime;
 import com.pethealth.common.trace.TraceIds;
+import com.pethealth.record.api.AiPetApi;
 import com.pethealth.record.api.PetQueryApi;
 import com.pethealth.record.domain.Pet;
 import com.pethealth.record.mapper.PetMapper;
@@ -31,7 +32,7 @@ import java.util.List;
  * </ul>
  */
 @Service
-public class PetService implements PetQueryApi {
+public class PetService implements PetQueryApi, AiPetApi {
 
     /** 交付文档与用户故事 5 都写明「30 天内可恢复」。 */
     public static final int RESTORE_WINDOW_DAYS = 30;
@@ -166,6 +167,29 @@ public class PetService implements PetQueryApi {
      * <p>public 是给同模块的其它服务与控制器用的（例如评分要拿到宠物算年龄、打卡要校验归属），
      * 本模块之外不要用——跨模块要走 {@link PetQueryApi}。
      */
+    /**
+     * 宠物快照（{@link AiPetApi}）：给 ph-ai 组装 AI 请求用。
+     *
+     * <p>越权与不存在一律返回空——调用方按 40400 处理，不区分两种情况（docs/conventions.md）。
+     */
+    @Override
+    public java.util.Optional<AiPetApi.PetSnapshot> snapshotOwnedBy(long userId, long petId) {
+        Pet pet = petMapper.selectOne(Wrappers.<Pet>lambdaQuery()
+                .eq(Pet::getId, petId)
+                .eq(Pet::getUserId, userId));
+        if (pet == null) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(new AiPetApi.PetSnapshot(
+                pet.getId(),
+                pet.getUserId(),
+                pet.getSpecies(),
+                pet.getBreed(),
+                pet.getBirthday(),
+                pet.getWeight(),
+                pet.getIsChronic() != null && pet.getIsChronic() == 1 ? pet.getChronicDesc() : null));
+    }
+
     public Pet requireOwned(long userId, long petId) {
         Pet pet = petMapper.selectOne(Wrappers.<Pet>lambdaQuery()
                 .eq(Pet::getId, petId)

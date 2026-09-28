@@ -44,6 +44,8 @@ tags:
     description: 消息中心（健康提醒 + 业务通知，决策见 ADR-0019）
   - name: file
     description: 文件元数据与上传凭证（切片 #95，决策见 ADR-0020；**字节不经这里**）
+  - name: ai
+    description: AI 健康咨询（切片 #98；分级标准与红线见 ADR-0021，模型调用在独立服务里，见 ADR-0009）
 
 security:
   - bearerAuth: []
@@ -839,6 +841,42 @@ paths:
             application/json:
               schema: { $ref: "./common.yaml#/components/schemas/ApiResponse" }
 
+  /pets/{pet_id}/ai-consults:
+    post:
+      tags: [ai]
+      summary: 发起一次 AI 健康咨询
+      description: |
+        返回**就医紧迫程度**（1 绿 / 2 黄 / 3 红），不是诊断。
+
+        三条行为上的约定：
+
+        - `question` **必填**：纯图片分诊不可用（61 号调研实测皮肤病零样本只有 33%），
+          补上症状文本才到 72–94%，所以缺文字描述直接 40001；
+        - 命中硬红线时**不经模型**，直接判红并在 `red_flag_hits` 里给出规则编号（ADR-0021）；
+        - AI 服务超时或不可用时**不报错**：返回 `degraded=true` 的保守答复，HTTP 仍是 200
+          （交付文档 2.4）。
+      parameters:
+        - name: pet_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiConsultRequest" }
+      responses:
+        "200":
+          description: 咨询结果（可能是降级答复）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/AiConsultView" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1331,3 +1369,49 @@ components:
         thumb_url:
           type: string
           description: 缩略图签名读地址；缩略图生成失败时回落到原图地址
+
+    AiConsultRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 2
+          maxLength: 500
+          description: 症状描述。**必填**——纯图片分诊不可用（61 号调研）
+          example: "今天吐了两次，精神不太好"
+        file_ids:
+          type: array
+          maxItems: 4
+          description: 参与判断的图片（先经 /files 上传拿到的 file_id）
+          items: { type: integer, format: int64 }
+
+    AiConsultView:
+      type: object
+      required: [id, risk_level, need_hospital, degraded, disclaimer]
+      properties:
+        id: { type: integer, format: int64 }
+        risk_level:
+          type: integer
+          description: 就医紧迫程度，**不是诊断**：1 绿（居家观察）/ 2 黄（尽快就医）/ 3 红（立即急诊）
+          enum: [1, 2, 3]
+        possible_causes: { type: array, items: { type: string } }
+        action_suggestion: { type: string }
+        need_hospital: { type: boolean }
+        care_tips: { type: array, items: { type: string } }
+        red_flag_hits:
+          type: array
+          description: 命中的红线规则编号。**非空表示这次没有经过模型**（ADR-0021）
+          items: { type: string }
+          example: ["RF-007"]
+        degraded:
+          type: boolean
+          description: true 表示这是降级答复（AI 服务超时或不可用），不是模型结论
+        degrade_reason: { type: string, nullable: true }
+        model_version: { type: string }
+        prompt_version: { type: string, description: 归因分级漂移要看它（ADR-0021） }
+        latency_ms: { type: integer }
+        disclaimer:
+          type: string
+          description: 免责声明。由后端给：医疗文案散落到前端各处时改起来一定会漏
+        created_at: { type: string, example: "2026-09-28 21:30:00" }

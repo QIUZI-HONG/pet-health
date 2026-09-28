@@ -101,6 +101,7 @@ public abstract class IntegrationTestBase {
     @BeforeEach
     protected void cleanDatabase() {
         // 顺序：先清业务数据再清主表（没有物理外键，但这个顺序读起来最清楚）
+        jdbc.execute("DELETE FROM `ai_consult`");
         jdbc.execute("DELETE FROM `file_object`");
         jdbc.execute("DELETE FROM `message`");
         jdbc.execute("DELETE FROM `reminder_setting`");

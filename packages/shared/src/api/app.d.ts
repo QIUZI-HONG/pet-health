@@ -1440,6 +1440,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pets/{pet_id}/ai-consults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 发起一次 AI 健康咨询
+         * @description 返回**就医紧迫程度**（1 绿 / 2 黄 / 3 红），不是诊断。
+         *
+         *     三条行为上的约定：
+         *
+         *     - `question` **必填**：纯图片分诊不可用（61 号调研实测皮肤病零样本只有 33%），
+         *       补上症状文本才到 72–94%，所以缺文字描述直接 40001；
+         *     - 命中硬红线时**不经模型**，直接判红并在 `red_flag_hits` 里给出规则编号（ADR-0021）；
+         *     - AI 服务超时或不可用时**不报错**：返回 `degraded=true` 的保守答复，HTTP 仍是 200
+         *       （交付文档 2.4）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pet_id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AiConsultRequest"];
+                };
+            };
+            responses: {
+                /** @description 咨询结果（可能是降级答复） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AiConsultView"];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1873,6 +1928,46 @@ export interface components {
             url?: string;
             /** @description 缩略图签名读地址；缩略图生成失败时回落到原图地址 */
             thumb_url?: string;
+        };
+        AiConsultRequest: {
+            /**
+             * @description 症状描述。**必填**——纯图片分诊不可用（61 号调研）
+             * @example 今天吐了两次，精神不太好
+             */
+            question: string;
+            /** @description 参与判断的图片（先经 /files 上传拿到的 file_id） */
+            file_ids?: number[];
+        };
+        AiConsultView: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * @description 就医紧迫程度，**不是诊断**：1 绿（居家观察）/ 2 黄（尽快就医）/ 3 红（立即急诊）
+             * @enum {integer}
+             */
+            risk_level: 1 | 2 | 3;
+            possible_causes?: string[];
+            action_suggestion?: string;
+            need_hospital: boolean;
+            care_tips?: string[];
+            /**
+             * @description 命中的红线规则编号。**非空表示这次没有经过模型**（ADR-0021）
+             * @example [
+             *       "RF-007"
+             *     ]
+             */
+            red_flag_hits?: string[];
+            /** @description true 表示这是降级答复（AI 服务超时或不可用），不是模型结论 */
+            degraded: boolean;
+            degrade_reason?: string | null;
+            model_version?: string;
+            /** @description 归因分级漂移要看它（ADR-0021） */
+            prompt_version?: string;
+            latency_ms?: number;
+            /** @description 免责声明。由后端给：医疗文案散落到前端各处时改起来一定会漏 */
+            disclaimer: string;
+            /** @example 2026-09-28 21:30:00 */
+            created_at?: string;
         };
         ApiResponse: {
             /** @description 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes） */

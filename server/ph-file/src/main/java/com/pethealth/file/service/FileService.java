@@ -6,6 +6,7 @@ import com.pethealth.api.app.FilePresignView;
 import com.pethealth.api.app.FileView;
 import com.pethealth.common.error.BusinessException;
 import com.pethealth.common.time.AppTime;
+import com.pethealth.file.api.FileUrlApi;
 import com.pethealth.file.domain.FileObject;
 import com.pethealth.file.mapper.FileObjectMapper;
 import com.pethealth.file.storage.FileStorage;
@@ -55,7 +56,7 @@ import java.util.Set;
  * <p>越权一律 40400（docs/conventions.md）：照片里是宠物与证件，不能用「这个 id 存不存在」回答探测者。
  */
 @Service
-public class FileService {
+public class FileService implements FileUrlApi {
 
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
 
@@ -250,6 +251,29 @@ public class FileService {
 
     /** 一次签名读的结果。类型取自落定时嗅探的结果，而不是请求头。 */
     public record StoredContent(String mime, byte[] content) {
+    }
+
+    /**
+     * 批量取签名读地址（{@link FileUrlApi}）。给 ph-ai 用：AI 服务要拿图，但它不该持有存储凭据。
+     *
+     * <p>跳过而不是报错：一张图不可用不该让整次咨询失败——那条路径由「有图但没分析」的降级话术兜住。
+     */
+    @Override
+    public List<String> readUrls(long userId, List<Long> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return List.of();
+        }
+        List<String> urls = new java.util.ArrayList<>(fileIds.size());
+        for (Long fileId : fileIds) {
+            FileObject file = fileMapper.selectById(fileId);
+            if (file == null || file.getOwnerUserId() != userId
+                    || file.getStatus() != FileObject.STATUS_STORED
+                    || FileObject.ROLE_THUMB.equals(file.getRole())) {
+                continue;
+            }
+            urls.add(signedReadUrl(file.getId(), file.getOwnerUserId()));
+        }
+        return urls;
     }
 
     // ---------------------------------------------------------------- 删
