@@ -15,7 +15,7 @@ import {
   formatDate,
   speciesLabel,
   cApp,
-  ApiError,
+  toUserMessage,
   createLatestGuard,
   type AiConsultView,
 } from "@pet-health/shared";
@@ -68,7 +68,7 @@ async function send(): Promise<void> {
     draft.value = "";
   } catch (error) {
     if (!latest.isCurrent(seq)) return;
-    errorMessage.value = error instanceof ApiError ? error.message : "咨询失败，请稍后重试";
+    errorMessage.value = toUserMessage(error, "咨询失败，请稍后重试");
   } finally {
     if (latest.isCurrent(seq)) {
       sending.value = false;

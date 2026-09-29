@@ -26,6 +26,8 @@ import { tokenStore } from "./tokenStore";
 type Envelope = components["schemas"]["ApiResponse"];
 
 const REQUEST_TIMEOUT_MS = 15_000;
+/** 上传超时比普通请求长：一张 10MB 的图在慢网络上 15 秒不够（后端的上传凭证有效期 30 分钟）。 */
+const UPLOAD_TIMEOUT_MS = 120_000;
 const TRACE_HEADER = "X-Request-Id";
 
 const client: AxiosInstance = axios.create({
@@ -118,6 +120,83 @@ function isRetryable(error: ApiError): boolean {
   return error.network || error.code === 50000 || error.code === 50300;
 }
 
+/**
+ * 一次重发的结果。
+ *
+ * **不能用 `null` 表示「没有重发」**：响应信封里的 `data` 本来就可以是 null，
+ * 用 null 当哨兵会把「重发成功且数据为空」误判成「没重发」，然后白抛一个错。
+ */
+type RetryOutcome<T> = { retried: true; value: T } | { retried: false };
+
+const NOT_RETRIED: RetryOutcome<never> = { retried: false };
+
+/**
+ * Token 过期 → 换一次令牌 → 重发原请求一次；换不到就清掉会话。
+ *
+ * 形如 `code === 40101` 的两种到达方式（响应体里的业务码、以及 HTTP 层就被判成过期的）
+ * 都走这里。原先两段代码各写了一份「刷新成功就重发、失败就清会话」，而这类重复
+ * 最容易出现的后果是改了一处忘了另一处——同一个令牌过期场景在两条路径上行为不一致。
+ *
+ * @param attempt 已经重发过几次。只在第一次（0）时刷新，避免 40101 反复触发刷令牌
+ * @returns 重发过就带值返回；否则 `retried: false`，由调用方继续自己的错误处理
+ */
+async function retryAfterTokenExpiry<T>(
+  config: AxiosRequestConfig,
+  attempt: number,
+  error: ApiError,
+): Promise<RetryOutcome<T>> {
+  if (!error.isTokenExpired) {
+    return NOT_RETRIED;
+  }
+  if (attempt === 0 && (await refreshSession())) {
+    return { retried: true, value: await send<T>(config, attempt + 1) };
+  }
+  // 走到这里只有两种可能：refresh 失败，或者已经重发过一次仍然 40101——
+  // 两种都说明这个会话救不回来了
+  endSession();
+  return NOT_RETRIED;
+}
+
+/**
+ * 网络类 / 服务端临时故障 → 重发一次。
+ *
+ * **只重发一次**：`attempt` 已经大于 0 就不再重试，否则后端持续 500 会变成无限递归。
+ * 注意这里不区分 HTTP 方法：非幂等的 POST 也会被重发，这是现状（测试报告 14.2 第 4 条
+ * 用用例钉着），改成「只对幂等方法重试」要先让那条用例红。
+ */
+async function retryTransient<T>(
+  config: AxiosRequestConfig,
+  attempt: number,
+  error: ApiError,
+): Promise<RetryOutcome<T>> {
+  if (isRetryable(error) && attempt === 0) {
+    return { retried: true, value: await send<T>(config, attempt + 1) };
+  }
+  return NOT_RETRIED;
+}
+
+/**
+ * 重发规则收在一处：先按「令牌过期」处理，再按「临时故障」处理，都不成立就把原错误抛出去。
+ *
+ * 两条到达路径（响应体里的业务码、以及传输层抛出来的）都走这一个函数，
+ * 所以「刷新成功就重发、失败就清会话」只写一遍。
+ */
+async function settleFailure<T>(
+  config: AxiosRequestConfig,
+  attempt: number,
+  error: ApiError,
+): Promise<T> {
+  const refreshed = await retryAfterTokenExpiry<T>(config, attempt, error);
+  if (refreshed.retried) {
+    return refreshed.value;
+  }
+  const retried = await retryTransient<T>(config, attempt, error);
+  if (retried.retried) {
+    return retried.value;
+  }
+  throw error;
+}
+
 async function send<T>(config: AxiosRequestConfig, attempt = 0): Promise<T> {
   try {
     const response = await client.request<Envelope>(config);
@@ -128,42 +207,25 @@ async function send<T>(config: AxiosRequestConfig, attempt = 0): Promise<T> {
     if (envelope.code === 0) {
       return envelope.data as T;
     }
-    const apiError = new ApiError(envelope.message || "请求失败", {
+    throw new ApiError(envelope.message || "请求失败", {
       code: envelope.code,
       requestId: envelope.request_id,
       httpStatus: response.status,
     });
-    // Token 过期：换一次令牌再重发，只重发一次
-    if (apiError.isTokenExpired && attempt === 0 && (await refreshSession())) {
-      return send<T>(config, attempt + 1);
-    }
-    if (apiError.isTokenExpired) {
-      endSession();
-    }
-    throw apiError;
   } catch (error) {
+    // **判断顺序不能换**：`instanceof ApiError` 必须排在 `axios.isCancel` 前面。
+    // 取消永远不是 ApiError，而 ApiError 也不需要问 axios——顺序反了就等于对每个业务错误
+    // 都多调一次 `axios.isCancel`，那既没有收益，又在 axios 被替换/打桩时（测试里就是这么干的）
+    // 把一次正常的业务报错变成 TypeError，最后被上层显示成兜底文案。
     if (error instanceof ApiError) {
-      if (isRetryable(error) && attempt === 0) {
-        return send<T>(config, attempt + 1);
-      }
-      throw error;
+      return settleFailure<T>(config, attempt, error);
     }
     // 取消是我们自己叫停的（守卫作废了这次请求），不是故障：直接抛出去让调用方丢弃，
     // 既不重试、也不报错
     if (axios.isCancel(error)) {
       throw error;
     }
-    const apiError = toApiError(error as AxiosError<Envelope>);
-    if (apiError.isTokenExpired && attempt === 0 && (await refreshSession())) {
-      return send<T>(config, attempt + 1);
-    }
-    if (apiError.isTokenExpired) {
-      endSession();
-    }
-    if (isRetryable(apiError) && attempt === 0) {
-      return send<T>(config, attempt + 1);
-    }
-    throw apiError;
+    return settleFailure<T>(config, attempt, toApiError(error as AxiosError<Envelope>));
   }
 }
 
@@ -215,8 +277,5 @@ export const http = {
     });
   },
 };
-
-/** 上传超时比普通请求长：一张 10MB 的图在慢网络上 15 秒不够（后端的上传凭证有效期 30 分钟）。 */
-const UPLOAD_TIMEOUT_MS = 120_000;
 
 export type { Envelope };

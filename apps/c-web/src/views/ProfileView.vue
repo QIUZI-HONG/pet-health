@@ -9,7 +9,7 @@
  */
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ApiError, cApp, formatDate, genderLabel, speciesLabel, todayIso, type Pet } from "@pet-health/shared";
+import { ApiError, cApp, formatDate, genderLabel, speciesLabel, todayIso, toUserMessage, type Pet } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import ComplianceCard from "../components/ComplianceCard.vue";
 import SessionGate from "../components/SessionGate.vue";
@@ -156,9 +156,11 @@ async function submit(): Promise<void> {
     await session.refreshPets();
     await loadRecycleBin();
   } catch (error) {
-    formError.value = error instanceof ApiError
-      ? error.message
-      : editingId.value === null ? "建档失败，请稍后重试" : "保存失败，请稍后重试";
+    formError.value = toUserMessage(
+      error,
+      // 兜底文案跟着「新建还是编辑」走：同一个 catch 覆盖两个分支
+      editingId.value === null ? "建档失败，请稍后重试" : "保存失败，请稍后重试",
+    );
   } finally {
     saving.value = false;
   }
@@ -171,7 +173,7 @@ async function remove(pet: Pet): Promise<void> {
     await session.refreshPets();
     await loadRecycleBin();
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "删除失败";
+    errorMessage.value = toUserMessage(error, "删除失败");
   }
 }
 
@@ -181,7 +183,7 @@ async function restore(pet: Pet): Promise<void> {
     await session.refreshPets();
     await loadRecycleBin();
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "恢复失败";
+    errorMessage.value = toUserMessage(error, "恢复失败");
   }
 }
 
@@ -189,7 +191,7 @@ async function activate(pet: Pet): Promise<void> {
   try {
     await session.activatePet(pet.id);
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "切换失败";
+    errorMessage.value = toUserMessage(error, "切换失败");
   }
 }
 

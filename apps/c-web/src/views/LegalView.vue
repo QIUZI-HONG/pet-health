@@ -9,7 +9,7 @@
  */
 import { ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { cApp, ApiError, type ComplianceDocumentView } from "@pet-health/shared";
+import { cApp, toUserMessage, type ComplianceDocumentView } from "@pet-health/shared";
 import SessionGate from "../components/SessionGate.vue";
 import StateLoading from "../components/states/StateLoading.vue";
 import StateError from "../components/states/StateError.vue";
@@ -26,7 +26,7 @@ async function load(code: string): Promise<void> {
     document.value = await cApp.getComplianceDocument(code);
   } catch (error) {
     document.value = null;
-    errorMessage.value = error instanceof ApiError ? error.message : "文档加载失败";
+    errorMessage.value = toUserMessage(error, "文档加载失败");
   } finally {
     loading.value = false;
   }

@@ -9,7 +9,7 @@
  */
 import { computed, ref, watch } from "vue";
 import {
-  ApiError,
+  toUserMessage,
   cApp,
   createLatestGuard,
   formatDate,
@@ -54,7 +54,9 @@ const yesterdayValues = computed(() => {
 });
 
 const quickEntries = [
-  { label: "AI 问诊", hint: "描述症状，拿到风险分级", to: "/ai", icon: "💬" },
+  // 标签用页面自己的名字（「AI 管家」与侧边栏、路由标题、该页 h1 一致）。
+  // 原先这里写「AI 问诊」，同一个目的地两个名字，用户与搜索都对不上（评审提的）
+  { label: "AI 管家", hint: "描述症状，拿到风险分级", to: "/ai", icon: "💬" },
   { label: "去打卡", hint: "每天 3 秒记录", to: "/", icon: "✅" },
   { label: "找服务", hint: "医院 / 洗护 / 寄养", to: "/services", icon: "🩺" },
   { label: "看档案", hint: "疫苗与就医记录", to: "/records", icon: "📋" },
@@ -98,7 +100,7 @@ async function load(petId: number): Promise<void> {
     }
   } catch (error) {
     if (!latest.isCurrent(seq)) return;
-    errorMessage.value = error instanceof ApiError ? error.message : "加载失败，请稍后重试";
+    errorMessage.value = toUserMessage(error, "加载失败，请稍后重试");
   } finally {
     if (latest.isCurrent(seq)) {
       loading.value = false;
@@ -124,7 +126,7 @@ async function submitCheckIn(items: CheckInItemInput[]): Promise<void> {
     // 打卡可能即时生成异常提醒，角标要跟着动（否则铃铛还是旧的）
     await messageStore.refresh();
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "打卡失败，请稍后重试";
+    errorMessage.value = toUserMessage(error, "打卡失败，请稍后重试");
   } finally {
     saving.value = false;
   }
@@ -137,7 +139,7 @@ async function undoCheckIn(category: number): Promise<void> {
     today.value = await cApp.undoCheckIn(pet.value.id, today.value.date, category);
     score.value = await cApp.getHealthScore(pet.value.id);
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "撤销失败，请稍后重试";
+    errorMessage.value = toUserMessage(error, "撤销失败，请稍后重试");
   } finally {
     saving.value = false;
   }

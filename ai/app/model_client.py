@@ -18,6 +18,7 @@
    连「200 但不是 JSON」「tool_calls 缺字段」这类形状异常也要降级，不能变成 500。
 """
 
+import asyncio
 import base64
 import json
 import time
@@ -221,42 +222,54 @@ def _data_url(content: bytes, content_type: str) -> str:
     return f"data:{content_type};base64,{encoded}"
 
 
+async def _fetch_one(client: httpx.AsyncClient, url: str) -> str:
+    """取回一张图并校验，返回 data URL。取不到就抛 `ImageUnavailable`。
+
+    「已经是 data URL」这一支也必须过同一套把关（类型、体积）——
+    字节已经在手里不等于可以直接用，绕过把关就等于留了一条不限量的旁路。
+    """
+    # 已经内联好的：**httpx 只认 http(s)**，拿 data: 去 GET 会抛错 → 降级成「读不到图」，
+    # 而「字节已经在手里」是最不该失败的一种情况（实测踩到）。
+    if url.startswith("data:"):
+        return _checked_data_url(url)
+    try:
+        response = await client.get(url)
+    except httpx.HTTPError as exc:
+        raise ImageUnavailable(f"图片下载失败（{type(exc).__name__}）") from exc
+    if response.status_code != 200:
+        raise ImageUnavailable(f"图片下载失败（HTTP {response.status_code}）")
+    content_type = (response.headers.get("content-type") or "").split(";")[0].strip()
+    if not content_type.startswith("image/"):
+        raise ImageUnavailable(f"取回的不是图片（content-type={content_type or '未知'}）")
+    if len(response.content) > settings.ai_max_image_bytes:
+        raise ImageUnavailable(
+            f"图片超过 {settings.ai_max_image_bytes} 字节上限（{len(response.content)}）")
+    return _data_url(response.content, content_type)
+
+
 async def inline_images(urls: list[str]) -> list[str]:
     """把图片取回来、转成 data URL 交给模型。
-    
+
     **为什么不能把签名读地址直接交给供应商**：那个地址指向我们自己的后端
     （本地是 127.0.0.1、线上是内网），供应商拉不到——而且是**静默失败**：
     模型基于「看不到图」给出一个格式完全正常的回答，用户以为照片被看过了。
     这种「看起来正常的错误答案」比报错危险得多（测试报告 D7）。
-    
+
     取不到就抛 `ImageUnavailable`：调用方据此明确告诉用户「图片这轮没分析」，
     而不是假装看过。张数、类型、体积都在这里把关，别把 10MB 的原图塞进上下文。
+
+    **并发取而不是逐张 await**：每张的超时是 `ai_image_timeout_seconds`（默认 10 秒），
+    串行取 4 张最坏就是 40 秒，而整轮咨询的读超时只有 20 秒（`ai_timeout_seconds`）——
+    慢网络下会整轮降级，明明每一张都还有机会取回来。
+
+    用 `asyncio.gather` 而不是 `TaskGroup`：前者原样抛出第一处异常，调用方仍然
+    `except ImageUnavailable` 就够；后者抛的是 `ExceptionGroup`，会漏过那条 except。
+    gather 保序，所以返回的顺序与 `urls` 一致。
     """
     if not urls:
         return []
-    inlined: list[str] = []
     async with httpx.AsyncClient(timeout=settings.ai_image_timeout_seconds) as client:
-        for url in urls:
-            # 已经是 data URL：**httpx 只认 http(s)**，拿 data: 去 GET 会抛错 → 降级成
-            # 「读不到图」，而「字节已经在手里」是最不该失败的一种情况（实测踩到）。
-            # 但直通也要过同一套把关（类型、体积）——绕过把关就等于留了一条不限量的旁路。
-            if url.startswith("data:"):
-                inlined.append(_checked_data_url(url))
-                continue
-            try:
-                response = await client.get(url)
-            except httpx.HTTPError as exc:
-                raise ImageUnavailable(f"图片下载失败（{type(exc).__name__}）") from exc
-            if response.status_code != 200:
-                raise ImageUnavailable(f"图片下载失败（HTTP {response.status_code}）")
-            content_type = (response.headers.get("content-type") or "").split(";")[0].strip()
-            if not content_type.startswith("image/"):
-                raise ImageUnavailable(f"取回的不是图片（content-type={content_type or '未知'}）")
-            if len(response.content) > settings.ai_max_image_bytes:
-                raise ImageUnavailable(
-                    f"图片超过 {settings.ai_max_image_bytes} 字节上限（{len(response.content)}）")
-            inlined.append(_data_url(response.content, content_type))
-    return inlined
+        return list(await asyncio.gather(*[_fetch_one(client, url) for url in urls]))
 
 
 async def assess(

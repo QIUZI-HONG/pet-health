@@ -74,4 +74,22 @@ public interface PetMapper extends BaseMapper<Pet> {
             """)
     List<Pet> selectRecycleBin(@Param("userId") long userId,
                                @Param("restoreDeadline") LocalDateTime restoreDeadline);
+
+    /**
+     * 至少有一只宠物的用户 id（去重、升序）。
+     *
+     * <p>给每日提醒批算用：它在固定时刻遍历所有用户，是这条链路上唯一一次全表级的读。
+     * **在 SQL 里 DISTINCT**，而不是把整张 {@code pet} 表捞回内存再去重——每只宠物一行，
+     * 一个多宠用户就多一行，内存里去重等于把库表规模搬进堆里。
+     *
+     * <p>已软删的宠物不算「活跃」：手写 SQL 必须自己带上 {@code is_deleted = 0}（见类注释）。
+     * 排序是为了让批算顺序可复现，也便于将来按用户号分批跑。
+     */
+    @Select("""
+            SELECT DISTINCT user_id
+              FROM pet
+             WHERE is_deleted = 0
+             ORDER BY user_id
+            """)
+    List<Long> selectActiveUserIds();
 }

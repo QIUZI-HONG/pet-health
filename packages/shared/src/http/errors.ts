@@ -31,3 +31,23 @@ export class ApiError extends Error {
     return this.code === 40101;
   }
 }
+
+/**
+ * 把任意异常转成**能直接显示给用户的一句话**。
+ *
+ * 为什么收成一个函数：视图里「catch 住 → 写进 errorMessage」的写法重复了二十来处，
+ * 每处都要自己判断 `instanceof ApiError`，于是新页面会再抄一遍、而且抄得越来越不一致
+ * （有的漏了兜底文案，有的把原生 Error 的英文 message 直接摆到界面上）。
+ *
+ * 规则只有两条：
+ *   - 确实是我们抛的 {@link ApiError} → 用后端那句话。契约说 `message` 是「前端直接展示」
+ *     的文案（contract/common.yaml），措辞已经在服务端定好了；
+ *   - 其它异常（原生 `TypeError`、第三方库抛的）→ 一律用调用方给的中文兜底。
+ *     它们的 message 是英文技术描述，属于日志，不属于界面。
+ *
+ * @param error    捕获到的任意异常。用 `unknown` 而不是 `Error`：TS 的 catch 变量本来就不保证是 Error
+ * @param fallback 兜底文案，由调用点按场景给（例如「打卡失败，请稍后重试」）
+ */
+export function toUserMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback;
+}

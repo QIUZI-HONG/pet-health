@@ -60,6 +60,17 @@ public class HealthScoreService {
     private static final int EPIDEMIC_OK_SCORE = 100;
     private static final int EPIDEMIC_OVERDUE_SCORE = 60;
 
+    /**
+     * 两个处理方式与其余维度不同的键。
+     *
+     * <p>{@code elderly} 要看年龄与慢病，不满足时整维「未开启」；{@code epidemic} 的判据
+     * **不在 7 天窗口里**（疫苗按年打），取的是最近一条记录的到期状态（ADR-0025）。
+     * 抽成常量是因为它们原先在 {@link #compute} 里以裸字符串出现三次——
+     * 拼错一个字母不会编译报错，只会让那个维度静默走到默认分支去。
+     */
+    private static final String KEY_ELDERLY = "elderly";
+    private static final String KEY_EPIDEMIC = "epidemic";
+
     /** 计算顺序即前端展示顺序。 */
     private static final Map<String, DimensionSpec> DIMENSIONS = new LinkedHashMap<>();
 
@@ -70,8 +81,8 @@ public class HealthScoreService {
         DIMENSIONS.put("behavior", new DimensionSpec("行为",
                 List.of(CATEGORY_BEHAVIOR, CATEGORY_MOOD)));
         DIMENSIONS.put("hygiene", new DimensionSpec("卫生", List.of(CATEGORY_HYGIENE)));
-        DIMENSIONS.put("epidemic", new DimensionSpec("防疫", List.of(CATEGORY_EPIDEMIC)));
-        DIMENSIONS.put("elderly", new DimensionSpec("老年专项", List.of(
+        DIMENSIONS.put(KEY_EPIDEMIC, new DimensionSpec("防疫", List.of(CATEGORY_EPIDEMIC)));
+        DIMENSIONS.put(KEY_ELDERLY, new DimensionSpec("老年专项", List.of(
                 CATEGORY_WEIGHT, CATEGORY_DIET, CATEGORY_EXCRETION,
                 CATEGORY_BEHAVIOR, CATEGORY_MOOD, CATEGORY_HYGIENE)));
     }
@@ -133,8 +144,8 @@ public class HealthScoreService {
                 scoreOf(computed, "physiology"),
                 scoreOf(computed, "behavior"),
                 scoreOf(computed, "hygiene"),
-                scoreOf(computed, "epidemic"),
-                scoreOf(computed, "elderly"),
+                scoreOf(computed, KEY_EPIDEMIC),
+                scoreOf(computed, KEY_ELDERLY),
                 computed.includedCount(),
                 AppTime.now(),
                 TraceIds.currentOperatorId(),
@@ -173,7 +184,7 @@ public class HealthScoreService {
             for (Map.Entry<String, DimensionSpec> entry : DIMENSIONS.entrySet()) {
                 // 防疫除外：它的判据不在窗口里（ADR-0025）——只有一条三个月前的疫苗记录时，
                 // 窗口内确实没有记录，但「防护还在不在有效期内」是有答案的。
-                if ("epidemic".equals(entry.getKey())) {
+                if (KEY_EPIDEMIC.equals(entry.getKey())) {
                     empty.add(epidemicDimension(pet, calcDate));
                     continue;
                 }
@@ -194,9 +205,18 @@ public class HealthScoreService {
             String key = entry.getKey();
             DimensionSpec spec = entry.getValue();
 
-            if ("elderly".equals(key) && !elderlyEnabled) {
+            if (KEY_ELDERLY.equals(key) && !elderlyEnabled) {
                 dimensions.add(new HealthScoreDimension(key, spec.name(), null, false,
                         "未开启", "7 岁以上或有慢病时自动开启"));
+                continue;
+            }
+
+            // 防疫维度不按「近 7 天有没有录入」算（ADR-0025）：疫苗按年打，补录历史接种是最常见的
+            // 建档场景。它问的是「防护还在不在有效期内」，所以取「有没有记录」+「最近一次的到期状态」。
+            // **放在下面的聚合扫描之前**：原先它排在扫描之后，那两个算出来的值（daysWithRecord /
+            // abnormal）随即被 continue 丢掉，白扫一遍。
+            if (KEY_EPIDEMIC.equals(key)) {
+                dimensions.add(epidemicDimension(pet, calcDate));
                 continue;
             }
 
@@ -210,13 +230,6 @@ public class HealthScoreService {
                 }
             }
             int days = daysWithRecord.size();
-
-            // 防疫维度不按「近 7 天有没有录入」算（ADR-0025）：疫苗按年打，补录历史接种是最常见的
-            // 建档场景。它问的是「防护还在不在有效期内」，所以取「有没有记录」+「最近一次的到期状态」。
-            if ("epidemic".equals(key)) {
-                dimensions.add(epidemicDimension(pet, calcDate));
-                continue;
-            }
 
             int completeness = (int) Math.round(COMPLETENESS_WEIGHT * (days / (double) WINDOW_DAYS));
             int quality = (int) Math.round(QUALITY_WEIGHT * Math.max(0, 1 - ABNORMAL_PENALTY * abnormal));

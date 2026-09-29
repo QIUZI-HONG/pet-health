@@ -132,7 +132,18 @@ public interface ArchiveRecordMapper extends BaseMapper<ArchiveRecord> {
                                                           @Param("from") LocalDate from,
                                                           @Param("to") LocalDate to);
 
-    /** 窗口内「有记录的日子」，用于连续天数与完整度。 */
+    /**
+     * 某只宠物到 {@code to} 为止**有记录的全部日期**（倒序、去重）。
+     *
+     * <p>注意它**没有下界**——返回的是这只宠物的完整历史，不是某个窗口。调用方
+     * （{@code CheckInService.streak}）需要完整历史才能算「历史最长连续天数」，
+     * 只看 7 天窗口是算不出来的。代价是行数随宠物年龄增长，所以只按日期取（不取整行）。
+     *
+     * <p>原 Javadoc 写的是「窗口内」，与 SQL 不符——读代码的人会以为有下界（测试报告 D29 同类）。
+     *
+     * @param petId 宠物 id
+     * @param to    上界（含），通常是「今天」
+     */
     @Select("""
             SELECT DISTINCT record_date FROM archive_record
              WHERE pet_id = #{petId} AND record_date <= #{to} AND is_deleted = 0

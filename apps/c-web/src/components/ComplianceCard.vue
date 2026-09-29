@@ -9,7 +9,7 @@
  */
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { cApp, ApiError } from "@pet-health/shared";
+import { cApp, toUserMessage } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import { useMessageStore } from "../stores/messages";
 
@@ -43,7 +43,7 @@ async function exportData(): Promise<void> {
     URL.revokeObjectURL(url);
     message.value = "已开始下载。文件是你的账号数据副本。";
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "导出失败，请稍后重试";
+    errorMessage.value = toUserMessage(error, "导出失败，请稍后重试");
   } finally {
     busy.value = false;
   }
@@ -60,7 +60,7 @@ async function deactivate(): Promise<void> {
     messageStore.clear();
     await router.push({ name: "login" });
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "注销失败，请稍后重试";
+    errorMessage.value = toUserMessage(error, "注销失败，请稍后重试");
   } finally {
     busy.value = false;
     confirmingDeactivation.value = false;

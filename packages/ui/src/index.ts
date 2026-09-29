@@ -2,5 +2,3 @@
  * 设计 token 与共享组件。三端共用一套颜色、字号、圆角、间距，
  * 以便满足交付文档 4.16 节「三端配色完全一致」的要求（ADR-0007）。
  */
-
-export const UI_PACKAGE_READY = true;

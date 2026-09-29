@@ -11,6 +11,7 @@
 import { computed, ref, watch } from "vue";
 import {
   ApiError,
+  toUserMessage,
   cApp,
   createLatestGuard,
   formatDateTime,
@@ -100,7 +101,7 @@ async function markRead(message: MessageView): Promise<void> {
     messages.value = messages.value.map((item) => (item.id === updated.id ? updated : item));
     await messageStore.refresh();
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "标记已读失败";
+    errorMessage.value = toUserMessage(error, "标记已读失败");
   }
 }
 
@@ -111,7 +112,7 @@ async function remove(message: MessageView): Promise<void> {
     messages.value = messages.value.filter((item) => item.id !== message.id);
     await messageStore.refresh();
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "删除失败";
+    errorMessage.value = toUserMessage(error, "删除失败");
   }
 }
 
@@ -122,7 +123,7 @@ async function markAllRead(): Promise<void> {
     await load();
     await messageStore.refresh();
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "操作失败";
+    errorMessage.value = toUserMessage(error, "操作失败");
   } finally {
     saving.value = false;
   }
@@ -138,7 +139,7 @@ async function toggleSetting(setting: ReminderSetting, event: Event): Promise<vo
     // 失败要把复选框拨回去：绑定的是 `:checked`，模型没变时 Vue 不会重绘它，
     // 不回写就会停在与服务端不一致的位置（看着开着，其实没开）
     input.checked = setting.enabled;
-    errorMessage.value = error instanceof ApiError ? error.message : "修改失败";
+    errorMessage.value = toUserMessage(error, "修改失败");
   } finally {
     saving.value = false;
   }

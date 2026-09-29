@@ -16,7 +16,6 @@ import com.pethealth.reminder.mapper.ReminderSettingMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,6 +35,9 @@ import java.util.Map;
  */
 @Service
 public class MessageService {
+
+    /** 首页强提醒流一次最多取几条。与契约 {@code /messages/highlights} 的 {@code maximum: 10} 一致。 */
+    private static final int HIGHLIGHT_LIMIT_MAX = 10;
 
     /** 提醒类型 → 展示名。业务通知的类型不在这里（它们不是「提醒」）。 */
     private static final Map<Integer, String> REMINDER_TYPE_NAMES = new LinkedHashMap<>();
@@ -86,14 +88,19 @@ public class MessageService {
     @Transactional
     public List<MessageView> highlights(long userId, int limit) {
         reminderGenerator.materialize(userId);
-        List<Message> messages = messageMapper.selectList(Wrappers.<Message>lambdaQuery()
-                .eq(Message::getUserId, userId)
-                .eq(Message::getKind, Message.KIND_REMINDER)
-                .eq(Message::getStatus, Message.STATUS_SENT)
-                .orderByDesc(Message::getRiskLevel)
-                .orderByAsc(Message::getRemindAt)
-                .last("LIMIT " + Math.max(1, Math.min(limit, 10))));
-        return messages.stream().map(MessageService::toView).toList();
+        // 取前 N 条用分页（且 searchCount=false，不额外跑 count 查询），而不是
+        // `.last("LIMIT " + n)`：ADR-0011 把「拼接 SQL」列为要盯死的唯一口子，
+        // 这里的拼接虽然只是算术结果、不可能注入，但它会让「全仓没有第二处裸拼 SQL」
+        // 这条可 grep 的纪律失效。范围兜底与契约的 minimum/maximum 一致。
+        int size = Math.max(1, Math.min(limit, HIGHLIGHT_LIMIT_MAX));
+        IPage<Message> page = messageMapper.selectPage(new Page<>(1, size, false),
+                Wrappers.<Message>lambdaQuery()
+                        .eq(Message::getUserId, userId)
+                        .eq(Message::getKind, Message.KIND_REMINDER)
+                        .eq(Message::getStatus, Message.STATUS_SENT)
+                        .orderByDesc(Message::getRiskLevel)
+                        .orderByAsc(Message::getRemindAt));
+        return page.getRecords().stream().map(MessageService::toView).toList();
     }
 
     /**
@@ -152,19 +159,23 @@ public class MessageService {
      *
      * <p>**先补算再标记**：否则用户点「全部已读」之后，本次读取才补算出来的那条提醒仍是未读，
      * 角标看起来像没生效（踩过一次）。
+     *
+     * <p>标记走**一条 UPDATE**，而不是把未读行捞回来逐条 {@code updateById}：未读上百条时
+     * 那是上百次往返，而这个操作正是「积压越多越慢」的形状。仍然传一个实体（而不是
+     * {@code update(null, wrapper)}）是为了让 {@link com.pethealth.common.persistence.AuditMetaObjectHandler}
+     * 的更新填充照常执行——写操作的 {@code updated_at} / {@code updated_by} / {@code trace_id}
+     * 不能因为这次优化丢掉（docs/conventions.md）。
      */
     @Transactional
     public Map<String, Integer> markAllRead(long userId) {
         reminderGenerator.materialize(userId);
-        List<Message> unread = messageMapper.selectList(Wrappers.<Message>lambdaQuery()
+        Message patch = new Message();
+        patch.setStatus(Message.STATUS_READ);
+        // 同一个时间戳标记全部：与原先「逐条设成同一个 now」的结果一致
+        patch.setReadAt(AppTime.now());
+        messageMapper.update(patch, Wrappers.<Message>lambdaQuery()
                 .eq(Message::getUserId, userId)
                 .eq(Message::getStatus, Message.STATUS_SENT));
-        LocalDateTime now = AppTime.now();
-        for (Message message : unread) {
-            message.setStatus(Message.STATUS_READ);
-            message.setReadAt(now);
-            messageMapper.updateById(message);
-        }
         return unreadCount(userId);
     }
 

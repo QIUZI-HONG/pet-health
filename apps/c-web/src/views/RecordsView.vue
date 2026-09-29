@@ -9,6 +9,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import {
   ApiError,
+  toUserMessage,
   cApp,
   createLatestGuard,
   formatDate,
@@ -95,7 +96,7 @@ async function submit(): Promise<void> {
     form.nextDueOn = "";
     await load();
   } catch (error) {
-    formError.value = error instanceof ApiError ? error.message : "保存失败，请稍后重试";
+    formError.value = toUserMessage(error, "保存失败，请稍后重试");
   } finally {
     saving.value = false;
   }
@@ -107,7 +108,7 @@ async function remove(record: EpidemicRecord): Promise<void> {
     await cApp.deleteEpidemicRecord(pet.value.id, record.id);
     await load();
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "删除失败";
+    errorMessage.value = toUserMessage(error, "删除失败");
   }
 }
 

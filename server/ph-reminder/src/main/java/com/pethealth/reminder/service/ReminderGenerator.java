@@ -20,6 +20,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Period;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,11 +70,14 @@ public class ReminderGenerator {
     /** 每日批算：遍历所有有宠物的用户（用户量上来后要分批，见 ADR-0019 的说明）。 */
     @Transactional
     public int generateForAllUsers() {
+        // 用户列表读一次就够：原先在循环条件与日志里各调一次，等于白跑一次查询，
+        // 而且日志里那个「用户 N 个」是**第二次查询**的结果，与真正遍历的不是同一份快照
+        List<Long> userIds = sourceApi.listActiveUserIds();
         int created = 0;
-        for (Long userId : sourceApi.listActiveUserIds()) {
+        for (Long userId : userIds) {
             created += materialize(userId);
         }
-        log.info("每日提醒批算完成：用户 {} 个，新增/更新提醒 {} 条", sourceApi.listActiveUserIds().size(), created);
+        log.info("每日提醒批算完成：用户 {} 个，新增/更新提醒 {} 条", userIds.size(), created);
         return created;
     }
 
@@ -85,9 +89,12 @@ public class ReminderGenerator {
      */
     @Transactional
     public int materialize(long userId) {
+        // 规则与开关在读宠物之前读一次，由该用户的所有宠物共用（见下面那个重载的说明）
+        Map<Integer, ReminderRule> rules = ruleService.loadAll();
+        Map<Integer, Boolean> switches = switchesOf(userId, rules);
         int affected = 0;
         for (ReminderSourceApi.PetBrief pet : sourceApi.listPetsOf(userId)) {
-            affected += generateForPet(pet, AppTime.today());
+            affected += generateForPet(pet, AppTime.today(), rules, switches);
         }
         return affected;
     }
@@ -95,14 +102,28 @@ public class ReminderGenerator {
     /**
      * 单只宠物的全部规则。返回处理条数（含更新）。
      *
+     * <p>规则与开关自己读一次，供「只处理一只宠物」的调用方使用。
+     *
      * @param today 业务日期。传参数而不是在方法里取「今天」，测试才能构造历史场景。
      */
     @Transactional
     public int generateForPet(ReminderSourceApi.PetBrief pet, LocalDate today) {
-        // 规则与开关一次读齐：原先每类各查一次库，一只宠物五类就是五次，批算遍历用户时是 N×5
         Map<Integer, ReminderRule> rules = ruleService.loadAll();
-        Map<Integer, Boolean> switches = switchesOf(pet.userId(), rules);
+        return generateForPet(pet, today, rules, switchesOf(pet.userId(), rules));
+    }
 
+    /**
+     * 单只宠物的全部规则（复用调用方已加载的规则与开关）。
+     *
+     * <p>为什么多这一层：规则表是「运营偶尔改一次」的配置，{@link #materialize} 遍历一个用户的
+     * 多只宠物时，若每只都各自 {@code loadAll()} + 查一次用户开关，同一个用户的规则会被读 N 次。
+     * 把「读配置」提到循环外，循环体里就只剩真正的业务判断。
+     *
+     * @param rules    已加载的「类型 → 规则」，见 {@link ReminderRuleService#loadAll()}
+     * @param switches 已解析的「类型 → 是否生成该类型」，= 用户意愿 ∧ 平台总开关
+     */
+    private int generateForPet(ReminderSourceApi.PetBrief pet, LocalDate today,
+                               Map<Integer, ReminderRule> rules, Map<Integer, Boolean> switches) {
         Map<Integer, Candidate> candidates = new LinkedHashMap<>();
         if (switches.getOrDefault(Message.TYPE_VACCINE, false)) {
             vaccines(pet, today, rules).ifPresent(candidate -> candidates.put(Message.TYPE_VACCINE, candidate));
@@ -219,7 +240,7 @@ public class ReminderGenerator {
                                    String label,
                                    LocalDate today) {
         // 用入参 today 而不是「系统今天」：这个参数存在的唯一理由就是让历史场景可测
-        long days = java.time.temporal.ChronoUnit.DAYS.between(today, item.dueOn());
+        long days = ChronoUnit.DAYS.between(today, item.dueOn());
         String title = days <= 0
                 ? pet.name() + "的" + label + "已到期"
                 : pet.name() + "的" + label + "还有 " + days + " 天";
@@ -319,12 +340,12 @@ public class ReminderGenerator {
     // ---------------------------------------------------------------- 幂等写入
 
     /**
-     * 同键更新、异键新增。
+     * 今天已经为这只宠物生成了几条提醒（上限的判定依据，见 {@link #generateForPet} 的注释）。
      *
-     * <p>更新时**不动 status / read_at**：用户已经读过的提醒不该因为文案更新又变回未读
-     * （否则每天批算都会把已读刷成未读，未读角标永远是红的）。
+     * @param userId 归属用户。与 {@code petId} 一起过滤，避免两只宠物的 id 撞在同一批统计里
+     * @param petId  宠物 id
+     * @return 以 {@code created_at} 落在今天的行数
      */
-    /** 今天已经为这只宠物生成了几条提醒（上限的判定依据，见 generateForPet 的注释）。 */
     private long createdToday(long userId, long petId) {
         return messageMapper.selectCount(Wrappers.<Message>lambdaQuery()
                 .eq(Message::getUserId, userId)
@@ -332,6 +353,15 @@ public class ReminderGenerator {
                 .ge(Message::getCreatedAt, AppTime.today().atStartOfDay()));
     }
 
+    /**
+     * 同键更新、异键新增，返回受影响行数（0 表示该窗口已被用户删掉，见方法内注释）。
+     *
+     * <p>更新时**不动 status / read_at**：用户已经读过的提醒不该因为文案更新又变回未读
+     * （否则每天批算都会把已读刷成未读，未读角标永远是红的）。
+     *
+     * @param pet       提醒归属的宠物（提供 userId / petId 与展示名）
+     * @param candidate 待写入的候选提醒；其 {@code dedupKey} 就是幂等键
+     */
     private int upsert(ReminderSourceApi.PetBrief pet, Candidate candidate) {
         Message existing = messageMapper.selectOne(Wrappers.<Message>lambdaQuery()
                 .eq(Message::getDedupKey, candidate.dedupKey()));

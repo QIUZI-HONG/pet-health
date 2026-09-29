@@ -90,6 +90,41 @@ class FileStorageTest extends IntegrationTestBase {
     }
 
     @Test
+    @DisplayName("落定写操作留下 operator_id 与 trace_id（审计列）")
+    void storeIsAudited() {
+        String token = api.registerAndGetAccessToken(PHONE_A);
+        long petId = api.createPet(token, "豆豆");
+        long userId = jdbc.queryForObject("SELECT id FROM `user` WHERE is_deleted = 0", Long.class);
+
+        JsonNode presign = presignOne(token, petId, "checkin", "image/png");
+        long fileId = presign.path("file_id").asLong();
+        String uploadUrl = presign.path("upload_url").asText();
+
+        // 带上显式链路 ID：上传成功是 204 无响应体，没有信封里的 request_id 可以比对
+        String uploadTraceId = "trace-upload-0001";
+        assertThat(api.putBinary(uploadUrl, png(1200, 800), uploadTraceId).status()).isEqualTo(204);
+
+        // 这三列是条件更新（`update(null, ...)`）最容易丢的东西：MyBatis-Plus 的
+        // AuditMetaObjectHandler 只在实体非 null 时才跑，所以必须显式 set。
+        // 原先丢了它们的表现是——presign 那行还是建凭证的 trace，落定这行没变，
+        // 而缩略图（新 insert）却带着落定请求的 trace，同一个请求写出两套留痕。
+        assertThat(jdbc.queryForObject(
+                "SELECT trace_id FROM file_object WHERE id = ?", String.class, fileId))
+                .isEqualTo(uploadTraceId);
+
+        // updated_by 是 **0（系统写入）而不是建凭证的那个用户**：落定走的是 open 域的签名地址，
+        // 不带登录态，所以 TraceIds.currentOperatorId() 按约定返回 SYSTEM_OPERATOR_ID。
+        // 这条断言把这个事实钉住——将来谁想把「谁传的字节」记成登录用户，得先改这里。
+        assertThat(jdbc.queryForObject(
+                "SELECT updated_by FROM file_object WHERE id = ?", Long.class, fileId))
+                .isZero();
+        // 对照组：建凭证那一步是有登录态的，create_by 就是本人
+        assertThat(jdbc.queryForObject(
+                "SELECT created_by FROM file_object WHERE id = ?", Long.class, fileId))
+                .isEqualTo(userId);
+    }
+
+    @Test
     @DisplayName("列表只出原图，缩略图不出现在列表里；删掉后读地址失效")
     void listAndDelete() {
         String token = api.registerAndGetAccessToken(PHONE_A);

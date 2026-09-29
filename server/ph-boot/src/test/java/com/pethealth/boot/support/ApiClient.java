@@ -119,8 +119,24 @@ public final class ApiClient {
      * 用真实类型发反而会把「它其实只看了请求头」这种实现错误掩盖过去（ADR-0020）。
      */
     public ApiCall putBinary(String path, byte[] content) {
+        return putBinary(path, content, null);
+    }
+
+    /**
+     * 直传原始字节，并带一个指定的链路 ID。
+     *
+     * <p>上传接口成功时返回 204、没有响应体，也就没有信封里的 {@code request_id} 可断言，
+     * 所以「写操作的 trace_id 落对了没有」只能这样测：调用方带 {@code X-Request-Id} 进来，
+     * 事后去库里比对（{@code FileStorageTest} 的留痕用例）。
+     *
+     * @param traceId 会作为 {@code X-Request-Id} 发出；传 null 则后端自己生成一个
+     */
+    public ApiCall putBinary(String path, byte[] content, String traceId) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+        if (traceId != null) {
+            headers.set("X-Request-Id", traceId);
+        }
         ResponseEntity<String> response = rest.exchange(path, HttpMethod.PUT,
                 new HttpEntity<>(content, headers), String.class);
         return toApiCall(response);

@@ -12,7 +12,7 @@ import { onMounted, ref, watch } from "vue";
 import {
   cApp,
   uploadFiles,
-  ApiError,
+  toUserMessage,
   type FilePresignRequest,
   type FileView,
 } from "@pet-health/shared";
@@ -41,7 +41,7 @@ async function refresh(): Promise<void> {
     errorMessage.value = "";
   } catch (error) {
     files.value = [];
-    errorMessage.value = error instanceof ApiError ? error.message : "照片加载失败";
+    errorMessage.value = toUserMessage(error, "照片加载失败");
   }
 }
 
@@ -68,7 +68,7 @@ async function pick(event: Event): Promise<void> {
       },
     });
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "上传失败，请重试";
+    errorMessage.value = toUserMessage(error, "上传失败，请重试");
   } finally {
     uploading.value = false;
     progress.value = "";
@@ -80,7 +80,7 @@ async function remove(file: FileView): Promise<void> {
     await cApp.deleteFile(file.id);
     files.value = files.value.filter((item) => item.id !== file.id);
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : "删除失败";
+    errorMessage.value = toUserMessage(error, "删除失败");
   }
 }
 </script>

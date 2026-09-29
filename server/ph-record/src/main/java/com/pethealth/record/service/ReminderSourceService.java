@@ -46,11 +46,10 @@ public class ReminderSourceService implements ReminderSourceApi {
     @Override
     @Transactional(readOnly = true)
     public List<Long> listActiveUserIds() {
-        // 只取「有宠物」的用户：没有宠物的用户没有任何提醒规则可跑（提醒都挂在宠物上）
-        return petMapper.selectList(Wrappers.<Pet>lambdaQuery().select(Pet::getUserId)).stream()
-                .map(Pet::getUserId)
-                .distinct()
-                .toList();
+        // 只取「有宠物」的用户：没有宠物的用户没有任何提醒规则可跑（提醒都挂在宠物上）。
+        // 去重与排序都在 SQL 里做（见 PetMapper.selectActiveUserIds）——这个方法是每日批算的入口，
+        // 而「把整张 pet 表捞回内存再 distinct」的写法会随宠物总数线性吃堆
+        return petMapper.selectActiveUserIds();
     }
 
     @Override
