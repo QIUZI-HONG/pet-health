@@ -2,6 +2,7 @@ package com.pethealth.account.service;
 
 import com.pethealth.account.domain.AuditLog;
 import com.pethealth.account.mapper.AuditLogMapper;
+import com.pethealth.account.metrics.SecurityMetrics;
 import com.pethealth.common.web.ClientIp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,9 +39,12 @@ public class AuditRecorder {
 
     private final AuditLogMapper mapper;
     private final TransactionTemplate requiresNew;
+    private final SecurityMetrics metrics;
 
-    public AuditRecorder(AuditLogMapper mapper, PlatformTransactionManager transactionManager) {
+    public AuditRecorder(AuditLogMapper mapper, PlatformTransactionManager transactionManager,
+                         SecurityMetrics metrics) {
         this.mapper = mapper;
+        this.metrics = metrics;
         this.requiresNew = new TransactionTemplate(transactionManager);
         this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -111,6 +115,8 @@ public class AuditRecorder {
             // trace_id 一律由它填——审计行必须能追回那一次请求
             requiresNew.executeWithoutResult(status -> mapper.insert(row));
         } catch (RuntimeException e) {
+            // 审计失败不阻断业务，所以它不会有面向用户的症状——只有这个指标能告诉你这一层没在记了
+            metrics.auditWriteFailed();
             log.error("审计写入失败（不影响业务） action={} targetId={}", action, targetId, e);
         }
     }

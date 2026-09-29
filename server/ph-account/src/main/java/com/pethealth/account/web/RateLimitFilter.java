@@ -3,6 +3,7 @@ package com.pethealth.account.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pethealth.account.auth.RateLimiter;
 import com.pethealth.account.config.RateLimitProperties;
+import com.pethealth.account.metrics.SecurityMetrics;
 import com.pethealth.common.error.ErrorCode;
 import com.pethealth.common.web.CallerKey;
 import com.pethealth.common.web.FilterErrors;
@@ -39,11 +40,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final RateLimitProperties properties;
     private final RateLimiter limiter;
     private final ObjectMapper objectMapper;
+    private final SecurityMetrics metrics;
 
-    public RateLimitFilter(RateLimitProperties properties, RateLimiter limiter, ObjectMapper objectMapper) {
+    public RateLimitFilter(RateLimitProperties properties, RateLimiter limiter, ObjectMapper objectMapper,
+                           SecurityMetrics metrics) {
         this.properties = properties;
         this.limiter = limiter;
         this.objectMapper = objectMapper;
+        this.metrics = metrics;
     }
 
     @Override
@@ -72,14 +76,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
         if (window.get().count() > rule.limit()) {
-            writeTooManyRequests(response, window.get());
+            writeTooManyRequests(response, window.get(), rule);
             return;
         }
         chain.doFilter(request, response);
     }
 
-    private void writeTooManyRequests(HttpServletResponse response, RateLimiter.Window window) throws IOException {
+    private void writeTooManyRequests(HttpServletResponse response, RateLimiter.Window window,
+                                     RateLimitProperties.Rule rule) throws IOException {
         long seconds = Math.max(1, window.retryAfter().toSeconds());
+        // 打点：被拦了多少次、是哪条规则拦的。这是「限流是不是配得太紧」的唯一信号
+        metrics.rateLimited(rule.pathPrefix());
         // Retry-After 是**这一条**独有的（契约里承诺给前端做倒计时），所以先设头再写统一信封
         response.setHeader("Retry-After", Long.toString(seconds));
         FilterErrors.write(response, objectMapper, ErrorCode.TOO_MANY_REQUESTS,

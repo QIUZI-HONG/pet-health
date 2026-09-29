@@ -2,6 +2,7 @@ package com.pethealth.account.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pethealth.account.config.IdempotencyProperties;
+import com.pethealth.account.metrics.SecurityMetrics;
 import com.pethealth.common.error.ErrorCode;
 import com.pethealth.common.web.CallerKey;
 import com.pethealth.common.web.FilterErrors;
@@ -134,12 +135,14 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     private final IdempotencyProperties properties;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
+    private final SecurityMetrics metrics;
 
     public IdempotencyFilter(IdempotencyProperties properties, StringRedisTemplate redis,
-                             ObjectMapper objectMapper) {
+                             ObjectMapper objectMapper, SecurityMetrics metrics) {
         this.properties = properties;
         this.redis = redis;
         this.objectMapper = objectMapper;
+        this.metrics = metrics;
     }
 
     @Override
@@ -244,15 +247,19 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         if (!fingerprint.equals(stored.fingerprint())) {
             // 这类是客户端用错了键（拿旧键发新请求）。**刻意不释放键**：释放等于允许这次不同的请求
             // 去执行，而它本来就该失败——用户要换一个键
+            metrics.idempotencyConflict("fingerprint_mismatch");
             FilterErrors.write(response, objectMapper, ErrorCode.PARAM_INVALID,
                     "同一个幂等键不能用于不同的请求体，请换一个键");
             return;
         }
         if (STATE_IN_FLIGHT.equals(stored.state())) {
+            metrics.idempotencyConflict("in_flight");
             FilterErrors.write(response, objectMapper, ErrorCode.CONFLICT,
                     "上一次同样的请求还在处理中，请稍后重试（或换一个幂等键）");
             return;
         }
+        // 重放：这次请求没有真的执行。持续增长通常意味着客户端在重试风暴里
+        metrics.idempotentReplayed();
         replay(stored, response);
     }
 

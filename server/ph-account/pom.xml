@@ -43,6 +43,13 @@
       <artifactId>spring-boot-starter-data-redis</artifactId>
     </dependency>
 
+    <!-- 指标 API（MeterRegistry / Counter）。actuator 只在 ph-boot 里，所以这个模块要显式声明；
+         版本由 Spring Boot 的依赖管理给，与 ph-boot 里的 actuator 天然同版 -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-core</artifactId>
+    </dependency>
+
     <!-- 只取 bcrypt，不要 spring-boot-starter-security：鉴权由自己的过滤器做，
          角色 × 资源的 RBAC 随 #60 落地，届时再决定要不要引入安全框架 -->
     <dependency>
