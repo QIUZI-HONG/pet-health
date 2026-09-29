@@ -200,6 +200,29 @@ class AiConsultTest extends IntegrationTestBase {
         assertThat(call.data().path("red_flag_hits").get(0).asText()).isEqualTo("RF-007");
         assertThat(jdbc.queryForMap("SELECT red_flag_hits FROM ai_consult WHERE pet_id = ?", petId)
                 .get("red_flag_hits").toString()).contains("RF-007");
+        // 这条与 model_name=rule:red_flag 是同一件事的用户可见面：结论由规则给出，模型没参与。
+        // 用户与事后复核都该分得清「模型判的红」和「规则判的红」
+        assertThat(call.data().path("disclaimer").asText())
+                .contains("红线规则").contains("未经模型");
+    }
+
+    @Test
+    @DisplayName("免责声明不承诺「知识来源」——检索层还没接，就不能这样对用户说")
+    void disclaimerDoesNotOverpromiseKnowledgeSource() {
+        String token = api.registerAndGetAccessToken(PHONE);
+        long petId = api.createPet(token, "豆豆");
+
+        ApiClient.ApiCall call = api.post("/api/v1/app/pets/" + petId + "/ai-consults",
+                new AiConsultRequest("今天吐了两次", null), token);
+
+        // 检索层未实现（#100/#101），citations 恒为空，交进模型的上下文里没有任何知识条目。
+        // 因此声明里**不能**出现「知识库」「知识来源」这类承诺——那句话现在给不出对应物。
+        // 接上检索后要想改回这类措辞，先让这条用例红，再同时给出真正的来源。
+        assertThat(call.data().path("citations")).isEmpty();
+        assertThat(call.data().path("disclaimer").asText())
+                .as("没接检索就不能声称有知识来源")
+                .doesNotContain("知识库").doesNotContain("知识来源")
+                .contains("不能替代兽医诊断");
     }
 
     // ------------------------------------------------------------ 降级
@@ -220,6 +243,11 @@ class AiConsultTest extends IntegrationTestBase {
         assertThat(call.data().path("degraded").asBoolean()).isTrue();
         assertThat(call.data().path("need_hospital").asBoolean()).isTrue();
         assertThat(call.data().path("action_suggestion").asText()).contains("兽医");
+        // 降级的声明不能说「依据…与 AI 判断」——这一轮模型没给出可用结果（评审指出）：
+        // 三分支各说各的事实：降级 / 红线规则 / 模型判断
+        assertThat(call.data().path("disclaimer").asText())
+                .as("降级时不能声称有 AI 判断")
+                .contains("未能走通 AI 判断").doesNotContain("与 AI 判断，");
 
         var row = jdbc.queryForMap("SELECT degraded, degrade_reason FROM ai_consult WHERE pet_id = ?", petId);
         assertThat(((Number) row.get("degraded")).intValue()).isEqualTo(1);

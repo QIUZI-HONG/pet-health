@@ -102,6 +102,8 @@ public abstract class IntegrationTestBase {
     protected void cleanDatabase() {
         // 顺序：先清业务数据再清主表（没有物理外键，但这个顺序读起来最清楚）
         jdbc.execute("DELETE FROM `ai_consult`");
+        // 审计行（ADR-0028）：每个用例从零开始，否则「落了几行」这类断言会跨用例累加
+        jdbc.execute("DELETE FROM `audit_log`");
         // 合规文档是**种子数据**（迁移里插的），不能清——清了整个切片就没内容了
         jdbc.execute("DELETE FROM `file_object`");
         jdbc.execute("DELETE FROM `message`");

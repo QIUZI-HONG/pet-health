@@ -4,6 +4,7 @@ import com.pethealth.account.auth.AccountStatus;
 import com.pethealth.account.auth.JwtService;
 import com.pethealth.account.auth.LoginThrottle;
 import com.pethealth.account.auth.RefreshTokenStore;
+import com.pethealth.account.domain.AuditLog;
 import com.pethealth.account.domain.User;
 import com.pethealth.account.mapper.UserMapper;
 import com.pethealth.api.app.LoginRequest;
@@ -51,6 +52,7 @@ public class AccountService {
     private final LoginThrottle loginThrottle;
     private final PetQueryApi petQueryApi;
     private final AccountStatus accountStatus;
+    private final AuditRecorder audit;
 
     public AccountService(UserMapper userMapper,
                           FieldCipher fieldCipher,
@@ -59,7 +61,8 @@ public class AccountService {
                           RefreshTokenStore refreshTokens,
                           LoginThrottle loginThrottle,
                           PetQueryApi petQueryApi,
-                          AccountStatus accountStatus) {
+                          AccountStatus accountStatus,
+                          AuditRecorder audit) {
         this.userMapper = userMapper;
         this.fieldCipher = fieldCipher;
         this.passwordEncoder = passwordEncoder;
@@ -68,6 +71,7 @@ public class AccountService {
         this.loginThrottle = loginThrottle;
         this.petQueryApi = petQueryApi;
         this.accountStatus = accountStatus;
+        this.audit = audit;
     }
 
     @Transactional
@@ -94,6 +98,8 @@ public class AccountService {
             // 同一个手机号并发注册时唯一索引会拦下第二个，转成同一个业务码
             throw BusinessException.conflict("该手机号已注册");
         }
+        // 审计放在插入之后、返回之前：拿得到自增 id 才能把它当 target_id（ADR-0028）
+        audit.recordOutcome(AuditLog.ACTION_REGISTER, user.getId(), user.getId(), phoneHash, null);
         return issueTokens(user);
     }
 
@@ -105,12 +111,16 @@ public class AccountService {
         User user = findByPhoneHash(phoneHash);
         if (user == null || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             loginThrottle.recordFailure(phoneHash);
+            // 失败也要留痕，而且必须留得下来：这一行由 AuditRecorder 的独立事务保证，
+            // 不跟着下面这个注定回滚的业务事务一起消失（ADR-0028）
+            audit.recordAttempt(AuditLog.ACTION_LOGIN_FAILED, null, null, phoneHash, "手机号不存在或口令不正确");
             throw new BusinessException(ErrorCode.UNAUTHORIZED, LOGIN_FAILED_MESSAGE);
         }
         if (!user.isActive()) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "账号已被禁用，请联系客服");
         }
         loginThrottle.clear(phoneHash);
+        audit.recordOutcome(AuditLog.ACTION_LOGIN_SUCCESS, user.getId(), user.getId(), phoneHash, null);
         return issueTokens(user);
     }
 

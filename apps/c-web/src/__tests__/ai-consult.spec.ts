@@ -47,7 +47,7 @@ function consult(overrides: Record<string, unknown> = {}) {
     model_version: "deepseek-flash",
     prompt_version: "p0-code",
     latency_ms: 4177,
-    disclaimer: "以上基于宠物的健康档案与专业知识库，不能替代兽医诊断。",
+    disclaimer: "以上依据宠物的健康档案与 AI 判断，只表示就医紧迫程度，不能替代兽医诊断。",
     created_at: "2026-09-28 21:30:00",
     quota_per_day: 3,
     remaining_today: 2,

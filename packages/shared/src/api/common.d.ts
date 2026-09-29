@@ -55,9 +55,16 @@ export interface components {
             };
             content?: never;
         };
-        /** @description 请求过于频繁（42900） */
+        /**
+         * @description 请求过于频繁（42900）。两道闸都会给这个码：接口级限流（ADR-0028）与
+         *     同一手机号的登录失败次数（ADR-0012）。两者的 `message` 都写明了要等多久。
+         *     **`Retry-After` 头目前只有接口级限流会给**：登录失败锁定由异常处理器返回，
+         *     那一层没有设置响应头的位置，前端对它只能读 `message`。
+         */
         TooManyRequests: {
             headers: {
+                /** @description 窗口剩余秒数（HTTP 标准头）。仅接口级限流返回；据此做倒计时，读不到就退回解析 `message` */
+                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content?: never;

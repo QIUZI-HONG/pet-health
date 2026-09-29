@@ -9,6 +9,7 @@ import com.pethealth.common.error.ErrorCode;
 import com.pethealth.common.security.CurrentUser;
 import com.pethealth.common.security.LoginDomain;
 import com.pethealth.common.trace.TraceIds;
+import com.pethealth.common.web.RequestPaths;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -65,7 +66,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        String path = request.getRequestURI();
+        // **用归一化路径**，与路由（和限流过滤器）同一口径：容器给的 getRequestURI() 是未解码的，
+        // 拿它做前缀判断会被 /%61pi/... 这类编码绕开「这个接口要不要登录」这一问（RequestPaths 有说明）
+        String path = RequestPaths.withinApplication(request);
         BusinessException tokenFailure = authenticate(request, path);
 
         if (requiresLogin(request, path) && !CurrentUser.isLoggedIn()) {

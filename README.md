@@ -13,7 +13,7 @@
 开工前先读四样：
 
 1. **[CONTEXT.md](CONTEXT.md)** —— 领域术语表。**命名以它为准**；「商家」「商户」「店铺」「merchant」是禁用词，统一说「服务者」。
-2. **[docs/adr/](docs/adr/)** —— 已定的架构决策（当前 26 条）。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
+2. **[docs/adr/](docs/adr/)** —— 已定的架构决策（当前 28 条）。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
 3. **[地图 #52](https://github.com/QIUZI-HONG/pet-health/issues/52)** —— 哪些决策已定、哪些还没定、下一步该做什么。
 4. **[docs/conventions.md](docs/conventions.md)** —— 实现级约定（分页 / 脱敏 / 加密 / 迁移 / 越权口径），以及每条约定落在哪个 ADR。
 
@@ -23,7 +23,7 @@
 pet-health/
 ├── CONTEXT.md              领域术语表（命名以它为准）
 ├── docs/
-│   ├── adr/                架构决策记录（当前 26 条）
+│   ├── adr/                架构决策记录（当前 28 条）
 │   ├── agents/             工程技能配置（issue tracker / 领域文档规则 / triage 标签）
 │   ├── design/             AI 层的完整方案（ai-service.md）
 │   ├── conventions.md      项目级约定：分页 / 脱敏 / 缓存 / 重试 / 金额精度…
@@ -134,12 +134,15 @@ cd server && ./mvnw -B verify
 
 已验证：
 
-- `cd server && ./mvnw -B verify` —— **13 个 Maven 模块**（另有 1 个聚合 POM）全部编译通过；**93 个测试全绿**
-  （12 个纯单元测试 + 39 个跑在 Testcontainers 起的真实 MySQL 8.4 / Redis 8 上的接口测试，见 ADR-0014）
-- `pnpm -r test && pnpm -r build` —— C 端 14 个组件测试（导航与四态组件）通过；三个 Web 端构建通过，
-  其中 C 端的构建会先跑硬编码色值检查（ADR-0015）
+- `cd server && ./mvnw -B verify` —— **13 个 Maven 模块**（另有 1 个聚合 POM）全部编译通过；**157 个测试全绿**
+  （ph-common 12 个纯单元测试 + ph-ai 4 个 + ph-boot 141 个跑在 Testcontainers 起的真实 MySQL 8.4 / Redis 8 上的
+  接口与契约测试，见 ADR-0014）
+- `pnpm -r test && pnpm -r build` —— **86 个前端测试**通过（组件/视图 + 请求层的刷新与重试）；
+  三个 Web 端构建通过，其中 C 端的构建会先跑硬编码色值检查、`vue-tsc` 类型检查与首屏体积预算（ADR-0015）
 - `pnpm install && pnpm -r build` —— 三个 Web 端全部构建通过（vite 7.3.6）
-- `cd ai && ruff check . && uvicorn app.main:app` —— 静态检查通过；健康检查、内部鉴权（无 token 返回 401）、契约校验（缺 `text` 返回 422）均已实测
+- `cd ai && ruff check . && pytest && uvicorn app.main:app` —— 静态检查通过；**137 通过 + 2 个 xfail**
+  （xfail 是两个已标记的安全缺口，见测试报告 14.2；另有 `live` / `eval` 各 1 条默认不跑）；
+  健康检查、内部鉴权（无 token 返回 401）、契约校验（缺 `text` 返回 422）均已实测
 - **2026-09-27 Docker 端到端实测**：
   - MySQL 8.4.11 容器 healthy（库 `pet_health` 已建，utf8mb4 / `+08:00`）
   - 后端 `spring-boot:run` 启动成功、`/actuator/health` 返回 `UP`；前端 dev server 起得来，且 `/api/v1/app/**` 的代理**确实打到后端**（两边返回同一个 Spring 404）；AI 服务 `/internal/health` 正常

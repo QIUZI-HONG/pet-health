@@ -80,6 +80,22 @@ app:
     login-max-failures: ${LOGIN_MAX_FAILURES:10}
     login-lock-window: ${LOGIN_LOCK_WINDOW:15m}
 
+  # ---- 接口限流（ADR-0028）----
+  # 规则按顺序取第一个前缀命中的，所以顺序即优先级：严的写前面。
+  # 阈值是技术参数（改要重启，不进库）；配错的值按 ADR-0028 的 Rule 归一化处理。
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    rules:
+      # 认证接口：注册/登录/换令牌。30/分钟按「共享出口不能误伤」定，
+      # 账号维度的防刷另有 login-max-failures 兜着，两者不是一回事
+      - path-prefix: /api/v1/app/auth/
+        limit: ${RATE_LIMIT_AUTH:30}
+        window: 1m
+      # 兜底：所有业务接口。这条必须存在——没有规则命中的路径是不限流的
+      - path-prefix: /api/v1/
+        limit: ${RATE_LIMIT_DEFAULT:600}
+        window: 1m
+
   # ---- 敏感字段加密（ADR-0013）----
   # 同样没有默认值：缺了启动即失败。生成方式见 server/.env.example。
   crypto:

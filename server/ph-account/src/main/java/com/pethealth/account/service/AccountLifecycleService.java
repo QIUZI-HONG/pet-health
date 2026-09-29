@@ -1,6 +1,7 @@
 package com.pethealth.account.service;
 
 import com.pethealth.account.auth.AccountStatus;
+import com.pethealth.account.domain.AuditLog;
 import com.pethealth.account.domain.User;
 import com.pethealth.account.mapper.UserMapper;
 import com.pethealth.api.app.AccountExportView;
@@ -40,22 +41,30 @@ public class AccountLifecycleService {
     private final MessageQueryApi messageQueryApi;
     private final FieldCipher fieldCipher;
     private final AccountStatus accountStatus;
+    private final AuditRecorder audit;
 
     public AccountLifecycleService(UserMapper userMapper, AccountService accountService,
                                    ProfileExportApi profileExportApi,
                                    MessageQueryApi messageQueryApi, FieldCipher fieldCipher,
-                                   AccountStatus accountStatus) {
+                                   AccountStatus accountStatus, AuditRecorder audit) {
         this.userMapper = userMapper;
         this.accountService = accountService;
         this.profileExportApi = profileExportApi;
         this.messageQueryApi = messageQueryApi;
         this.fieldCipher = fieldCipher;
         this.accountStatus = accountStatus;
+        this.audit = audit;
     }
 
-    /** 导出：账号资料 + 宠物档案 + 消息。 */
+    /**
+     * 导出：账号资料 + 宠物档案 + 消息。
+     *
+     * <p>这是一次**敏感数据访问**（一次调用就能把主人的全部记录拿走），所以留审计（ADR-0028）。
+     * 注意留的是「谁、什么时候、从哪个 IP 导出了自己的数据」，不是导出内容本身。
+     */
     public AccountExportView export(long userId) {
         User user = require(userId);
+        audit.recordOutcome(AuditLog.ACTION_ACCOUNT_EXPORT, userId, userId, user.getPhoneHash(), null);
         List<AccountExportView.Pet> pets = profileExportApi.exportOf(userId).stream()
                 .map(pet -> new AccountExportView.Pet(
                         pet.petId(), pet.name(), pet.species(), pet.breed(), pet.gender(),
@@ -91,9 +100,14 @@ public class AccountLifecycleService {
     public void deactivate(long userId) {
         User user = require(userId);
         if (user.getStatus() != null && user.getStatus() == User.STATUS_DISABLED) {
-            // 幂等：重复注销不报错，也不重复匿名化（第二次已经匿名了）
+            // 幂等：重复注销不报错，也不重复匿名化（第二次已经匿名了）。
+            // 这里**不记审计**：状态没有真的变化，记一条会让「注销事件」在审计里数出多次
             return;
         }
+        // 先在匿名化之前把手机号 HMAC 取出来：下面几步会把 phone_hash 换成随机值，
+        // 换完之后再取就串不回这个账号了（审计的主体引用要的是原值）
+        String subjectRef = user.getPhoneHash();
+
         user.setStatus(User.STATUS_DISABLED);
         user.setDeactivatedAt(AppTime.now());
         user.setNickname("已注销用户");
@@ -105,6 +119,9 @@ public class AccountLifecycleService {
         int pets = profileExportApi.softDeleteAll(userId);
         // 让已签发的 Access Token 立刻作废：状态判在鉴权层一处，其它模块不必各自记得查
         accountStatus.markDisabled(userId);
+        // 审计放在最后：这一次的四个动作都成功了才算「注销发生了」。
+        // 独立事务，所以即使外层因为别的原因回滚，这一行也照留（ADR-0028 的取舍：宁可多留证据）
+        audit.recordOutcome(AuditLog.ACTION_ACCOUNT_DEACTIVATE, userId, userId, subjectRef, "软删宠物 " + pets + " 只");
         log.info("账号已注销 user_id={} 软删宠物 {} 只（含名下档案）", userId, pets);
     }
 

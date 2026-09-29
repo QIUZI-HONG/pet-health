@@ -47,6 +47,18 @@ public final class CurrentUser {
     }
 
     /**
+     * 当前登录用户 id；未登录返回 {@code null}，**不抛异常**。
+     *
+     * <p>与 {@link #userId()} 的区别是语义而非风格：{@code userId()} 用在「这里必须有登录身份，
+     * 没有就是 bug」的地方；这个用在「有没有都要继续」（限流按用户还是按 IP、
+     * 审计记操作者还是记 0）的地方。混用会让「未登录」这件事在应该继续的路径上变成 40100。
+     */
+    public static Long idOrNull() {
+        Identity identity = HOLDER.get();
+        return identity == null ? null : identity.userId();
+    }
+
+    /**
      * 校验当前身份必须属于指定登录域。C 端 Token 拿去调服务者后台接口会在这里被拦下。
      */
     public static long requireDomain(LoginDomain expected) {

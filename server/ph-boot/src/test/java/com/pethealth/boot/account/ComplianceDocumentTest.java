@@ -70,6 +70,23 @@ class ComplianceDocumentTest extends IntegrationTestBase {
     }
 
     @Test
+    @DisplayName("AI 免责声明不承诺「知识库」——检索层没接就不能这样写")
+    void disclaimerDoesNotPromiseUnbuiltCapability() {
+        String token = api.registerAndGetAccessToken(PHONE);
+
+        String body = api.get("/api/v1/app/compliance/documents/ai_disclaimer", token)
+                .data().path("body").asText();
+
+        // 这份文案是**用户能读到的**：它基于宠物的健康档案与 AI 判断，
+        // 但平台还没有知识库可检索（#100/#101），citations 恒空。V14 删掉了「公开知识库」那句承诺。
+        // 接上检索后要改回这类措辞，先让这条用例红，并同时给出真正的来源。
+        assertThat(body).doesNotContain("知识库");
+        // 用正文自己的措辞断言（「无法替代兽医的面诊与检查」），别照抄另一条免责声明的用词——
+        // 我第一版就抄成了「不能替代」，被这条用例当场抓到
+        assertThat(body).contains("不是诊断结论").contains("无法替代").contains("兽医");
+    }
+
+    @Test
     @DisplayName("未登录不能取文档")
     void loginRequired() {
         assertThat(api.get("/api/v1/app/compliance/documents", null).code()).isEqualTo(40100);

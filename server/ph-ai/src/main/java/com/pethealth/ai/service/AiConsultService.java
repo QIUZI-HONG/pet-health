@@ -1,6 +1,8 @@
 package com.pethealth.ai.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pethealth.ai.client.AiServiceClient;
 import com.pethealth.ai.config.AiQuotaProperties;
 import com.pethealth.ai.config.AiServiceProperties;
@@ -17,8 +19,6 @@ import com.pethealth.record.api.AiPetApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
@@ -43,8 +43,34 @@ public class AiConsultService {
 
     private static final Logger log = LoggerFactory.getLogger(AiConsultService.class);
 
-    /** 免责声明由后端给：医疗文案散落到前端各处时，改起来一定会漏。 */
-    private static final String DISCLAIMER = "以上基于宠物的健康档案与专业知识库，用于判断就医紧迫程度，不能替代兽医诊断。";
+    /**
+     * 免责声明由后端给：医疗文案散落到前端各处时，改起来一定会漏。
+     *
+     * <p><b>措辞刻意不承诺「专业知识库」</b>：检索层还没接（#100/#101），{@code citations} 恒为空，
+     * 交给模型的上下文里只有宠物档案与本次症状——`ai/app/prompts.py` 里没有任何知识条目被注入。
+     * 用户看到「基于专业知识库」会以为答案有出处，而我们给不出出处。
+     * 接上检索之后可以改回带知识库的措辞，**但那时必须同时给出真正的来源**
+     * （用例 {@code AiConsultTest.disclaimerDoesNotOverpromiseKnowledgeSource} 钉着这条）。
+     */
+    private static final String DISCLAIMER = "以上依据宠物的健康档案与 AI 判断，只表示就医紧迫程度，不能替代兽医诊断。";
+
+    /**
+     * 红线命中时的免责声明：这时**没有模型参与**，结论是平台的急症规则给的。
+     *
+     * <p>分开写不是措辞讲究，而是让用户与事后复核都能分清「模型判的红」与「规则判的红」——
+     * 与 ADR-0021 把 {@code model_name} 标成 {@code rule:red_flag} 是同一个理由。
+     */
+    private static final String RED_FLAG_DISCLAIMER =
+            "本次结论由平台的急症红线规则直接给出（未经模型判断），只表示就医紧迫程度，不能替代兽医诊断。";
+
+    /**
+     * 降级时的免责声明：这一轮**模型没给出可用结果**（不可用、超时、没按格式回答）。
+     *
+     * <p>不能复用上面那条「依据…与 AI 判断」——降级路径没有 AI 判断可依据，
+     * 那样写与「承诺了没做的事」是同一类问题（评审指出）。
+     */
+    private static final String DEGRADED_DISCLAIMER =
+            "本次未能走通 AI 判断，以下是为了不耽误而给出的保守建议，不能替代兽医诊断。";
 
     /** 降级答复：宁可让用户白跑一趟，也不让急症被「等 AI」耽误（docs/conventions.md 宁严勿松）。 */
     private static final String DEGRADED_ADVICE =
@@ -52,6 +78,9 @@ public class AiConsultService {
 
     /** Java 侧连不上 AI 服务时的降级码（与 Python 侧的四个码同一命名空间）。 */
     private static final String DEGRADE_CODE_AI_UNREACHABLE = "ai_service_unreachable";
+
+    /** 红线预检「没生效」的取值，与 Python 侧 `models.py` 的 {@code red_flag_check} 同一套。 */
+    private static final String RED_FLAG_CHECK_UNAVAILABLE = "unavailable";
 
     /** 一次咨询最多带几张图：与契约的 {@code file_ids maxItems} 以及 Python 侧的上限对齐。 */
     private static final int MAX_IMAGES = 4;
@@ -138,7 +167,11 @@ public class AiConsultService {
             log.warn("AI 咨询降级 trace_id={} user_id={} reason={}", traceId, userId, e.getMessage());
             return new AiServiceClient.ConsultResponse(
                     2, List.of(), DEGRADED_ADVICE, true, List.of(), List.of(),
-                    0, List.of(), List.of(), "ok",
+                    0, List.of(), List.of(),
+                    // 连不上 AI 服务 = 红线预检这一层**确定没有跑过**，所以这里必须报 unavailable。
+                    // 原先写成 "ok"：那会让 consult() 里的告警永远不触发，留痕里也记着「安全网正常」——
+                    // 与「静默少一层比少一层本身更危险」正相反（同 Python 侧 models.py 对该字段的定义）
+                    RED_FLAG_CHECK_UNAVAILABLE,
                     true, DEGRADE_CODE_AI_UNREACHABLE, e.getMessage(),
                     "", "", "", 0,
                     // 连不上 AI 服务：这一轮没有 token 消耗（也没花钱）
@@ -239,10 +272,25 @@ public class AiConsultService {
                 response.modelVersion(),
                 response.promptVersion(),
                 response.latencyMs(),
-                DISCLAIMER,
+                disclaimerFor(response),
                 record.getCreatedAt(),
                 quota.freePerDay(),
                 Math.max(0, quota.freePerDay() - usedToday));
+    }
+
+    /**
+     * 按「这次结果是谁给的」选免责声明。
+     *
+     * <p>三分支对应三种事实：降级（模型没给出可用结果）、红线短路（规则给的、未经模型）、
+     * 正常（模型判断）。判据都用**语义字段**（`degraded` / `redFlagHits`），
+     * 而不是留痕字段 `modelName`——改留痕的取值不该影响给用户看的话。
+     */
+    private String disclaimerFor(AiServiceClient.ConsultResponse response) {
+        if (response.degraded()) {
+            return DEGRADED_DISCLAIMER;
+        }
+        List<String> hits = response.redFlagHits();
+        return hits == null || hits.isEmpty() ? DISCLAIMER : RED_FLAG_DISCLAIMER;
     }
 
     /** 列表字段存 JSON。序列化失败不该让整次咨询失败，留痕里写 null 即可。 */
@@ -252,7 +300,7 @@ public class AiConsultService {
         }
         try {
             return objectMapper.writeValueAsString(values);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+        } catch (JsonProcessingException e) {
             log.warn("留痕序列化失败：{}", e.getMessage());
             return null;
         }
