@@ -116,6 +116,10 @@ cd server && ./mvnw -B verify
 - `APP_BASE_URL`（`http://127.0.0.1:8080`）——**后端对 AI 服务可达的地址**：档案照片的签名读地址是相对路径，
   AI 服务要把图取回来再内联给模型（模型供应商拉不到我们的内网），所以出站前会补成这个前缀。
   **部署时必须填成 AI 服务能访问到的地址**，否则带图咨询会走「读不到图」的降级。
+- `RATE_LIMIT_AUTH`（`30`，认证接口每分钟次数）、`RATE_LIMIT_DEFAULT`（`600`，其余接口）、
+  `RATE_LIMIT_ENABLED`（`true`）——接口限流的口径见 [ADR-0028](docs/adr/0028-security-baseline.md)
+- `IDEMPOTENCY_ENABLED`（`true`）、`IDEMPOTENCY_TTL`（`10m`）——写接口幂等键；
+  可选能力，不带 `Idempotency-Key` 头的请求行为完全不变
 - `MYSQL_URL` / `MYSQL_USER` / `MYSQL_PASSWORD`、`REDIS_HOST` / `REDIS_PORT`（默认值与 `deploy/docker-compose.dev.yml` 一致）
 
 **密钥纪律**：`AI_API_KEY` 这类真实密钥只写在本地 `.env` 里（已 gitignore）——不提交、不贴进对话、不写进任何文档。

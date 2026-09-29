@@ -54,6 +54,17 @@ components:
           type: boolean
 
   parameters:
+    # 写接口的幂等键（ADR-0028）。**可选**：不带它的请求行为完全不变。
+    # 带同一个键重复提交时，服务端只执行一次、重放首次的响应；
+    # 同一个键配不同的请求体返回 40001；上一次还在处理中返回 40900（并带 Retry-After 之外的
+    # 提示文案，重试或换键都可以）；超时（Redis 抖动）时服务端放行、**不保证幂等**。
+    # 只对写方法且 Content-Type 为 application/json 的请求生效（上传走上传凭证，ADR-0020）。
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符
+      schema: { type: string, maxLength: 200 }
     Page:
       name: page
       in: query

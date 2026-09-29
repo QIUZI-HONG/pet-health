@@ -31,7 +31,7 @@
 | 重试 | **网络错误**自动重试 1 次；**业务错误不重试** |
 | 缓存 | 列表 5 分钟、详情 1 分钟；**用户敏感字段不缓存** |
 | Token 过期 | 静默用 Refresh Token 刷新；失败则跳登录 |
-| 重复提交 | 按钮点击后禁用 2 秒；接口侧幂等用 `Idempotency-Key` 头，**口径已定**见 [ADR-0028](adr/0028-security-baseline.md)。**现状**：前端已按「请求进行中禁用」实现（更严）；接口侧幂等键**尚未实现**（口径已定，实现挂在 #121 的后续提交） |
+| 重复提交 | 按钮点击后禁用 2 秒；接口侧幂等用 `Idempotency-Key` 头（已实现，口径见 [ADR-0028](adr/0028-security-baseline.md)）。可选：不带这个头的请求行为不变；只对写方法的 JSON 请求生效 |
 | 错误码 | 见 `contract/common.yaml` 的 `x-error-codes`。**AI 降级不用错误码**：一律 HTTP 200 + `degraded` + 一句中文（[ADR-0026](adr/0026-ai-degrade-codes-and-daily-budget.md) 废弃了交付文档的 60001/60002） |
 
 ## 数据

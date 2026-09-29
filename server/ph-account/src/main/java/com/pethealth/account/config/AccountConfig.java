@@ -13,7 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
  * cost 每 +1 计算量翻倍，10 是「够慢到不至于被离线爆破、又不至于拖垮登录接口」的常规取值。
  */
 @Configuration
-@EnableConfigurationProperties({AuthProperties.class, RateLimitProperties.class})
+@EnableConfigurationProperties({AuthProperties.class, RateLimitProperties.class, IdempotencyProperties.class})
 public class AccountConfig {
 
     private static final int BCRYPT_COST = 10;

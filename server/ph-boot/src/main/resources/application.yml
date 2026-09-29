@@ -96,6 +96,14 @@ app:
         limit: ${RATE_LIMIT_DEFAULT:600}
         window: 1m
 
+  # ---- 写接口幂等（ADR-0028）----
+  # 客户端带 Idempotency-Key 时，同一个键的重复提交只执行一次、重放首次响应。
+  # 可选能力：不带这个头的请求行为完全不变。
+  idempotency:
+    enabled: ${IDEMPOTENCY_ENABLED:true}
+    # 键保留多久，同时是「客户端可以在这段时间内安全重试」的承诺
+    ttl: ${IDEMPOTENCY_TTL:10m}
+
   # ---- 敏感字段加密（ADR-0013）----
   # 同样没有默认值：缺了启动即失败。生成方式见 server/.env.example。
   crypto:

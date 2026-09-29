@@ -3,10 +3,9 @@ package com.pethealth.account.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pethealth.account.auth.RateLimiter;
 import com.pethealth.account.config.RateLimitProperties;
-import com.pethealth.common.api.ApiResponse;
 import com.pethealth.common.error.ErrorCode;
-import com.pethealth.common.security.CurrentUser;
-import com.pethealth.common.web.ClientIp;
+import com.pethealth.common.web.CallerKey;
+import com.pethealth.common.web.FilterErrors;
 import com.pethealth.common.web.RequestPaths;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -65,7 +64,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
 
-        Optional<RateLimiter.Window> window = limiter.hit(rule, subjectOf(request));
+        // 已登录按用户、未登录按来源 IP：规则收在 CallerKey 一处（幂等过滤器用的是同一份）
+        Optional<RateLimiter.Window> window = limiter.hit(rule, CallerKey.of(request));
         if (window.isEmpty()) {
             // Redis 不可用：放行（ADR-0028「限流器故障时的取舍」一节）
             chain.doFilter(request, response);
@@ -78,21 +78,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
-    /** 已登录按用户，未登录按来源 IP——按 IP 只是「找不到人」时的退路（ADR-0028 的代价一节）。 */
-    private String subjectOf(HttpServletRequest request) {
-        Long userId = CurrentUser.idOrNull();
-        return userId != null ? "u:" + userId : "ip:" + ClientIp.of(request);
-    }
-
     private void writeTooManyRequests(HttpServletResponse response, RateLimiter.Window window) throws IOException {
-        // 过滤器在 DispatcherServlet 之前，GlobalExceptionHandler 管不到，得自己写响应体
-        // （与 JwtAuthenticationFilter 同样的处理）
         long seconds = Math.max(1, window.retryAfter().toSeconds());
-        response.setStatus(ErrorCode.TOO_MANY_REQUESTS.httpStatus().value());
+        // Retry-After 是**这一条**独有的（契约里承诺给前端做倒计时），所以先设头再写统一信封
         response.setHeader("Retry-After", Long.toString(seconds));
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setCharacterEncoding("UTF-8");
-        objectMapper.writeValue(response.getWriter(), ApiResponse.fail(ErrorCode.TOO_MANY_REQUESTS,
-                "请求过于频繁，请 " + seconds + " 秒后再试"));
+        FilterErrors.write(response, objectMapper, ErrorCode.TOO_MANY_REQUESTS,
+                "请求过于频繁，请 " + seconds + " 秒后再试");
     }
 }

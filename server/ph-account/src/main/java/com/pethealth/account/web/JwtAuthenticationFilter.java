@@ -3,12 +3,12 @@ package com.pethealth.account.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pethealth.account.auth.AccountStatus;
 import com.pethealth.account.auth.JwtService;
-import com.pethealth.common.api.ApiResponse;
 import com.pethealth.common.error.BusinessException;
 import com.pethealth.common.error.ErrorCode;
 import com.pethealth.common.security.CurrentUser;
 import com.pethealth.common.security.LoginDomain;
 import com.pethealth.common.trace.TraceIds;
+import com.pethealth.common.web.FilterErrors;
 import com.pethealth.common.web.RequestPaths;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -139,10 +139,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private void writeError(HttpServletResponse response, BusinessException e) throws IOException {
-        // 过滤器在 DispatcherServlet 之前，GlobalExceptionHandler 管不到这里，得自己写响应体
-        response.setStatus(e.getErrorCode().httpStatus().value());
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setCharacterEncoding("UTF-8");
-        objectMapper.writeValue(response.getWriter(), ApiResponse.fail(e.getErrorCode(), e.getMessage()));
+        FilterErrors.write(response, objectMapper, e.getErrorCode(), e.getMessage());
     }
 }

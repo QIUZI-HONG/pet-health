@@ -85,6 +85,8 @@ export interface components {
         };
     };
     parameters: {
+        /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+        IdempotencyKey: string;
         Page: number;
         PageSize: number;
     };
