@@ -14,6 +14,7 @@ import com.pethealth.common.crypto.FieldCipher;
 import com.pethealth.common.error.BusinessException;
 import com.pethealth.common.time.AppTime;
 import com.pethealth.common.trace.TraceIds;
+import com.pethealth.ai.metrics.AiMetrics;
 import com.pethealth.file.api.FileUrlApi;
 import com.pethealth.record.api.AiPetApi;
 import org.slf4j.Logger;
@@ -93,10 +94,12 @@ public class AiConsultService {
     private final ObjectMapper objectMapper;
     private final AiQuotaProperties quota;
     private final AiServiceProperties serviceProperties;
+    private final AiMetrics metrics;
 
     public AiConsultService(AiServiceClient client, AiConsultMapper consultMapper, AiPetApi petApi,
                             FileUrlApi fileUrlApi, FieldCipher fieldCipher, ObjectMapper objectMapper,
-                            AiQuotaProperties quota, AiServiceProperties serviceProperties) {
+                            AiQuotaProperties quota, AiServiceProperties serviceProperties,
+                            AiMetrics metrics) {
         this.client = client;
         this.consultMapper = consultMapper;
         this.petApi = petApi;
@@ -105,6 +108,7 @@ public class AiConsultService {
         this.objectMapper = objectMapper;
         this.quota = quota;
         this.serviceProperties = serviceProperties;
+        this.metrics = metrics;
     }
 
     public AiConsultView consult(long userId, long petId, AiConsultRequest request) {
@@ -128,6 +132,11 @@ public class AiConsultService {
                     traceId, userId, response.redFlagCheck());
         }
         AiConsult record = save(userId, petId, request.question(), response.imagesUsed(), response, traceId);
+        // 打点：降级占比与分级分布是「提示词改坏 / 模型静默换版」的最早信号（ADR-0029）。
+        // 界面上看不出任何异常——用户拿到的永远是一段格式正常的回答
+        metrics.consulted(response.degraded(),
+                response.redFlagHits() != null && !response.redFlagHits().isEmpty(),
+                response.riskLevel());
         // 计数取「含本次在内」的当天行数；请求被拒（越权、参数错）本就到不了这里，不消耗额度
         return toView(record, response, countToday(userId));
     }

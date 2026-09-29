@@ -50,6 +50,15 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
 
+# ---- 日志（ADR-0029）----
+# **每一行都要带 traceId**：交付文档 10.6 要「按 request_id 全链路追踪」，而这件事能成立的前提
+# 是日志行本身带得上它。Spring Boot 的默认格式**不含 MDC**，所以必须自己写 pattern。
+#   %X{traceId:-}  —— 取 MDC 里的 traceId，没有时留空（定时任务、启动日志不该出现占位噪音）
+# 有了它，新代码不必再把 traceId 拼进消息里（老代码里那些 `traceId=` 保留也无害）。
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p %-40.40logger{39} [%X{traceId:-}] %m%n%wEx"
+
 management:
   # 运维端点走**独立端口**（9090）：它们不随业务端口一起暴露，部署时只要不把 9090 映射出去，
   # 指标与健康信息就只在内网可达。原先挂在业务端口上一个过滤器都不拦——实测无凭证

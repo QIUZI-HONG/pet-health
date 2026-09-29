@@ -44,5 +44,12 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
-  </dependencies>
+  
+    <!-- 指标 API（MeterRegistry / Counter）。actuator 只在 ph-boot 里，所以这个模块要显式声明；
+         版本由 Spring Boot 的依赖管理给，与 ph-boot 里的 actuator 天然同版 -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-core</artifactId>
+    </dependency>
+</dependencies>
 </project>

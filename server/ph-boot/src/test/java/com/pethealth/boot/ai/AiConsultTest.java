@@ -2,6 +2,7 @@ package com.pethealth.boot.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pethealth.ai.metrics.AiMetrics;
 import com.pethealth.api.app.AiConsultRequest;
 import com.pethealth.boot.support.ApiClient;
 import com.pethealth.boot.support.IntegrationTestBase;
@@ -64,6 +65,9 @@ class AiConsultTest extends IntegrationTestBase {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private io.micrometer.core.instrument.MeterRegistry registry;
+
     private ApiClient api;
 
     @BeforeEach
@@ -102,6 +106,12 @@ class AiConsultTest extends IntegrationTestBase {
         assertThat(call.code()).isZero();
         JsonNode data = call.data();
         assertThat(data.path("risk_level").asInt()).isEqualTo(2);
+        // 打点：分级分布与降级率是「提示词改坏 / 模型静默换版」的最早信号（ADR-0029）。
+        // 界面上看不出任何异常，所以这条断言是这两个计数器唯一的守卫
+        assertThat(registry.find(AiMetrics.CONSULT).tag("outcome", AiMetrics.OUTCOME_OK).counter().count())
+                .isGreaterThanOrEqualTo(1);
+        assertThat(registry.find(AiMetrics.RISK_LEVEL).tag("level", "2").counter().count())
+                .isGreaterThanOrEqualTo(1);
         assertThat(data.path("possible_causes")).hasSize(2);
         assertThat(data.path("need_hospital").asBoolean()).isTrue();
         assertThat(data.path("degraded").asBoolean()).isFalse();
@@ -204,6 +214,9 @@ class AiConsultTest extends IntegrationTestBase {
         // 用户与事后复核都该分得清「模型判的红」和「规则判的红」
         assertThat(call.data().path("disclaimer").asText())
                 .contains("红线规则").contains("未经模型");
+        assertThat(registry.find(AiMetrics.CONSULT).tag("outcome", AiMetrics.OUTCOME_RED_FLAG).counter().count())
+                .as("红线短路要与模型判断在指标上分得开——否则分级准确率的样本会被规则判定污染（ADR-0021）")
+                .isGreaterThanOrEqualTo(1);
     }
 
     @Test

@@ -1,0 +1,152 @@
+# Prometheus 告警规则（ADR-0029 的「指标与告警清单」）
+#
+# ⚠️ **状态：声明，不是已生效的能力。** 这些规则还没有在任何真实 Alertmanager 上加载过——
+# 那要等 #122 把 Prometheus 与告警通道（企业微信/钉钉机器人）部署起来。
+# 在那之前不要以为「配了就会响」。加载方式（部署时）：
+#
+#     prometheus.yml:
+#       rule_files: [ /etc/prometheus/alerts.yml ]
+#       scrape_configs:
+#         - job_name: pet-health-server
+#           metrics_path: /actuator/prometheus
+#           static_configs: [{ targets: ["<后端主机>:9090"] }]   # 管理端口独立，别把 9090 映射到公网
+#
+# 阈值的来源与「为什么不照抄交付文档」写在 ADR-0029 的第 2 节；改阈值请一起改那份表。
+
+groups:
+  # ---------------------------------------------------------------- 存活与资源
+  - name: pet-health-availability
+    rules:
+      - alert: PetHealthServerDown
+        expr: up{job="pet-health-server"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "后端不可达超过 1 分钟"
+          description: "抓取不到 /actuator/prometheus。先看容器状态与 9090 端口，再看应用日志。"
+
+      # 需要 node_exporter（**尚未部署**，属 #122）：没有它这条规则永远不会触发，也不会报错——
+      # 静默失效的告警比没有告警更糟，所以部署清单里要把 node_exporter 一起列上
+      - alert: DiskUsageHigh
+        expr: |
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+             / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "磁盘使用率超过 80%（{{ $labels.mountpoint }}）"
+          description: "容器日志与本地盘文件都在涨，先清日志再考虑扩容。"
+
+  # ---------------------------------------------------------------- 接口质量
+  - name: pet-health-api
+    rules:
+      - alert: HighErrorRate
+        # 交付文档 10.6 的原值：错误率 > 1%
+        expr: |
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 1) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "5xx 占比超过 1%（5 分钟）"
+          description: "按 uri 标签定位到具体接口；再按 request_id 去日志里捞那几次请求。"
+
+      - alert: SlowRequestsP95
+        # **刻意排除 AI 接口**：交付文档写的是「P95 > 1s」，但本仓 AI 咨询实测 P95 7.4 秒
+        # （模型延迟主导，ADR-0017）。不排除的话这条告警会被 AI 刷成永久噪音，然后被所有人忽略——
+        # 那比没有告警更糟。AI 的阈值单独一条（见下）
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_server_requests_seconds_bucket{
+              uri!="/api/v1/app/pets/{pet_id}/ai-consults"}[5m]))) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "非 AI 接口 P95 超过 1 秒（5 分钟）"
+          description: "先看是不是慢 SQL：这几个切片的接口都是单表或小聚合，超过 1 秒基本是索引问题。"
+
+      - alert: AiConsultSlow
+        # 交付文档 1.6 的目标是 3 秒，但实测均值 3.9s / P95 7.4s。5 秒是「比现状继续恶化就叫」的触发线，
+        # **不是目标线**——想达到 3 秒要动模型选型，那是 ADR-0017 的事
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_server_requests_seconds_bucket{
+              uri="/api/v1/app/pets/{pet_id}/ai-consults"}[10m]))) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI 咨询 P95 超过 5 秒（10 分钟）"
+          description: "看是模型侧慢还是我们侧慢：日志里 consult 那行的 latency_ms 与 model_name。"
+
+  # ---------------------------------------------------------------- AI 质量
+  - name: pet-health-ai-quality
+    rules:
+      - alert: AiDegradeRateHigh
+        # 交付文档 B8 要的「抽检与分级漂移」落在两个计数器上（ADR-0029）。
+        # 降级率飙升是上游抖动 / 提示词改坏的最早信号，而界面上完全看不出来
+        expr: |
+          sum(rate(ph_ai_consult_total{outcome="degraded"}[10m]))
+            / clamp_min(sum(rate(ph_ai_consult_total[10m])), 0.001) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI 降级率超过 20%（10 分钟）"
+          description: "查 degrade_code 的分布（ai_consult.degrade_reason）区分四类：模型不可用 / 输出不可用 / 读不到图 / 没有视觉模型。"
+
+      - alert: AiRiskMixShifted
+        # 分级分布突然偏向「全绿」或「全红」都是信号：前者像漏判，后者像提示词把阈值调坏了。
+        # 这条需要人看一眼样本，所以只告警不自动处置
+        expr: |
+          sum(rate(ph_ai_consult_risk_total{level="3"}[1h])) > 0
+            and
+          sum(rate(ph_ai_consult_risk_total{level="3"}[1h]))
+            / clamp_min(sum(rate(ph_ai_consult_risk_total[1h])), 0.001) > 0.5
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "一半以上的咨询被判为红色（1 小时）"
+          description: "要么真的疫情/高发，要么提示词把「宁严勿松」放得太宽。抽 10 条人工看。"
+
+  # ---------------------------------------------------------------- 安全机制
+  - name: pet-health-security
+    rules:
+      - alert: AuditLogWriteFailing
+        # **最该配的一条**：审计失败不阻断业务（ADR-0028 的取舍），所以它没有任何面向用户的症状。
+        # 这个指标不动，你永远不会知道安全网已经不记了
+        expr: increase(ph_security_audit_write_failed_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "审计写入失败（5 分钟内至少一次）"
+          description: "看日志里的「审计写入失败」：多半是库连接或表被改。审计是安全网，不能长时间空着。"
+
+      - alert: RateLimitRejectingMostTraffic
+        # 两个方向都要看：被刷（攻击）或阈值配错了（误伤）。两条都得人判断，所以只报不处置
+        expr: |
+          sum(rate(ph_security_rate_limit_rejected_total[10m]))
+            / clamp_min(sum(rate(http_server_requests_seconds_count[10m])), 0.001) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "超过一半的请求被限流拦下（10 分钟）"
+          description: "按 rule 标签看是哪条规则；再按来源 IP/用户判断是被刷还是阈值太紧（ADR-0028 的阈值在 application.yml）。"
+
+      - alert: IdempotencyConflictSpike
+        # 持续冲突通常意味着客户端在重试风暴里，或有人拿旧键发新请求（40001）
+        expr: |
+          sum by (reason) (rate(ph_security_idempotency_conflict_total[10m])) > 1
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "幂等冲突持续出现（reason={{ $labels.reason }}）"
+          description: "in_flight 多说明有请求执行很慢或被卡住；fingerprint_mismatch 多说明客户端把键复用到了不同的请求上。"
