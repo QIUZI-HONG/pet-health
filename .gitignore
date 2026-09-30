@@ -2,6 +2,8 @@
 target/
 *.class
 *.jar
+# 本仓不提交 wrapper jar（`server/.mvn/wrapper/` 下只有 properties，jar 由 mvnw 自行下载）；
+# 这条例外留给「哪天有人真把 jar 放进来」的情况，免得被上面的 *.jar 静默吞掉。
 !.mvn/wrapper/maven-wrapper.jar
 .mvn/timing.properties
 
@@ -21,13 +23,24 @@ venv/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.tox/
 
 # ---- 构建与报告 ----
 *.log
 npm-debug.log*
 pnpm-debug.log*
 coverage/
+htmlcov/
+.coverage
 *.tsbuildinfo
+
+# ---- 编辑器与工具的临时文件 ----
+*.orig
+*.rej
+*.tmp
+*.bak
+*~
 
 # ---- IDE ----
 .idea/
@@ -43,15 +56,17 @@ server/ph-boot/data/
 server/data/
 
 # ---- 本地环境 ----
+# 上面 Node 段的 `*.local` 已经覆盖 `.env.local` 这类带前缀的写法，这里只留最常写的那两个。
 .env
 .env.local
-*.env.local
 deploy/data/
 
 # ---- 本机工具的忽略文件（不属于仓库）----
 .zcodeignore
 
-# ---- 测试产物（GUI 实测截图，不入库；归档在 docs/testing/screenshots-<日期>/）----
+# ---- 测试产物 ----
+# GUI 实测截图**不入库**（几十张 PNG，体积压过文档本体）。下面这个路径是本机的**本地归档目录**，
+# 不是仓库内容；`docs/testing/` 的报告会引用它，但在别人机器上这些图不存在。
 docs/testing/screenshots-*/
 
 # ---- 系统 ----
