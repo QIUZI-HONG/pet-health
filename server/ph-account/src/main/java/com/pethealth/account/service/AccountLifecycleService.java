@@ -77,6 +77,13 @@ public class AccountLifecycleService {
                                 .map(s -> new AccountExportView.Score(s.calcDate(), s.totalScore(),
                                         s.physiology(), s.behavior(), s.hygiene(), s.epidemic(),
                                         s.elderly()))
+                                .toList(),
+                        // 健康报告（ADR-0031 决定六）：报告进导出包，与原始记录分开列，
+                        // 让接收方分得清「记录」与「平台对记录的解释」。没有报告就是空列表
+                        pet.reports().stream()
+                                .map(r -> new AccountExportView.Report(r.type(), r.typeName(),
+                                        r.periodStart(), r.periodEnd(), r.grade(), r.totalScore(),
+                                        r.payload()))
                                 .toList()))
                 .toList();
         List<AccountExportView.PetMessage> messages = messageQueryApi.exportOf(userId).stream()

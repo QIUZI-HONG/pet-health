@@ -12,9 +12,28 @@
 
   <artifactId>ph-ai</artifactId>
   <name>ph-ai</name>
-  <description>AI 服务的客户端：调用 / 配额 / 熔断 / 留痕（提示词编排与风险分级在 ai/ 服务里，ADR-0009）</description>
+  <description>AI 服务的客户端：调用 / 配额 / 预算告警 / 留痕（提示词编排与风险分级在 ai/ 服务里，ADR-0009）</description>
 
   <dependencies>
+    <!--
+      ph-catalog：F011 规则版要读「症状 → 目录项」的映射（`catalog_symptom_rule`）与项目信息，
+      经它的 api 接口（SymptomRuleApi / CatalogQueryApi）。
+      **方向是单向的**（ph-catalog 不依赖 ph-ai），所以不成环；反过来的话就得把推荐出口搬出本模块。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-catalog</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!--
+      ph-reminder：转人工受理与回复要发站内消息（BusinessMessageApi 是写侧唯一出口，ADR-0006）。
+      ph-reminder 只依赖 common/api/record，**不依赖 ph-ai**，所以不成环。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-reminder</artifactId>
+      <version>${project.version}</version>
+    </dependency>
     <dependency>
       <groupId>com.pethealth</groupId>
       <artifactId>ph-common</artifactId>
@@ -35,6 +54,19 @@
     <dependency>
       <groupId>com.pethealth</groupId>
       <artifactId>ph-record</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!--
+      咨询**真的产出了建议**时记一次 `AI_ADVICE` 行为（任务中心「查看 AI 建议」的进度来源），
+      走 ph-privilege 的 api 包（PointsApi.award）。
+      **可以直接依赖，理由与 ph-record 依赖 ph-privilege 完全相同**（见 ph-record/pom.xml）：
+      行为发生方就是本模块（建议在这里产出），而表不跨模块读——行为流水与任务配置都留在
+      ph-privilege，本模块只调接口（ADR-0006）。方向是单向的 ph-ai → ph-privilege
+      （ph-privilege 只依赖 ph-catalog），不成环。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-privilege</artifactId>
       <version>${project.version}</version>
     </dependency>
 

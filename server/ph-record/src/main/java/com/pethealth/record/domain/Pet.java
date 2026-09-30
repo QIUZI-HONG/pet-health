@@ -46,6 +46,15 @@ public class Pet extends BaseEntity {
      */
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String chronicDesc;
+
+    /**
+     * 用户是否手动关闭了专项照护模式（V17 加的列）。
+     *
+     * <p>照护模式本身是**派生事实**（生日实时算 + 慢病标记），不落状态位（ADR-0024 第二节）；
+     * 这一枚位存的是**唯一无法推导的东西**——用户的关闭意愿（ADR-0032 决定一）。
+     * 重新打开 = 把它清回 0，判定交还给生日与慢病。
+     */
+    private Integer careModeDisabled;
     private LocalDateTime deletedAt;
 
     public Long getUserId() {
@@ -134,6 +143,14 @@ public class Pet extends BaseEntity {
 
     public void setChronicDesc(String chronicDesc) {
         this.chronicDesc = chronicDesc;
+    }
+
+    public Integer getCareModeDisabled() {
+        return careModeDisabled;
+    }
+
+    public void setCareModeDisabled(Integer careModeDisabled) {
+        this.careModeDisabled = careModeDisabled;
     }
 
     public LocalDateTime getDeletedAt() {

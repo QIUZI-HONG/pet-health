@@ -68,4 +68,18 @@ public final class CurrentUser {
         }
         return identity.userId();
     }
+
+    /**
+     * 运营后台的门禁：登录域必须是 {@link LoginDomain#ADMIN}，返回操作者 id（写审计要用）。
+     *
+     * <p>这是 {@link #requireDomain} 针对运营域的**具名写法**。原先有十个类各自定义了一个私有的
+     * {@code requireAdmin()}（有的 {@code static long}、有的 {@code void}、注释各写一份），
+     * 语义完全相同——收在这里之后「运营接口的门禁」只有一个定义。
+     *
+     * <p><b>它只校验登录域，不校验角色</b>：运营与超级管理员的细分待后台账号体系落地
+     * （ADR-0035），在那之前所有 admin 域身份一视同仁，别把这里当成「是超级管理员」。
+     */
+    public static long requireAdmin() {
+        return requireDomain(LoginDomain.ADMIN);
+    }
 }

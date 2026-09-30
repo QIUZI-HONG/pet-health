@@ -7,28 +7,21 @@ import com.pethealth.api.app.FileView;
 import com.pethealth.common.error.BusinessException;
 import com.pethealth.common.time.AppTime;
 import com.pethealth.common.trace.TraceIds;
+import com.pethealth.file.api.FileQueryApi;
 import com.pethealth.file.api.FileUrlApi;
 import com.pethealth.file.domain.FileObject;
 import com.pethealth.file.mapper.FileObjectMapper;
 import com.pethealth.file.storage.FileStorage;
 import com.pethealth.file.storage.FileStorageProperties;
 import com.pethealth.file.storage.ImageSniffer;
+import com.pethealth.file.storage.Thumbnails;
 import com.pethealth.file.storage.UploadTokens;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.imageio.IIOImage;
-import javax.imageio.ImageIO;
-import javax.imageio.ImageWriteParam;
-import javax.imageio.ImageWriter;
-import javax.imageio.stream.MemoryCacheImageOutputStream;
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -36,9 +29,9 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HexFormat;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -58,9 +51,12 @@ import java.util.UUID;
  * </ol>
  *
  * <p>越权一律 40400（docs/conventions.md）：照片里是宠物与证件，不能用「这个 id 存不存在」回答探测者。
+ *
+ * <p>职责边界：本类只编排「什么时候生成缩略图、写到哪」，**图片怎么缩放与编码在
+ * {@link Thumbnails}**（纯计算，没有数据库与存储依赖）。
  */
 @Service
-public class FileService implements FileUrlApi {
+public class FileService implements FileUrlApi, FileQueryApi {
 
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
 
@@ -70,12 +66,6 @@ public class FileService implements FileUrlApi {
 
     private static final Set<String> ALLOWED_ROLES =
             Set.of(FileObject.ROLE_ORIGINAL, FileObject.ROLE_CLOSEUP);
-
-    /** 缩略图宽度：够列表与小图预览，且不会把「看不清细节」的锅甩给缩略图（要看细节点原图）。 */
-    private static final int THUMB_WIDTH = 480;
-
-    /** 交付文档 13.2：JPEG 压缩质量 0.8。 */
-    private static final float JPEG_QUALITY = 0.8f;
 
     private static final DateTimeFormatter MONTH_PATH = DateTimeFormatter.ofPattern("yyyyMM", Locale.ROOT);
 
@@ -223,9 +213,17 @@ public class FileService implements FileUrlApi {
         storeThumbnail(file, image.image());
     }
 
+    /**
+     * 生成缩略图并落成**独立的一行**（{@code original_id} 指回原图），原图行上不留派生字段——
+     * 删原图时一并删子行（见 {@link #delete}）。对象键与 {@link #presign} 同一手法：先插入拿自增 id，
+     * 再回填 {@code storageKey}。
+     *
+     * <p>失败只记日志、不抛出：原图此时已经落定，缩略图只是渲染优化——列表在没有缩略图时回落原图
+     * （见 {@link #toView}），不该因为一次缩放失败让用户的上传白传。
+     */
     private void storeThumbnail(FileObject original, BufferedImage source) {
         try {
-            byte[] thumb = toJpeg(scaleDown(source, THUMB_WIDTH));
+            byte[] thumb = Thumbnails.toJpeg(Thumbnails.scaleDown(source, Thumbnails.WIDTH));
             FileObject child = new FileObject();
             child.setOwnerUserId(original.getOwnerUserId());
             child.setPetId(original.getPetId());
@@ -235,8 +233,8 @@ public class FileService implements FileUrlApi {
             child.setMime(ImageSniffer.MIME_JPEG);
             child.setSizeBytes((long) thumb.length);
             child.setSha256(sha256(thumb));
-            child.setWidth(scaledWidth(source, THUMB_WIDTH));
-            child.setHeight(scaleHeight(source, THUMB_WIDTH));
+            child.setWidth(Thumbnails.scaledWidth(source, Thumbnails.WIDTH));
+            child.setHeight(Thumbnails.scaledHeight(source, Thumbnails.WIDTH));
             child.setStorageDriver(storage.driver());
             child.setStatus(FileObject.STATUS_STORED);
             child.setStorageKey("pending-" + UUID.randomUUID());
@@ -252,6 +250,14 @@ public class FileService implements FileUrlApi {
 
     // ---------------------------------------------------------------- 读
 
+    /**
+     * 我的文件列表，可按宠物与用途过滤。
+     *
+     * <p>只回原图行（缩略图行由 {@code thumbUrl} 承载），时间倒序——最近传的在最前。
+     *
+     * @param petId   为 null 表示不限宠物（账号级照片，如证件）
+     * @param bizType 为 null 或空白表示不限用途
+     */
     public List<FileView> list(long userId, Long petId, String bizType) {
         List<FileObject> rows = fileMapper.selectList(Wrappers.<FileObject>lambdaQuery()
                 .eq(FileObject::getOwnerUserId, userId)
@@ -265,12 +271,17 @@ public class FileService implements FileUrlApi {
         return rows.stream().map(row -> toView(row, thumbnails.get(row.getId()))).toList();
     }
 
+    /** 单张文件的详情（含签名读地址）。别人的文件按不存在处理（40400）。 */
     public FileView get(long userId, long fileId) {
         FileObject file = requireOwned(userId, fileId);
         return toView(file, thumbnailOf(fileId).orElse(null));
     }
 
-    /** 签名读地址的内容：凭证通过就返回字节，不查登录身份——**签名即授权**（与对象存储的短时 URL 同理）。 */
+    /**
+     * 签名读地址的内容：凭证通过就返回字节，**不查登录身份**——签名即授权（与对象存储的短时 URL 同理）。
+     *
+     * <p>凭证校验失败与文件不存在都回 40400：对拿不到凭证的人，这两种情况没有区别。
+     */
     public StoredContent read(long fileId, String token) {
         FileObject file = fileMapper.selectById(fileId);
         if (file == null || file.getStatus() != FileObject.STATUS_STORED) {
@@ -316,8 +327,33 @@ public class FileService implements FileUrlApi {
         return urls;
     }
 
-    // ---------------------------------------------------------------- 删
+    /**
+     * 按 id 批量取元数据（{@link FileQueryApi}）。给订单的三道照片墙用：照片由服务者上传，
+     * 而要看它的人既有门店也有宠物主人——**归属判在业务侧**（ph-order 先校验订单归属与状态），
+     * 这里只负责把元数据与签名地址给出来。
+     *
+     * <p>保留「已落定 + 原图」这两条过滤：待传行、已删行与缩略图行给出去没有意义
+     * （缩略图由 {@code thumbUrl} 承载）。查不到的 id 不进 Map，调用方按「这个 id 不可用」处理。
+     */
+    @Override
+    public Map<Long, FileView> files(Collection<Long> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> distinct = fileIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        List<FileObject> rows = fileMapper.selectList(Wrappers.<FileObject>lambdaQuery()
+                .in(FileObject::getId, distinct)
+                .eq(FileObject::getStatus, FileObject.STATUS_STORED)
+                .ne(FileObject::getRole, FileObject.ROLE_THUMB));
+        Map<Long, FileObject> thumbnails = thumbnailsOf(rows.stream().map(FileObject::getId).toList());
+        Map<Long, FileView> views = new HashMap<>();
+        for (FileObject row : rows) {
+            views.put(row.getId(), toView(row, thumbnails.get(row.getId())));
+        }
+        return views;
+    }
 
+    // ---------------------------------------------------------------- 删
     @Transactional
     public void delete(long userId, long fileId) {
         FileObject file = requireOwned(userId, fileId);
@@ -347,6 +383,9 @@ public class FileService implements FileUrlApi {
         return file;
     }
 
+    /** 对象键形态 {@code f/{userId}/{yyyyMM}/{fileId}.{ext}}。用 id 与月份、**不用原始文件名**：
+     *  用户给的字符串不能进存储路径（路径穿越 + 同名互覆盖）。扩展名取魔数嗅探的结果，
+     *  不是请求里声明的 mime（那个只能用于提前拦，见 {@link #presign}）。 */
     private String storageKeyOf(long userId, long fileId, String extension) {
         return "f/" + userId + "/" + LocalDateTime.now(AppTime.ZONE).format(MONTH_PATH)
                 + "/" + fileId + "." + extension;
@@ -368,6 +407,8 @@ public class FileService implements FileUrlApi {
                 file.getMime(), file.getSizeBytes(), file.getWidth(), file.getHeight(), url, thumbUrl);
     }
 
+    /** 签发短时签名读地址（有效期 {@code app.file.read-ttl}）。**URL 本身就是凭据**：{@link #read}
+     *  只看签名、不查登录身份，所以它不能被写进日志，也不能在缓存里留超过 TTL。 */
     private String signedReadUrl(long fileId, long ownerUserId) {
         String token = tokens.issue(UploadTokens.PURPOSE_READ, fileId, ownerUserId,
                 Instant.now().plus(properties.readTtl()));
@@ -402,59 +443,8 @@ public class FileService implements FileUrlApi {
         return thumbnails;
     }
 
-    /** 缩放后的宽度：不超过 {@code maxWidth}，也不放大原图。 */
-    private static int scaledWidth(BufferedImage source, int maxWidth) {
-        return Math.min(source.getWidth(), maxWidth);
-    }
-
-    private static BufferedImage scaleDown(BufferedImage source, int maxWidth) {
-        if (source.getWidth() <= maxWidth) {
-            return source;
-        }
-        int width = scaledWidth(source, maxWidth);
-        int height = scaleHeight(source, maxWidth);
-        BufferedImage target = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g = target.createGraphics();
-        // PNG 的透明区域在 JPEG 里会变黑，先铺白底
-        g.setColor(Color.WHITE);
-        g.fillRect(0, 0, width, height);
-        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-        g.drawImage(source, 0, 0, width, height, null);
-        g.dispose();
-        return target;
-    }
-
-    /**
-     * 等比缩放后的高度。
-     *
-     * <p>宽度上限由参数传入而不是读 {@link #THUMB_WIDTH}：原先两条缩放路径各算各的
-     * （一条用参数、一条读常量），改动上限时必然有一处漏改，而算错高度的表现是图被拉扁。
-     */
-    private static int scaleHeight(BufferedImage source, int maxWidth) {
-        return Math.max(1, (int) Math.round(source.getHeight() * (double) Math.min(source.getWidth(), maxWidth)
-                / source.getWidth()));
-    }
-
-    private static byte[] toJpeg(BufferedImage image) throws IOException {
-        Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpeg");
-        if (!writers.hasNext()) {
-            throw new IOException("当前 JDK 没有 JPEG 编码器");
-        }
-        ImageWriter writer = writers.next();
-        ImageWriteParam param = writer.getDefaultWriteParam();
-        param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-        param.setCompressionQuality(JPEG_QUALITY);
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (MemoryCacheImageOutputStream stream = new MemoryCacheImageOutputStream(out)) {
-            writer.setOutput(stream);
-            writer.write(null, new IIOImage(image, null, null), param);
-        } finally {
-            writer.dispose();
-        }
-        return out.toByteArray();
-    }
-
+    /** 内容摘要（十六进制小写），落定与缩略图两处共用同一个写法。JVM 一定带 SHA-256，取不到就是
+     *  环境坏了——抛出去而不是吞掉：摘要列不该有「算不出来」这种语义。 */
     private static String sha256(byte[] content) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));

@@ -14,7 +14,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.time.Period;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -54,8 +53,6 @@ public class HealthScoreService {
     private static final int QUALITY_WEIGHT = 30;
     private static final double ABNORMAL_PENALTY = 0.1;
 
-    /** 老年专项的年龄门槛（交付文档 F009：7 岁以上或录入慢病触发）。 */
-    private static final int ELDERLY_AGE_YEARS = 7;
     /** 防疫维度的两个取值（ADR-0025）：在有效期内 100、已过期 60。 */
     private static final int EPIDEMIC_OK_SCORE = 100;
     private static final int EPIDEMIC_OVERDUE_SCORE = 60;
@@ -90,13 +87,16 @@ public class HealthScoreService {
     private final HealthScoreMapper healthScoreMapper;
     private final ArchiveRecordMapper recordMapper;
     private final PetMapper petMapper;
+    private final CareModeService careModeService;
 
     public HealthScoreService(HealthScoreMapper healthScoreMapper,
                              ArchiveRecordMapper recordMapper,
-                             PetMapper petMapper) {
+                             PetMapper petMapper,
+                             CareModeService careModeService) {
         this.healthScoreMapper = healthScoreMapper;
         this.recordMapper = recordMapper;
         this.petMapper = petMapper;
+        this.careModeService = careModeService;
     }
 
     /** 算一遍并返回（不落库），并带上近 7 天趋势。给查询接口用。 */
@@ -106,7 +106,7 @@ public class HealthScoreService {
         Computed computed = compute(pet, today);
         return new HealthScoreView(
                 computed.totalScore(),
-                grade(computed.totalScore()),
+                gradeOf(computed.totalScore()),
                 computed.dimensions(),
                 trend(pet.getId(), today),
                 today,
@@ -246,15 +246,15 @@ public class HealthScoreService {
         return new Computed(total, dimensions, included);
     }
 
-    /** 老年专项触发条件（交付文档 F009）：年龄 ≥ 7 岁，或标记了慢病。 */
+    /**
+     * 老年专项是否开启：**判定只有一处**（ADR-0032 决定一）。
+     *
+     * <p>原先这里是「年龄 ≥ 7 岁或有慢病」的第二份实现（提醒模块里还有一份，且阈值硬编码），
+     * 两处已经开始漂移。现在统一走 {@link CareModeService}：年龄按生日实时算、阈值来自
+     * {@code care_mode_rule}（运营可调）、**用户可以手动关闭**（关闭后这枚位为 1，老年维不计入）。
+     */
     private boolean isElderlyEnabled(Pet pet, LocalDate calcDate) {
-        if (pet.getIsChronic() != null && pet.getIsChronic() == 1) {
-            return true;
-        }
-        if (pet.getBirthday() == null) {
-            return false;
-        }
-        return Period.between(pet.getBirthday(), calcDate).getYears() >= ELDERLY_AGE_YEARS;
+        return careModeService.of(pet, calcDate).active();
     }
 
     /**
@@ -279,8 +279,13 @@ public class HealthScoreService {
                 overdue ? "有记录的应接种日期已过，该补打了" : "有疫苗或驱虫记录，且在有效期内");
     }
 
-    /** 中性档位文案：不用「优秀 / 健康」这类医学化的词（ADR-0018）。 */
-    private String grade(Integer total) {
+    /**
+     * 中性档位文案：不用「优秀 / 健康」这类医学化的词（ADR-0018）。
+     *
+     * <p>做成静态方法是为了让**健康报告**用同一个口径（ADR-0031 要求报告里的每个数字与评分卡同源）
+     * ——报告自己再写一份档位判断，就是「同一个分数两个说法」的开始。
+     */
+    public static String gradeOf(Integer total) {
         if (total == null) {
             return "暂无数据";
         }

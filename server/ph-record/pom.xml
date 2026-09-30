@@ -25,5 +25,18 @@
       <artifactId>ph-api</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!--
+      两处接线要走 ph-privilege 的 api 包（ADR-0046 的「需要协调」）：
+        1. 建档成功时推进「被邀请人已建档」（InviteAttributionApi.markProfileCompleted）——
+           有效邀请的触发条件，ADR-0039 第一节；
+        2. 打卡成功后发分（PointsApi.award）——行为发生方是本模块。
+      方向是单向的 ph-record → ph-privilege（ph-privilege 只依赖 ph-catalog），不会成环。
+      表不跨模块读：邀请关系与积分流水都留在 ph-privilege，本模块只调接口（ADR-0006）。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-privilege</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 </project>

@@ -14,8 +14,16 @@ import java.util.List;
  */
 public interface ReminderSourceApi {
 
-    /** 一只宠物的轻量信息（提醒规则只用到这两三个字段）。 */
-    record PetBrief(long petId, long userId, String name, LocalDate birthday, boolean chronic) {
+    /**
+     * 一只宠物的轻量信息（提醒规则只用到这两三个字段）。
+     *
+     * <p>{@code careMode} 与 {@code careReason} 是切片 #116 加的：照护模式下提醒要走**照护档的阈值**
+     * （`reminder_rule.config` 里的 `careAdvanceDays` / `careOverdueGraceDays` / `careWeightChangePercent`），
+     * 而拒绝在提醒模块里重写一遍「年龄 ≥ 阈值或有慢病」的判定（那正是两处判据漂移的起点）。
+     * **判定在档案模块做，提醒模块只读一个布尔值**（ADR-0032 决定三）。
+     */
+    record PetBrief(long petId, long userId, String name, LocalDate birthday, boolean chronic,
+                    boolean careMode, String careReason) {
     }
 
     /** 一条「快到期」的防疫记录。{@code kind} 1=疫苗 2=驱虫。 */

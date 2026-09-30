@@ -1,8 +1,10 @@
 package com.pethealth.ai.web;
 
 import com.pethealth.ai.service.AiConsultService;
+import com.pethealth.ai.service.HumanConsultService;
 import com.pethealth.api.app.AiConsultRequest;
 import com.pethealth.api.app.AiConsultView;
+import com.pethealth.api.app.HumanConsultView;
 import com.pethealth.common.api.ApiResponse;
 import com.pethealth.common.security.CurrentUser;
 import com.pethealth.common.security.LoginDomain;
@@ -24,9 +26,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AiConsultController {
 
     private final AiConsultService aiConsultService;
+    private final HumanConsultService humanConsultService;
 
-    public AiConsultController(AiConsultService aiConsultService) {
+    public AiConsultController(AiConsultService aiConsultService, HumanConsultService humanConsultService) {
         this.aiConsultService = aiConsultService;
+        this.humanConsultService = humanConsultService;
     }
 
     @PostMapping
@@ -34,5 +38,18 @@ public class AiConsultController {
                                              @Valid @RequestBody AiConsultRequest request) {
         long userId = CurrentUser.requireDomain(LoginDomain.APP);
         return ApiResponse.ok(aiConsultService.consult(userId, petId, request));
+    }
+
+    /**
+     * 转人工：把这次咨询交给平台人工跟进（F006 的出口）。
+     *
+     * <p>**幂等**：一次咨询只能转一次，重复提交返回同一条工单——用户连点两下不该先看到成功再看到失败。
+     * 口径与代价（不接支付、不直接派给服务者）写在 {@code HumanConsultService} 的类注释里。
+     */
+    @PostMapping("/{consult_id}/transfer")
+    public ApiResponse<HumanConsultView> transfer(@PathVariable long petId,
+                                                 @PathVariable("consult_id") long consultId) {
+        long userId = CurrentUser.requireDomain(LoginDomain.APP);
+        return ApiResponse.ok(humanConsultService.transfer(userId, petId, consultId));
     }
 }

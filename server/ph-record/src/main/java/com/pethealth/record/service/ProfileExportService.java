@@ -5,9 +5,11 @@ import com.pethealth.common.time.AppTime;
 import com.pethealth.common.trace.TraceIds;
 import com.pethealth.record.api.ProfileExportApi;
 import com.pethealth.record.domain.ArchiveRecord;
+import com.pethealth.record.domain.HealthReport;
 import com.pethealth.record.domain.HealthScore;
 import com.pethealth.record.domain.Pet;
 import com.pethealth.record.mapper.ArchiveRecordMapper;
+import com.pethealth.record.mapper.HealthReportMapper;
 import com.pethealth.record.mapper.HealthScoreMapper;
 import com.pethealth.record.mapper.PetMapper;
 import org.springframework.stereotype.Service;
@@ -26,12 +28,14 @@ public class ProfileExportService implements ProfileExportApi {
     private final PetMapper petMapper;
     private final ArchiveRecordMapper recordMapper;
     private final HealthScoreMapper scoreMapper;
+    private final HealthReportMapper reportMapper;
 
     public ProfileExportService(PetMapper petMapper, ArchiveRecordMapper recordMapper,
-                                HealthScoreMapper scoreMapper) {
+                                HealthScoreMapper scoreMapper, HealthReportMapper reportMapper) {
         this.petMapper = petMapper;
         this.recordMapper = recordMapper;
         this.scoreMapper = scoreMapper;
+        this.reportMapper = reportMapper;
     }
 
     @Override
@@ -44,17 +48,38 @@ public class ProfileExportService implements ProfileExportApi {
                 pet.getBirthday(), pet.getWeight(),
                 pet.getIsSterilized() != null && pet.getIsSterilized() == 1,
                 pet.getChronicDesc(),
-                recordsOf(pet.getId()), scoresOf(pet.getId()))).toList();
+                recordsOf(pet.getId()), scoresOf(pet.getId()), reportsOf(pet.getId()))).toList();
     }
 
+    /**
+     * 一条记录导出成一个扁平的 {@code content}：打卡与防疫取 {@code content}，
+     * 分项记录取 {@code structured_payload}（ADR-0030 第五条）。
+     *
+     * <p>为什么合成一列：导出视图是给人工与医院看的原始记录，而「分项载荷在哪一列」
+     * 是平台内部的字段划分——把它摊到导出的结构里，接收方要按列名猜内容类型。
+     */
     private List<RecordExport> recordsOf(long petId) {
         return recordMapper.selectList(Wrappers.<ArchiveRecord>lambdaQuery()
                         .eq(ArchiveRecord::getPetId, petId)
                         .orderByAsc(ArchiveRecord::getRecordDate))
                 .stream()
                 .map(record -> new RecordExport(record.getRecordDate(), record.getCategory(),
-                        record.getContent(), record.getSource(), record.getDueOn(),
-                        record.getNumericValue()))
+                        record.getStructuredPayload() != null
+                                ? record.getStructuredPayload() : record.getContent(),
+                        record.getSource(), record.getDueOn(), record.getNumericValue()))
+                .toList();
+    }
+
+    /** 健康报告（ADR-0031 决定六）。按周期正序导出，没有报告就是空列表。 */
+    private List<ReportExport> reportsOf(long petId) {
+        return reportMapper.selectList(Wrappers.<HealthReport>lambdaQuery()
+                        .eq(HealthReport::getPetId, petId)
+                        .orderByAsc(HealthReport::getPeriodStart))
+                .stream()
+                .map(report -> new ReportExport(report.getType(),
+                        report.getType() == HealthReport.TYPE_MONTHLY ? "健康月报" : "健康周报",
+                        report.getPeriodStart(), report.getPeriodEnd(), report.getGrade(),
+                        report.getTotalScore(), ReportPayloads.read(report.getPayload())))
                 .toList();
     }
 
@@ -90,6 +115,12 @@ public class ProfileExportService implements ProfileExportApi {
         String traceId = TraceIds.currentTraceId();
         for (Pet pet : pets) {
             recordMapper.softDeleteByPet(pet.getId(), now, operatorId, traceId);
+            reportMapper.update(null, Wrappers.<HealthReport>lambdaUpdate()
+                    .eq(HealthReport::getPetId, pet.getId())
+                    .set(HealthReport::getIsDeleted, 1)
+                    .set(HealthReport::getUpdatedAt, now)
+                    .set(HealthReport::getUpdatedBy, operatorId)
+                    .set(HealthReport::getTraceId, traceId));
             scoreMapper.update(null, Wrappers.<HealthScore>lambdaUpdate()
                     .eq(HealthScore::getPetId, pet.getId())
                     .set(HealthScore::getIsDeleted, 1)

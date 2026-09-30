@@ -1,19 +1,20 @@
 package com.pethealth.ai.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pethealth.ai.client.AiServiceClient;
 import com.pethealth.ai.config.AiQuotaProperties;
 import com.pethealth.ai.config.AiServiceProperties;
 import com.pethealth.ai.domain.AiConsult;
 import com.pethealth.ai.mapper.AiConsultMapper;
+import com.pethealth.api.app.AiConsultCitation;
 import com.pethealth.api.app.AiConsultRequest;
 import com.pethealth.api.app.AiConsultView;
 import com.pethealth.common.crypto.FieldCipher;
 import com.pethealth.common.error.BusinessException;
 import com.pethealth.common.time.AppTime;
 import com.pethealth.common.trace.TraceIds;
+import com.pethealth.common.util.JsonFields;
+import com.pethealth.common.util.Text;
 import com.pethealth.ai.metrics.AiMetrics;
 import com.pethealth.file.api.FileUrlApi;
 import com.pethealth.record.api.AiPetApi;
@@ -45,15 +46,38 @@ public class AiConsultService {
     private static final Logger log = LoggerFactory.getLogger(AiConsultService.class);
 
     /**
-     * 免责声明由后端给：医疗文案散落到前端各处时，改起来一定会漏。
+     * 没有任何知识来源时的免责声明。**措辞刻意不承诺「专业知识库」**。
      *
-     * <p><b>措辞刻意不承诺「专业知识库」</b>：检索层还没接（#100/#101），{@code citations} 恒为空，
-     * 交给模型的上下文里只有宠物档案与本次症状——`ai/app/prompts.py` 里没有任何知识条目被注入。
-     * 用户看到「基于专业知识库」会以为答案有出处，而我们给不出出处。
-     * 接上检索之后可以改回带知识库的措辞，**但那时必须同时给出真正的来源**
-     * （用例 {@code AiConsultTest.disclaimerDoesNotOverpromiseKnowledgeSource} 钉着这条）。
+     * <p>检索接上之后（#100/#101）这条并没有作废：它现在负责的是「**这一轮没有可用来源**」的
+     * 那些情况——召回为空、检索读不到知识域、检索被运营关掉、模型没引用到任何条目、
+     * 或者命中的条目都还没有兽医复核。它们在界面上长得一样：**不能出现「基于知识库」这句话**
+     * （ADR-0028 的口径，ADR-0033 记了为什么它是硬约束）。
+     * 用例 {@code AiConsultTest.disclaimerDoesNotOverpromiseKnowledgeSource} 钉着这条。
      */
     private static final String DISCLAIMER = "以上依据宠物的健康档案与 AI 判断，只表示就医紧迫程度，不能替代兽医诊断。";
+
+    /**
+     * **有 vetted（兽医复核过）引用**时的免责声明：只有这一条敢说「平台知识库」。
+     *
+     * <p>解禁条件是「至少有一条已复核引用」——{@code citations} 里只可能有 vetted 条目
+     * （Python 侧就是这么筛的），所以「非空」在这个字段上恰好等价于那个条件。
+     */
+    private static final String KNOWLEDGE_DISCLAIMER =
+            "以上依据宠物的健康档案、平台知识库的已复核条目与 AI 判断，只表示就医紧迫程度，不能替代兽医诊断。";
+
+    /**
+     * 用到了**未复核**条目时的免责声明：如实说明，而不是把待复核内容当成权威资料。
+     *
+     * <p>口径来自项目所有者（2026-09-29）：检索允许使用未复核内容，但「该建议尚未经兽医复核」
+     * 必须出现在回答里。这里也**不出现「知识库」**——那些条目还没被认可为可依据的知识。
+     */
+    private static final String UNVETTED_DISCLAIMER =
+            "本次建议参考了尚未经兽医复核的平台资料，仅供参考，不能替代兽医诊断。";
+
+    /** 有已复核引用、同时也用到了未复核条目：两句都要说，别让前者掩盖后者。 */
+    private static final String MIXED_KNOWLEDGE_DISCLAIMER =
+            "以上依据宠物的健康档案、平台知识库的已复核条目与 AI 判断，只表示就医紧迫程度；"
+                    + "其中部分建议参考的条目尚未经兽医复核，仅供参考，不能替代兽医诊断。";
 
     /**
      * 红线命中时的免责声明：这时**没有模型参与**，结论是平台的急症规则给的。
@@ -83,6 +107,14 @@ public class AiConsultService {
     /** 红线预检「没生效」的取值，与 Python 侧 `models.py` 的 {@code red_flag_check} 同一套。 */
     private static final String RED_FLAG_CHECK_UNAVAILABLE = "unavailable";
 
+    /**
+     * 知识检索「读不到知识域」的取值（Python 侧 {@code retrieval_check}）。
+     *
+     * <p>注意**只有这一种取值要告警**：{@code empty}（召回为空）是正常结果——召回率低是
+     * ADR-0022 承认的弱点，它的观测口是留痕与指标，不是日志告警；{@code disabled} 是运营自己关的。
+     */
+    private static final String RETRIEVAL_CHECK_UNAVAILABLE = "unavailable";
+
     /** 一次咨询最多带几张图：与契约的 {@code file_ids maxItems} 以及 Python 侧的上限对齐。 */
     private static final int MAX_IMAGES = 4;
 
@@ -91,24 +123,24 @@ public class AiConsultService {
     private final AiPetApi petApi;
     private final FileUrlApi fileUrlApi;
     private final FieldCipher fieldCipher;
-    private final ObjectMapper objectMapper;
     private final AiQuotaProperties quota;
     private final AiServiceProperties serviceProperties;
     private final AiMetrics metrics;
+    private final AiAdviceRecorder adviceRecorder;
 
     public AiConsultService(AiServiceClient client, AiConsultMapper consultMapper, AiPetApi petApi,
-                            FileUrlApi fileUrlApi, FieldCipher fieldCipher, ObjectMapper objectMapper,
+                            FileUrlApi fileUrlApi, FieldCipher fieldCipher,
                             AiQuotaProperties quota, AiServiceProperties serviceProperties,
-                            AiMetrics metrics) {
+                            AiMetrics metrics, AiAdviceRecorder adviceRecorder) {
         this.client = client;
         this.consultMapper = consultMapper;
         this.petApi = petApi;
         this.fileUrlApi = fileUrlApi;
         this.fieldCipher = fieldCipher;
-        this.objectMapper = objectMapper;
         this.quota = quota;
         this.serviceProperties = serviceProperties;
         this.metrics = metrics;
+        this.adviceRecorder = adviceRecorder;
     }
 
     public AiConsultView consult(long userId, long petId, AiConsultRequest request) {
@@ -131,7 +163,26 @@ public class AiConsultService {
             log.warn("红线预检未生效 trace_id={} user_id={} red_flag_check={}",
                     traceId, userId, response.redFlagCheck());
         }
+        if (RETRIEVAL_CHECK_UNAVAILABLE.equals(response.retrievalCheck())) {
+            // 检索读不到知识域：这一轮的回答**没有知识来源**（citations 必为空）。
+            // 与红线那一层不同，它不影响安全性（回答照常给，只是无来源），所以只记 warn 不阻断；
+            // 但静默失效同样不可接受——「来源可追溯」是 #101 的验收标准。
+            log.warn("知识检索未生效 trace_id={} user_id={} retrieval_check={}",
+                    traceId, userId, response.retrievalCheck());
+        }
         AiConsult record = save(userId, petId, request.question(), response.imagesUsed(), response, traceId);
+        // 任务中心「查看 AI 建议」的进度（`AI_ADVICE`，0 分 = 只记行为不发分，见 V27 的种子）。
+        // **只在真的产出了建议时记**，判据就是 degraded：
+        //   · 降级不记——这一轮模型没给出可用结果（答复是保守话术，免责声明也明说「未能走通 AI 判断」），
+        //     记它等于把一次**没产出建议**的咨询算成任务完成，那是对用户的假承诺；
+        //   · 红线短路**记**——它不是降级：结论是平台的急症规则给的、用户拿到的是一条明确的建议
+        //     （尽快就医）。把它排除会让「问急症的人任务永远不前进」，而这条任务的名字本就是
+        //     「查看 AI 建议」——计量的是「这次咨询有没有拿到建议」，不是「模型有没有参与」。
+        // 记行为走 ph-privilege 的接口（不是本模块的表），失败只降级不影响这次咨询：
+        // AiAdviceRecorder 内部 catch + WARN。
+        if (!response.degraded()) {
+            adviceRecorder.record(userId);
+        }
         // 打点：降级占比与分级分布是「提示词改坏 / 模型静默换版」的最早信号（ADR-0029）。
         // 界面上看不出任何异常——用户拿到的永远是一段格式正常的回答
         metrics.consulted(response.degraded(),
@@ -164,7 +215,8 @@ public class AiConsultService {
                         pet.breed(),
                         pet.birthDate() == null ? null : pet.birthDate().toString(),
                         pet.weight() == null ? null : pet.weight().doubleValue(),
-                        pet.chronicDesc() == null ? List.of() : List.of(pet.chronicDesc())),
+                        pet.chronicDesc() == null ? List.of() : List.of(pet.chronicDesc()),
+                        careContext(pet)),
                 new AiServiceClient.ConsultInput(
                         mediaUrls.isEmpty() ? "text" : "image", question, mediaUrls),
                 List.of());
@@ -175,17 +227,45 @@ public class AiConsultService {
             // 降级留痕：降级率是判断「模型好不好用」最直接的指标（与 Python 侧同一口径）
             log.warn("AI 咨询降级 trace_id={} user_id={} reason={}", traceId, userId, e.getMessage());
             return new AiServiceClient.ConsultResponse(
-                    2, List.of(), DEGRADED_ADVICE, true, List.of(), List.of(),
-                    0, List.of(), List.of(),
+                    2, List.of(), DEGRADED_ADVICE, true, List.of(),
+                    // 降级答复一律**没有**来源：结论不是基于知识条目给的，带上来源等于给固定话术伪造出处
+                    List.of(), List.of(),
+                    0, List.of(), List.of(), List.of(),
                     // 连不上 AI 服务 = 红线预检这一层**确定没有跑过**，所以这里必须报 unavailable。
                     // 原先写成 "ok"：那会让 consult() 里的告警永远不触发，留痕里也记着「安全网正常」——
                     // 与「静默少一层比少一层本身更危险」正相反（同 Python 侧 models.py 对该字段的定义）
                     RED_FLAG_CHECK_UNAVAILABLE,
+                    // 同理：连不上 AI 服务，检索这一层也确定没跑过 → unavailable（不是 empty）
+                    RETRIEVAL_CHECK_UNAVAILABLE,
                     true, DEGRADE_CODE_AI_UNREACHABLE, e.getMessage(),
                     "", "", "", 0,
                     // 连不上 AI 服务：这一轮没有 token 消耗（也没花钱）
                     0, 0);
         }
+    }
+
+    /**
+     * 专项照护的上下文（交付文档 F009：「AI 咨询的上下文带上专项信息」）。
+     *
+     * <p>没开启就返回空列表——**不能给一个 active=false 的条目**：模型只会看到一句
+     * 「专项照护未开启」，那是多余的噪音，而且容易被读成「这只宠物有专项问题但没开」。
+     *
+     * <p>这条信息的**判定来源是档案模块**（{@code AiPetApi.PetSnapshot.careMode}，ADR-0032 决定一），
+     * 这里只做搬运：本模块不自己算年龄，也不自己解释慢病。
+     */
+    private List<AiServiceClient.CareContext> careContext(AiPetApi.PetSnapshot pet) {
+        if (!pet.careMode()) {
+            return List.of();
+        }
+        List<String> reasons = new java.util.ArrayList<>();
+        if (pet.ageText() != null) {
+            reasons.add("年龄 " + pet.ageText());
+        }
+        if (pet.chronicDesc() != null && !pet.chronicDesc().isBlank()) {
+            reasons.add("慢病：" + pet.chronicDesc());
+        }
+        return List.of(new AiServiceClient.CareContext("care_mode", true, reasons,
+                "这只宠物处于专项照护模式（老年或慢病），请按更保守的紧迫程度判断"));
     }
 
     private AiConsult save(long userId, long petId, String question, int imageCount,
@@ -199,7 +279,7 @@ public class AiConsultService {
         record.setImageCount(imageCount);
         record.setRiskLevel(response.riskLevel());
         record.setPossibleCauses(toJson(response.possibleCauses()));
-        record.setActionSuggestion(trim(response.actionSuggestion(), 1024));
+        record.setActionSuggestion(Text.truncate(response.actionSuggestion(), 1024));
         record.setNeedHospital(response.needHospital() ? 1 : 0);
         record.setCareTips(toJson(response.careTips()));
         record.setRedFlagHits(toJson(response.redFlagHits()));
@@ -208,14 +288,20 @@ public class AiConsultService {
         record.setDegraded(response.degraded() ? 1 : 0);
         // 留痕表存**内部明细**（含降级码与异常/上游原文），供事后归因；
         // 给用户看的那句话在 toView 里按降级码映射（测试报告 D6）
-        record.setDegradeReason(trim(internalReason(response), 256));
-        record.setModelName(trim(response.modelName(), 64));
-        record.setModelVersion(trim(response.modelVersion(), 64));
-        record.setPromptVersion(trim(response.promptVersion(), 64));
+        record.setDegradeReason(Text.truncate(internalReason(response), 256));
+        record.setModelName(Text.truncate(response.modelName(), 64));
+        record.setModelVersion(Text.truncate(response.modelVersion(), 64));
+        record.setPromptVersion(Text.truncate(response.promptVersion(), 64));
         record.setLatencyMs(response.latencyMs());
         // token 用量进留痕：日预算告警按它估算当天花费（ADR-0026），也是模型换代/提示词改版的归因依据
         record.setPromptTokens(response.promptTokens());
         record.setCompletionTokens(response.completionTokens());
+        // 引用与检索状态进留痕（ADR-0033）：事后要能回答「这句话当时有依据吗、依据复核过吗」
+        record.setCitations(toJson(citationLabels(response.citations())));
+        record.setUnvettedHits(toJson(response.unvettedHits()));
+        record.setGradingRuleHits(toJson(response.gradingRuleHits()));
+        record.setRetrievalCheck(Text.truncate(
+                response.retrievalCheck() == null ? "ok" : response.retrievalCheck(), 16));
         consultMapper.insert(record);
         return record;
     }
@@ -276,6 +362,8 @@ public class AiConsultService {
                 response.needHospital(),
                 response.careTips() == null ? List.of() : response.careTips(),
                 response.redFlagHits() == null ? List.of() : response.redFlagHits(),
+                citationsOf(response),
+                response.unvettedHits() != null && !response.unvettedHits().isEmpty(),
                 response.degraded(),
                 userFacingReason(response),
                 response.modelVersion(),
@@ -288,37 +376,64 @@ public class AiConsultService {
     }
 
     /**
-     * 按「这次结果是谁给的」选免责声明。
+     * 按「这次结果是谁给的、有没有来源」选免责声明。
      *
-     * <p>三分支对应三种事实：降级（模型没给出可用结果）、红线短路（规则给的、未经模型）、
-     * 正常（模型判断）。判据都用**语义字段**（`degraded` / `redFlagHits`），
-     * 而不是留痕字段 `modelName`——改留痕的取值不该影响给用户看的话。
+     * <p>判据全部用**语义字段**（{@code degraded} / {@code redFlagHits} / {@code citations} /
+     * {@code unvettedHits}），而不是留痕字段 {@code modelName}——改留痕的取值不该影响给用户看的话。
+     *
+     * <p>五条分支对应五种事实，**「有没有知识来源」这一维是这次新增的**：
+     * <ol>
+     *   <li>降级：模型没给出可用结果 → 不说「与 AI 判断」；
+     *   <li>红线短路：结论由急症规则给出、未经模型；
+     *   <li>有已复核引用 → 这是唯一敢说「平台知识库」的分支；
+     *   <li>只用到未复核条目 → 明说「尚未经兽医复核」，且不提知识库；
+     *   <li>其余（无来源 / 召回为空 / 检索不可用）→ 与接检索之前那句一样，不做任何来源承诺。
+     * </ol>
      */
     private String disclaimerFor(AiServiceClient.ConsultResponse response) {
         if (response.degraded()) {
             return DEGRADED_DISCLAIMER;
         }
         List<String> hits = response.redFlagHits();
-        return hits == null || hits.isEmpty() ? DISCLAIMER : RED_FLAG_DISCLAIMER;
+        if (hits != null && !hits.isEmpty()) {
+            return RED_FLAG_DISCLAIMER;
+        }
+        boolean hasVetted = response.citations() != null && !response.citations().isEmpty();
+        boolean usedUnvetted = response.unvettedHits() != null && !response.unvettedHits().isEmpty();
+        if (hasVetted) {
+            return usedUnvetted ? MIXED_KNOWLEDGE_DISCLAIMER : KNOWLEDGE_DISCLAIMER;
+        }
+        return usedUnvetted ? UNVETTED_DISCLAIMER : DISCLAIMER;
     }
 
-    /** 列表字段存 JSON。序列化失败不该让整次咨询失败，留痕里写 null 即可。 */
-    private String toJson(List<String> values) {
-        if (values == null || values.isEmpty()) {
-            return null;
+    /** 引用条目 → 契约形状的 DTO。字段名与 Python 侧 {@code Citation} 对齐（跨服务契约）。 */
+    private static List<AiConsultCitation> citationsOf(AiServiceClient.ConsultResponse response) {
+        if (response.citations() == null) {
+            return List.of();
         }
-        try {
-            return objectMapper.writeValueAsString(values);
-        } catch (JsonProcessingException e) {
-            log.warn("留痕序列化失败：{}", e.getMessage());
-            return null;
-        }
+        return response.citations().stream()
+                .map(citation -> new AiConsultCitation(
+                        citation.entryId(), citation.title(), citation.category(),
+                        citation.sourceTitle(), citation.sourceVersion(), citation.sourceUrl(),
+                        citation.reviewStatus()))
+                .toList();
     }
 
-    private static String trim(String value, int max) {
-        if (value == null) {
-            return null;
+    /**
+     * 留痕里记引用编号与来源名（而不是只记编号）：事后核查「当时引用的是哪一版资料」要看后者。
+     * 未复核条目的编号另记一列（{@code unvetted_hits}），两列分开才能回答「这句话当时有依据吗」。
+     */
+    private static List<String> citationLabels(List<AiServiceClient.Citation> citations) {
+        if (citations == null) {
+            return List.of();
         }
-        return value.length() <= max ? value : value.substring(0, max);
+        return citations.stream()
+                .map(citation -> citation.entryId() + "|" + Text.truncate(citation.sourceTitle(), 64))
+                .toList();
+    }
+
+    /** 列表字段存 JSON。空列表与 null 都不写（库里是「没记下」，不是「记了个空数组」）。 */
+    private static String toJson(List<String> values) {
+        return values == null || values.isEmpty() ? null : JsonFields.writeQuietly(values);
     }
 }

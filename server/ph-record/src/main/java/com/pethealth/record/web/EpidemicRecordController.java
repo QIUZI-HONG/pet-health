@@ -1,6 +1,6 @@
 package com.pethealth.record.web;
 
-import com.pethealth.api.app.EpidemicRecordInput;
+import com.pethealth.api.app.EpidemicRecordRequest;
 import com.pethealth.api.app.EpidemicRecordView;
 import com.pethealth.common.api.ApiResponse;
 import com.pethealth.common.security.CurrentUser;
@@ -40,7 +40,7 @@ public class EpidemicRecordController {
 
     @PostMapping
     public ApiResponse<EpidemicRecordView> create(@PathVariable long petId,
-                                                 @Valid @RequestBody EpidemicRecordInput input) {
+                                                 @Valid @RequestBody EpidemicRecordRequest input) {
         long userId = CurrentUser.requireDomain(LoginDomain.APP);
         return ApiResponse.ok(epidemicRecordService.create(userId, petId, input));
     }

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.BlockAttackInnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
+import com.pethealth.common.api.PageResult;
 import org.apache.ibatis.annotations.Mapper;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.context.annotation.Bean;
@@ -23,14 +24,12 @@ import org.springframework.context.annotation.Configuration;
 @MapperScan(basePackages = "com.pethealth", annotationClass = Mapper.class)
 public class MybatisPlusConfig {
 
-    /** 分页每页上限，与 contract/common.yaml 的 PageSize 一致。 */
-    private static final long MAX_PAGE_SIZE = 100L;
-
     @Bean
     public MybatisPlusInterceptor mybatisPlusInterceptor() {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
         PaginationInnerInterceptor pagination = new PaginationInnerInterceptor(DbType.MYSQL);
-        pagination.setMaxLimit(MAX_PAGE_SIZE);
+        // 上限与 DTO 校验、契约共用同一份定义（PageResult.MAX_PAGE_SIZE），不在这里另写一个数
+        pagination.setMaxLimit(PageResult.MAX_PAGE_SIZE);
         // 翻页越界时返回空列表而不是回到第一页——回到第一页会让前端以为请求到了别的内容
         pagination.setOverflow(false);
         interceptor.addInnerInterceptor(pagination);

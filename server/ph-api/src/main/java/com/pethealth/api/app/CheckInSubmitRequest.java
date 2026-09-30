@@ -24,5 +24,5 @@ public record CheckInSubmitRequest(
         @NotEmpty(message = "至少提交一项")
         @Size(max = 6, message = "一次最多提交六项")
         @Valid
-        List<CheckInItemInput> items) {
+        List<CheckInItemRequest> items) {
 }

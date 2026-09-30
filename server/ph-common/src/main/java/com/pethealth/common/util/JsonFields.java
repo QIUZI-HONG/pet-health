@@ -45,6 +45,30 @@ public final class JsonFields {
     }
 
     /**
+     * 写任意可序列化的值，**失败只记日志、返回 null**。
+     *
+     * <p>与 {@link #write} 的两种策略是刻意分开的：
+     *
+     * <ul>
+     *   <li>{@link #write} 用于**业务数据**（打卡的取值、防疫的疫苗名）——存坏了就是脏数据，
+     *       必须抛出去让调用方看见；
+     *   <li>{@code writeQuietly} 用于**留痕字段**（AI 咨询的命中列表）——留痕失败不该让
+     *       一次已经成功的咨询变成错误，null 在库里就是「没记下」。
+     * </ul>
+     */
+    public static String writeQuietly(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return MAPPER.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            log.warn("留痕序列化失败，按「未记录」处理：{}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * 读一个字段。
      *
      * <p>解析不出来或字段缺失时返回 null——**脏数据不该让整条链路失败**：调用方都是

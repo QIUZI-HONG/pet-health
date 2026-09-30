@@ -36,6 +36,18 @@
       <artifactId>ph-record</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!--
+      注册归因（`POST /api/v1/app/invites/attribution`，契约见 app.yaml）走 ph-privilege 的
+      `InviteAttributionApi`：邀请关系是那张模块的表，ADR-0006 不许本模块碰。
+      方向是单向的 ph-account → ph-privilege（ph-privilege 只依赖 ph-catalog），不会成环；
+      与上面那条 ph-record 同一个理由——「注册那一刻」发生在本模块，所以由本模块把调用发出去，
+      而不是让 ph-privilege 反过来知道注册流程长什么样。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-privilege</artifactId>
+      <version>${project.version}</version>
+    </dependency>
 
     <!-- Refresh Token 存 Redis，可吊销（ADR-0012） -->
     <dependency>

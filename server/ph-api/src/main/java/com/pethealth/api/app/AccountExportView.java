@@ -21,7 +21,7 @@ public record AccountExportView(
         LocalDateTime exportedAt,
         String notice) {
 
-    /** 一只宠物及其全部记录与评分。 */
+    /** 一只宠物及其全部记录、评分与健康报告。 */
     public record Pet(
             long petId,
             String name,
@@ -33,7 +33,13 @@ public record AccountExportView(
             boolean sterilized,
             String chronicDesc,
             List<Record> records,
-            List<Score> scores) {
+            List<Score> scores,
+            /**
+             * 健康报告（ADR-0031 决定六：报告进导出，复用这个通道而不新造下载接口）。
+             * **与 records 分开放**：接收方要分得清「原始记录」与「平台对记录的解释」。
+             * 没有报告时是**空列表**，不是 null——纯加法，没有报告的宠物不会因此导出失败。
+             */
+            List<Report> reports) {
     }
 
     /** 一条档案记录：打卡分项与防疫记录都是它的行。 */
@@ -44,6 +50,11 @@ public record AccountExportView(
     /** 一日健康评分。 */
     public record Score(LocalDate calcDate, Integer totalScore, Integer physiology, Integer behavior,
                         Integer hygiene, Integer epidemic, Integer elderly) {
+    }
+
+    /** 一份健康报告（按周期一行）。正文结构与 {@code /health-reports} 的 payload 同构。 */
+    public record Report(Integer type, String typeName, LocalDate periodStart, LocalDate periodEnd,
+                         String grade, Integer totalScore, HealthReportPayload payload) {
     }
 
     /** 一条消息（提醒或业务通知）。 */

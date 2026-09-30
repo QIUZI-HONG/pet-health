@@ -18,7 +18,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.Period;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
@@ -51,6 +50,19 @@ public class ReminderGenerator {
     public static final int FALLBACK_MAX_PER_PET_PER_DAY = 3;
 
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyy年MM月dd日");
+
+    /**
+     * 照护档的配置键（V17 写进 {@code reminder_rule.config}，ADR-0032 决定三）。
+     *
+     * <p>照护宠物（{@code PetBrief.careMode()}，判定在档案模块）读这些键，**缺键回落普通档的默认值**——
+     * 阈值全部在数据里，代码里没有新的数字；普通宠物的路径一行都没变（向后兼容是硬要求）。
+     */
+    private static final String CARE_ADVANCE_DAYS = "careAdvanceDays";
+    private static final String CARE_OVERDUE_GRACE_DAYS = "careOverdueGraceDays";
+    private static final String CARE_WEIGHT_CHANGE_PERCENT = "careWeightChangePercent";
+
+    /** 取不到照护档键时的哨兵值：小于等于 0 就回落普通档（提前量/百分比不会是 0 或负）。 */
+    private static final int CARE_KEY_MISSING = -1;
 
     private final MessageMapper messageMapper;
     private final ReminderSettingMapper settingMapper;
@@ -198,6 +210,55 @@ public class ReminderGenerator {
         upsert(pet, candidate);
     }
 
+    // ---------------------------------------------------------------- 阈值分档
+
+    /**
+     * 疫苗/驱虫的提前量：照护宠物读照护档键，其余（以及缺键时）读普通档。
+     *
+     * <p>**普通档路径与改动前逐字节一致**：同样的键、同样的默认值。照护档只多一层「先试 care 键」，
+     * 而 care 键不存在时（老数据的库、运营删了键）自然回落到普通档——不会因为配置不全而不提醒。
+     */
+    private int advanceDays(Map<Integer, ReminderRule> rules, ReminderSourceApi.PetBrief pet, int type) {
+        if (pet.careMode()) {
+            int care = ruleService.intConfig(rules, type, CARE_ADVANCE_DAYS, CARE_KEY_MISSING);
+            if (care > 0) {
+                return care;
+            }
+        }
+        return ruleService.intConfig(rules, type, "advanceDays",
+                ReminderRuleService.DEFAULT_ADVANCE_DAYS);
+    }
+
+    /** 过期后的宽限期：同 {@link #advanceDays}，照护宠物读照护档键。 */
+    private int overdueGraceDays(Map<Integer, ReminderRule> rules, ReminderSourceApi.PetBrief pet, int type) {
+        if (pet.careMode()) {
+            int care = ruleService.intConfig(rules, type, CARE_OVERDUE_GRACE_DAYS, CARE_KEY_MISSING);
+            if (care > 0) {
+                return care;
+            }
+        }
+        return ruleService.intConfig(rules, type, "overdueGraceDays",
+                ReminderRuleService.DEFAULT_OVERDUE_GRACE_DAYS);
+    }
+
+    /**
+     * 趋势提醒的体重变化阈值：照护宠物更敏感（老年宠的体重下降更值得早提醒）。
+     *
+     * <p>注意这里**没有窗口天数**的照护档——窗口是「算变化幅度用多长的数据」，
+     * 它跟照护与否无关（7 天就是 7 天）。
+     */
+    private int weightChangePercent(Map<Integer, ReminderRule> rules, ReminderSourceApi.PetBrief pet) {
+        if (pet.careMode()) {
+            int care = ruleService.intConfig(rules, Message.TYPE_TREND,
+                    CARE_WEIGHT_CHANGE_PERCENT, CARE_KEY_MISSING);
+            if (care > 0) {
+                return care;
+            }
+        }
+        return ruleService.intConfig(rules, Message.TYPE_TREND, "weightChangePercent",
+                ReminderRuleService.DEFAULT_WEIGHT_CHANGE_PERCENT);
+    }
+
     // ---------------------------------------------------------------- 各类规则
 
     /**
@@ -209,10 +270,8 @@ public class ReminderGenerator {
      */
     private Optional<Candidate> vaccines(ReminderSourceApi.PetBrief pet, LocalDate today,
                                          Map<Integer, ReminderRule> rules) {
-        int advanceDays = ruleService.intConfig(rules, Message.TYPE_VACCINE, "advanceDays",
-                ReminderRuleService.DEFAULT_ADVANCE_DAYS);
-        int graceDays = ruleService.intConfig(rules, Message.TYPE_VACCINE, "overdueGraceDays",
-                ReminderRuleService.DEFAULT_OVERDUE_GRACE_DAYS);
+        int advanceDays = advanceDays(rules, pet, Message.TYPE_VACCINE);
+        int graceDays = overdueGraceDays(rules, pet, Message.TYPE_VACCINE);
         var dueItems = sourceApi.dueItems(pet.petId(), today.minusDays(graceDays), today.plusDays(advanceDays));
         return dueItems.stream()
                 .filter(item -> item.kind() == 1)
@@ -223,10 +282,8 @@ public class ReminderGenerator {
     /** 驱虫：同疫苗，类型不同。 */
     private Optional<Candidate> deworm(ReminderSourceApi.PetBrief pet, LocalDate today,
                                        Map<Integer, ReminderRule> rules) {
-        int advanceDays = ruleService.intConfig(rules, Message.TYPE_DEWORM, "advanceDays",
-                ReminderRuleService.DEFAULT_ADVANCE_DAYS);
-        int graceDays = ruleService.intConfig(rules, Message.TYPE_DEWORM, "overdueGraceDays",
-                ReminderRuleService.DEFAULT_OVERDUE_GRACE_DAYS);
+        int advanceDays = advanceDays(rules, pet, Message.TYPE_DEWORM);
+        int graceDays = overdueGraceDays(rules, pet, Message.TYPE_DEWORM);
         var dueItems = sourceApi.dueItems(pet.petId(), today.minusDays(graceDays), today.plusDays(advanceDays));
         return dueItems.stream()
                 .filter(item -> item.kind() == 2)
@@ -287,8 +344,7 @@ public class ReminderGenerator {
                                       Map<Integer, ReminderRule> rules) {
         int windowDays = ruleService.intConfig(rules, Message.TYPE_TREND, "windowDays",
                 ReminderRuleService.DEFAULT_WINDOW_DAYS);
-        int percent = ruleService.intConfig(rules, Message.TYPE_TREND, "weightChangePercent",
-                ReminderRuleService.DEFAULT_WEIGHT_CHANGE_PERCENT);
+        int percent = weightChangePercent(rules, pet);
 
         ReminderSourceApi.WeightRange range = sourceApi.weightRange(pet.petId(),
                 today.minusDays(windowDays - 1L), today);
@@ -313,12 +369,16 @@ public class ReminderGenerator {
                 "看档案", "/records", pet));
     }
 
-    /** 慢病 / 老年照护：年龄 ≥7 岁或有慢病时，按间隔（默认 3 个月）提醒一次复查。 */
+    /**
+     * 慢病 / 老年照护：**处于专项照护模式**时，按间隔（默认 3 个月）提醒一次复查。
+     *
+     * <p>判据改用档案模块给的 {@code careMode}（ADR-0032 决定一）：原先这里自己算「年龄 ≥ 7 岁」，
+     * 而那个 7 是硬编码的、与 {@code care_mode_rule} 里运营可改的阈值没有关系——两处判据已经在漂移。
+     * 现在提醒模块只读一个布尔值，**阈值与年龄解析都只有一处实现**。
+     */
     private Optional<Candidate> chronicOrElderly(ReminderSourceApi.PetBrief pet, LocalDate today,
                                                   Map<Integer, ReminderRule> rules) {
-        boolean elderly = pet.birthday() != null
-                && Period.between(pet.birthday(), today).getYears() >= 7;
-        if (!elderly && !pet.chronic()) {
+        if (!pet.careMode()) {
             // 正常的「这条规则不适用」，返回空 Optional——**不能 return null**：
             // 调用方是 .ifPresent(...)，null 会让整个消息中心 500（踩过两次）
             return Optional.empty();
@@ -327,7 +387,8 @@ public class ReminderGenerator {
                 ReminderRuleService.DEFAULT_INTERVAL_MONTHS);
         // 幂等窗口 = 按间隔划出的周期（例如每 3 个月一个窗口），保证同一周期只提醒一次
         int periodIndex = (today.getYear() * 12 + today.getMonthValue()) / Math.max(1, intervalMonths);
-        String reason = pet.chronic() ? "有慢病记录" : "已进入老年期";
+        // 原因由档案模块给（它知道是老年还是慢病）；拿不到就退回到一个中性说法
+        String reason = pet.careReason() == null ? "处于专项照护模式" : "处于" + pet.careReason() + "照护";
         String title = pet.name() + "该做一次复查了";
         String content = pet.name() + reason + "，建议每 " + intervalMonths + " 个月做一次体检或复诊，"
                 + "把最近的记录一起带给医生看。";

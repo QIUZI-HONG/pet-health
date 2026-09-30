@@ -1,6 +1,8 @@
 package com.pethealth.record.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.pethealth.record.domain.ArchiveRecord;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -154,4 +156,64 @@ public interface ArchiveRecordMapper extends BaseMapper<ArchiveRecord> {
     /** MyBatis 把聚合结果映射到这个 record 上（字段名与 SQL 别名一致）。 */
     record DayCategoryAggregate(LocalDate recordDate, int category, int abnormalCount) {
     }
+
+    /**
+     * 分项概览要的「每个 category 各有多少条、最近一条是哪天」。
+     *
+     * <p>一次查询拿全部 category（十几行），在内存里按分项合并：分项与 category 是**多对一**
+     * （核心指标 = 体重 + 排泄 + 其他指标），逐分项各查一次就是 N 次查询，而这里只要一次。
+     */
+    @Select("""
+            SELECT category        AS category,
+                   COUNT(*)        AS total,
+                   MAX(record_date) AS latest
+              FROM archive_record
+             WHERE pet_id = #{petId} AND is_deleted = 0
+             GROUP BY category
+            """)
+    List<CategoryAggregate> selectCategoryAggregates(@Param("petId") long petId);
+
+    /** 分项概览的一行。{@code latest} 是该 category 最近一条的业务日期。 */
+    record CategoryAggregate(int category, int total, LocalDate latest) {
+    }
+
+    /**
+     * 时间轴：**只收四类事件**（ADR-0030 第四条，本轮拍板）。
+     *
+     * <p>四类合起来是一条 SQL：就医（8）、疫苗/驱虫（7，按 {@code content.kind} 再分）、
+     * **异常**打卡（1–6 且 abnormal=1）、服务者报工（source=3，任意 category）。
+     * 正常打卡刻意不在里面——一天最多 6 条日常记录会把它淹成流水账，
+     * 「回头找那次就医 / 那次异常」的检索价值就没了。
+     *
+     * <p>{@code typeCode}：0 不限 / 1 就医 / 2 疫苗 / 3 驱虫 / 4 异常打卡 / 5 报工。
+     * 用编码而不是让调用方拼 SQL 片段，是为了不让上层决定 SQL 的形状（禁止字符串拼接 SQL）。
+     *
+     * <p>分页交给 MyBatis-Plus 的拦截器（{@code Page} 作为第一个参数）；
+     * **手写 SQL 自己带 {@code is_deleted = 0}**（ADR-0011：逻辑删除插件不管手写 SQL）。
+     */
+    @Select("""
+            <script>
+            SELECT * FROM archive_record
+             WHERE pet_id = #{petId} AND is_deleted = 0
+               AND (
+                    category = 8
+                 OR category = 7
+                 OR (category BETWEEN 1 AND 6 AND abnormal = 1)
+                 OR source = 3
+               )
+               <if test="typeCode == 1"> AND category = 8 </if>
+               <if test="typeCode == 2"> AND category = 7 AND JSON_UNQUOTE(JSON_EXTRACT(content, '$.kind')) = 'vaccine' </if>
+               <if test="typeCode == 3"> AND category = 7 AND JSON_UNQUOTE(JSON_EXTRACT(content, '$.kind')) = 'deworm' </if>
+               <if test="typeCode == 4"> AND (category BETWEEN 1 AND 6 AND abnormal = 1) </if>
+               <if test="typeCode == 5"> AND source = 3 </if>
+               <if test="from != null"> AND record_date &gt;= #{from} </if>
+               <if test="to != null"> AND record_date &lt;= #{to} </if>
+             ORDER BY record_date DESC, id DESC
+            </script>
+            """)
+    IPage<ArchiveRecord> selectTimeline(Page<ArchiveRecord> page,
+                                        @Param("petId") long petId,
+                                        @Param("typeCode") int typeCode,
+                                        @Param("from") LocalDate from,
+                                        @Param("to") LocalDate to);
 }

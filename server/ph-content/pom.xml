@@ -20,5 +20,33 @@
       <artifactId>ph-common</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- 接口 DTO（conventions.md：类名与契约的 schema 名逐字一致） -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-api</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!--
+      两条跨模块依赖，方向都是单向的下游 → 上游（没有环）：
+
+        1. ph-privilege 的 `RightsApi`：**发文权限的判定只有那一个出口**（ADR-0038 第三节）。
+           权益的推导规则（来源优先级、到期回收）留在 ph-privilege，社区只问「这个人现在有没有」——
+           自己 join `rights_grant` 表拼一套判定，会得到「用户明明有权益却被拦住」这类
+           用户无法自救的错误（ADR-0006 / ADR-0045）。
+
+        2. ph-record 的 `PetQueryApi`：生成卡片时校验来源记录所属的宠物确实是调用者的
+           （`existsOwnedBy`），**不 join `pet` 表**（ADR-0006）。这个接口在 ph-record 里
+           已经实现（`PetService`），不需要新写适配器。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-privilege</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-record</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 </project>

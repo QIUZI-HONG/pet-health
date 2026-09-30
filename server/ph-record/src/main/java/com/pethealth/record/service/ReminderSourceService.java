@@ -3,6 +3,8 @@ package com.pethealth.record.service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.pethealth.record.api.ReminderSourceApi;
 import com.pethealth.record.domain.ArchiveRecord;
+import com.pethealth.common.time.AppTime;
+import com.pethealth.record.domain.CareMode;
 import com.pethealth.record.domain.Pet;
 import com.pethealth.record.mapper.ArchiveRecordMapper;
 import com.pethealth.common.util.JsonFields;
@@ -27,10 +29,13 @@ public class ReminderSourceService implements ReminderSourceApi {
 
     private final PetMapper petMapper;
     private final ArchiveRecordMapper recordMapper;
+    private final CareModeService careModeService;
 
-    public ReminderSourceService(PetMapper petMapper, ArchiveRecordMapper recordMapper) {
+    public ReminderSourceService(PetMapper petMapper, ArchiveRecordMapper recordMapper,
+                                CareModeService careModeService) {
         this.petMapper = petMapper;
         this.recordMapper = recordMapper;
+        this.careModeService = careModeService;
     }
 
     @Override
@@ -108,9 +113,17 @@ public class ReminderSourceService implements ReminderSourceApi {
                 .eq(ArchiveRecord::getRecordDate, date)) > 0;
     }
 
+    /**
+     * 宠物简报。**照护状态用档案模块的唯一判定**（ADR-0032 决定一）——提醒模块不再自己算年龄，
+     * 它只读 {@code careMode} 这个布尔值决定走哪一档阈值。
+     */
     private PetBrief toBrief(Pet pet) {
+        CareMode care = careModeService.of(pet, AppTime.today());
+        String reason = care.derived()
+                ? (care.elderly() && care.chronic() ? "老年与慢病" : care.elderly() ? "老年期" : "慢病照护")
+                : null;
         return new PetBrief(pet.getId(), pet.getUserId(), pet.getName(), pet.getBirthday(),
-                pet.getIsChronic() != null && pet.getIsChronic() == 1);
+                pet.getIsChronic() != null && pet.getIsChronic() == 1, care.active(), reason);
     }
 
     /** 防疫记录的类型与名称都存在 content 里（{@code {"kind":"vaccine","name":"狂犬疫苗"}}）。 */

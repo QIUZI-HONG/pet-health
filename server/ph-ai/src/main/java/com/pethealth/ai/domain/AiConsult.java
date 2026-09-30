@@ -33,6 +33,19 @@ public class AiConsult extends BaseEntity {
     /** 本轮实际消耗的 token（红线短路与降级记 0）。日预算告警按它估算花费（ADR-0026）。 */
     private Integer promptTokens;
     private Integer completionTokens;
+    /**
+     * 本次引用到的知识条目（JSON，只含 vetted）：编号 + 标题 + 来源（切片 #101）。
+     *
+     * <p>与出给 C 端的那份**同一口径**（只有复核过的条目），另有一列记未复核的那些——
+     * 两者分开才能回答「这句话当时是有依据的，还是拿未复核内容生成的」（ADR-0033）。
+     */
+    private String citations;
+    /** 进过上下文的未复核条目编号（JSON）。非空意味着当时的回答必须带「尚未经兽医复核」。 */
+    private String unvettedHits;
+    /** 命中的分级规则编号（JSON）。归因时要能分清「结论是模型判的还是规则抬的档」（#103）。 */
+    private String gradingRuleHits;
+    /** 知识检索这一层是否生效：ok / empty / unavailable / disabled / skipped。 */
+    private String retrievalCheck;
 
     public Long getUserId() {
         return userId;
@@ -192,5 +205,37 @@ public class AiConsult extends BaseEntity {
 
     public void setCompletionTokens(Integer completionTokens) {
         this.completionTokens = completionTokens;
+    }
+
+    public String getCitations() {
+        return citations;
+    }
+
+    public void setCitations(String citations) {
+        this.citations = citations;
+    }
+
+    public String getUnvettedHits() {
+        return unvettedHits;
+    }
+
+    public void setUnvettedHits(String unvettedHits) {
+        this.unvettedHits = unvettedHits;
+    }
+
+    public String getGradingRuleHits() {
+        return gradingRuleHits;
+    }
+
+    public void setGradingRuleHits(String gradingRuleHits) {
+        this.gradingRuleHits = gradingRuleHits;
+    }
+
+    public String getRetrievalCheck() {
+        return retrievalCheck;
+    }
+
+    public void setRetrievalCheck(String retrievalCheck) {
+        this.retrievalCheck = retrievalCheck;
     }
 }

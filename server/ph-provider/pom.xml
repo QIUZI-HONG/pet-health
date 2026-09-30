@@ -12,12 +12,38 @@
 
   <artifactId>ph-provider</artifactId>
   <name>ph-provider</name>
-  <description>服务者 / 资质 / 门店 / 评分</description>
+  <description>服务者 / 入驻审核 / 资质 / 门店 / 选品定价上架</description>
 
   <dependencies>
     <dependency>
       <groupId>com.pethealth</groupId>
       <artifactId>ph-common</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-api</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!--
+      依赖 ph-catalog 的理由只有一个：价格区间校验必须复用目录侧的公共服务（ADR-0034）。
+      方向是单向的 provider → catalog，反过来 catalog 不需要服务者数据，所以不会成环（ADR-0006）。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-catalog</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!--
+      依赖 ph-order 的理由也只有一个：考核（F022）的过程分要那几个数——按状态的单量、
+      服务者单方取消数、接单响应均值——它们由订单侧的只读接口 OrderStatsApi 提供
+      （`com.pethealth.order.api`，口径写在那个接口的类注释里）。
+      **不 join 订单表**（ADR-0006）：这里只依赖接口，订单的表与状态机仍归 ph-order。
+      方向同样单向：ph-order 不依赖 ph-provider（它按需经 ph-api 的接口取服务者数据），不会成环。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-order</artifactId>
       <version>${project.version}</version>
     </dependency>
   </dependencies>

@@ -28,10 +28,27 @@ public enum ErrorCode {
 
     // 70001 / 70002（支付失败 / 订单已支付）暂时不定义：ADR-0002 定了不做线上收款，
     // 这两个码的语义等支付澄清后再定（见地图 #52 的 Notes 首节）。
-    // 下面这些是**业务结果**而不是传输层失败，所以一律 200——前端按 code 展示文案
+    // 下面三个是**业务结果**而不是传输层失败，所以一律 200——前端按 code 展示文案。
+    // 产出路径（2026-09-30 清点，别再按「没有产出」读它们）：
+    //   80001/80002 —— 券的占用与核销冲突（ph-privilege 的 AppGrowthConsole 锁券那一支）；
+    //   90001       —— 服务者定价越界（ph-catalog 的 CatalogQueryService，message 里带区间文案）。
     COUPON_UNAVAILABLE(80001, "券不可用", HttpStatus.OK),
     COUPON_REDEEMED(80002, "券已核销", HttpStatus.OK),
-    PRICE_OUT_OF_RANGE(90001, "价格超出区间", HttpStatus.OK);
+    PRICE_OUT_OF_RANGE(90001, "价格超出区间", HttpStatus.OK),
+
+    /**
+     * 订单已固化：**报工提交之后，这一单的照片与备注不再可改**（ADR-0049 §一，项目所有者拍板）。
+     *
+     * <p>为什么不复用 40900：40900 在这一族里有两层意思（「还没到能写的状态」与「已经封存」），
+     * 前端要靠 message 猜是哪一种。分开之后语义唯一：**40900 = 现在还不能写**
+     * （待接单 / 已预约 / 已取消），**40901 = 已经封存，要改只能走运营干预**。
+     *
+     * <p><b>契约侧已补齐</b>：{@code contract/common.yaml} 的 {@code x-error-codes} 里有 40901
+     * （「已终结不可改（报工后固化、修正须走运营干预）」），前端可以按码分支，不必猜 message。
+     * 补这一行的是契约写入者（ADR-0047 的流程）；本条原先写着「待补一行」，契约补上之后
+     * 那句话就反过来成了误导——注释与实现相反正是最容易让后来者绕开正确路径的一类缺陷。
+     */
+    ORDER_FINALIZED(40901, "订单已固化，不能再修改", HttpStatus.CONFLICT);
 
     private final int code;
     private final String defaultMessage;

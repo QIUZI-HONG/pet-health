@@ -20,5 +20,54 @@
       <artifactId>ph-common</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!--
+      依赖方向都是单向的下游 → 上游（没有环）：
+        - ph-api：接口 DTO + 跨模块只读接口（ProviderAccessApi / ProviderServiceQueryApi /
+          UserQueryApi / PetFactsApi / CouponFactsApi）；
+        - ph-catalog：价格区间校验（ADR-0034 第五节要求下单与选品定价共用一处实现）；
+        - ph-record：宠物归属校验（PetQueryApi，已实现的接口）；
+        - ph-privilege：券的锁定 / 释放 / 核销（CouponApi）。
+      **不依赖 ph-provider / ph-account**：服务项与营业时间、预约人资料的读取都走 ph-api 的接口，
+      本模块不碰它们的表（ADR-0006）。那两处适配器未接线时本模块仍能编译、能启动，
+      只是相应链路会给出明确错误（见各接口的说明）。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-api</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-catalog</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-record</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-privilege</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!--
+      ph-file：照片墙要拿元数据与签名读地址（FileQueryApi）。这个接口**已经实现**
+      （FileService 实现它），是本切片唯一一条打通了的跨模块读。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-file</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!--
+      ph-reminder：服务者单方取消时要给用户发一条**业务通知**（ADR-0049 §七），
+      走它的 api 包（BusinessMessageApi），不碰 message 表（ADR-0006）。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-reminder</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 </project>

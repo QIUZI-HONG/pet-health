@@ -12,12 +12,30 @@
 
   <artifactId>ph-privilege</artifactId>
   <name>ph-privilege</name>
-  <description>券池 / 邀请 / 打卡阶梯 / 积分</description>
+  <description>券池 / 权益引擎 / 邀请 / 积分与任务</description>
 
   <dependencies>
     <dependency>
       <groupId>com.pethealth</groupId>
       <artifactId>ph-common</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-api</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!--
+      依赖 ph-catalog 的理由有两个（都是复用而不是重写）：
+        1. 金额的解析与格式化（`Price`）：券面额 / 门槛是金额，两位小数与「禁止浮点」的规则
+           必须与目录侧同一份实现，不能再抄一遍；
+        2. 券适用范围要校验「分类编码 / 目录项编码在标准目录里存在」（ADR-0037 要求
+           适用范围与标准目录编码挂钩）——那是目录侧的数据。
+      方向是单向的 privilege → catalog（与 provider → catalog 同一方向），不会成环。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-catalog</artifactId>
       <version>${project.version}</version>
     </dependency>
   </dependencies>

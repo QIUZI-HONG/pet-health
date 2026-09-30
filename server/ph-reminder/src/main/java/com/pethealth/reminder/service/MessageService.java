@@ -9,6 +9,8 @@ import com.pethealth.api.app.ReminderSettingView;
 import com.pethealth.common.api.PageResult;
 import com.pethealth.common.error.BusinessException;
 import com.pethealth.common.time.AppTime;
+import com.pethealth.common.trace.TraceIds;
+import com.pethealth.api.reminder.BusinessMessageApi;
 import com.pethealth.reminder.domain.Message;
 import com.pethealth.reminder.domain.ReminderSetting;
 import com.pethealth.reminder.mapper.MessageMapper;
@@ -34,7 +36,7 @@ import java.util.Map;
  * </ol>
  */
 @Service
-public class MessageService {
+public class MessageService implements BusinessMessageApi {
 
     /** 首页强提醒流一次最多取几条。与契约 {@code /messages/highlights} 的 {@code maximum: 10} 一致。 */
     private static final int HIGHLIGHT_LIMIT_MAX = 10;
@@ -183,7 +185,7 @@ public class MessageService {
 
     /** 我的提醒开关：未设置过的按默认开启返回，前端不必自己补默认值。 */
     @Transactional(readOnly = true)
-    public List<ReminderSettingView> settings(long userId) {
+    public List<ReminderSettingView> listSettings(long userId) {
         Map<Integer, ReminderSetting> stored = new LinkedHashMap<>();
         for (ReminderSetting setting : settingMapper.selectList(Wrappers.<ReminderSetting>lambdaQuery()
                 .eq(ReminderSetting::getUserId, userId))) {
@@ -231,7 +233,7 @@ public class MessageService {
             setting.setEnabled(request.enabled() ? 1 : 0);
             settingMapper.updateById(setting);
         }
-        return settings(userId);
+        return listSettings(userId);
     }
 
     /**
@@ -261,5 +263,37 @@ public class MessageService {
                 message.getActionTarget(),
                 message.getPetId(),
                 message.getCreatedAt());
+    }
+
+    // ---------------------------------------------------------------- 业务通知（跨模块写侧）
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>与健康提醒走**同一条插入路径**（`insertIfAbsent`，一条「冲突即 no-op」的 SQL）：
+     * 在事务里撞唯一键会把事务标记成 rollback-only，catch 住也救不回来，
+     * 所以这里从根上不产生异常（那一课在打卡与提醒两条路径上都吃过）。
+     */
+    @Override
+    @Transactional
+    public void notify(BusinessNotification notification) {
+        messageMapper.insertIfAbsent(
+                notification.userId(),
+                null,
+                Message.KIND_NOTIFICATION,
+                notification.type(),
+                notification.title(),
+                notification.content(),
+                Message.RISK_NONE,
+                // remind_at 是 NOT NULL：业务通知的「事件时间」就是它发生的那一刻
+                AppTime.now(),
+                Message.STATUS_SENT,
+                notification.dedupKey(),
+                notification.actionHint(),
+                notification.actionTarget(),
+                "in_site",
+                AppTime.now(),
+                TraceIds.currentOperatorId(),
+                TraceIds.currentTraceId());
     }
 }

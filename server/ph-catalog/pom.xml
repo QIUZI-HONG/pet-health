@@ -12,12 +12,17 @@
 
   <artifactId>ph-catalog</artifactId>
   <name>ph-catalog</name>
-  <description>服务项 / 价格 / 号源 / 档期</description>
+  <description>标准服务目录 / 价格区间</description>
 
   <dependencies>
     <dependency>
       <groupId>com.pethealth</groupId>
       <artifactId>ph-common</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-api</artifactId>
       <version>${project.version}</version>
     </dependency>
   </dependencies>

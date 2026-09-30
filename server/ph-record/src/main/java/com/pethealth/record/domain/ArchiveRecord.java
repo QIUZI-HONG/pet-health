@@ -21,6 +21,14 @@ public class ArchiveRecord extends BaseEntity {
     public static final int CATEGORY_MOOD = 5;
     public static final int CATEGORY_HYGIENE = 6;
     public static final int CATEGORY_EPIDEMIC = 7;
+    /** 就医记录（ADR-0030：它不是 8 个分项之一，是时间轴的一类事件）。 */
+    public static final int CATEGORY_MEDICAL = 8;
+    /** 其他核心指标：体温、心率、呼吸、饮水这类「一个名字 + 一个数值 + 一个单位」。 */
+    public static final int CATEGORY_METRIC_OTHER = 10;
+    /** 证件与合规里的证件（免疫证、犬证等；防疫记录是 category=7，两者同属一个分项）。 */
+    public static final int CATEGORY_DOCUMENT = 11;
+    /** 老年专项：复查、用药与慢病观察（专项照护开启后才有意义，见 ADR-0032）。 */
+    public static final int CATEGORY_ELDERLY = 12;
 
     /** 防疫分项的两种子类型（存在 content.kind 里）。 */
     public static final String EPIDEMIC_VACCINE = "vaccine";
@@ -44,7 +52,23 @@ public class ArchiveRecord extends BaseEntity {
     /** 数值型分项的取值（体重等），趋势提醒要算变化幅度。 */
     private BigDecimal numericValue;
     private Integer category;
+
+    /**
+     * 扁平载荷（打卡与防疫在用，VARCHAR(1024) 的键值 JSON）。
+     *
+     * <p>分项记录**不写这里**：它们写 {@link #structuredPayload}（JSON 列）。
+     * 两列并存是 ADR-0030 记下的取舍——打卡与防疫的四个既有写路径都依赖这一列，
+     * 改它等于同时改四处与它们的测试，收益只是少一列。读接口把两者归一成同一个 payload 视图。
+     */
     private String content;
+
+    /**
+     * 分项记录的结构化载荷（ADR-0023 点名的列，V15 补上）。
+     *
+     * <p>形状是 {@code {"title":..,"value":..,"unit":..,"note":..}}；**结构由代码守**
+     * （{@code ArchiveSectionService} 按分项校验），数据库只保证它是合法 JSON。
+     */
+    private String structuredPayload;
     private Integer score;
     private String images;
     private Integer abnormal;
@@ -105,6 +129,14 @@ public class ArchiveRecord extends BaseEntity {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getStructuredPayload() {
+        return structuredPayload;
+    }
+
+    public void setStructuredPayload(String structuredPayload) {
+        this.structuredPayload = structuredPayload;
     }
 
     public Integer getScore() {

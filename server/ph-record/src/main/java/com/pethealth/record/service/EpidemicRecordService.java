@@ -1,15 +1,13 @@
 package com.pethealth.record.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.pethealth.api.app.EpidemicRecordInput;
+import com.pethealth.api.app.EpidemicRecordRequest;
 import com.pethealth.api.app.EpidemicRecordView;
 import com.pethealth.common.error.BusinessException;
 import com.pethealth.common.time.AppTime;
 import com.pethealth.common.util.JsonFields;
 import com.pethealth.record.domain.ArchiveRecord;
-import com.pethealth.record.domain.Pet;
 import com.pethealth.record.mapper.ArchiveRecordMapper;
-import com.pethealth.record.mapper.PetMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,20 +29,20 @@ import java.util.Map;
 public class EpidemicRecordService {
 
     private final ArchiveRecordMapper recordMapper;
-    private final PetMapper petMapper;
+    private final PetService petService;
     private final HealthScoreService healthScoreService;
 
     public EpidemicRecordService(ArchiveRecordMapper recordMapper,
-                                PetMapper petMapper,
+                                PetService petService,
                                 HealthScoreService healthScoreService) {
         this.recordMapper = recordMapper;
-        this.petMapper = petMapper;
+        this.petService = petService;
         this.healthScoreService = healthScoreService;
     }
 
     @Transactional(readOnly = true)
     public List<EpidemicRecordView> list(long userId, long petId) {
-        requireOwnedPet(userId, petId);
+        petService.requireOwned(userId, petId);
         List<ArchiveRecord> records = recordMapper.selectList(Wrappers.<ArchiveRecord>lambdaQuery()
                 .eq(ArchiveRecord::getPetId, petId)
                 .eq(ArchiveRecord::getCategory, ArchiveRecord.CATEGORY_EPIDEMIC)
@@ -57,8 +55,8 @@ public class EpidemicRecordService {
     }
 
     @Transactional
-    public EpidemicRecordView create(long userId, long petId, EpidemicRecordInput input) {
-        requireOwnedPet(userId, petId);
+    public EpidemicRecordView create(long userId, long petId, EpidemicRecordRequest input) {
+        petService.requireOwned(userId, petId);
         // 日期一律走 AppTime.parseDate：格式对但日子不存在（2026-02-31）要给 40001 而不是 50000
         LocalDate givenOn = AppTime.parseDate(input.givenOn());
         if (givenOn.isAfter(AppTime.today())) {
@@ -88,7 +86,7 @@ public class EpidemicRecordService {
 
     @Transactional
     public void delete(long userId, long petId, long recordId) {
-        requireOwnedPet(userId, petId);
+        petService.requireOwned(userId, petId);
         // 幂等：不存在也返回成功；软删除保留历史（ADR-0011）
         recordMapper.delete(Wrappers.<ArchiveRecord>lambdaQuery()
                 .eq(ArchiveRecord::getId, recordId)
@@ -114,16 +112,5 @@ public class EpidemicRecordService {
 
     private String kindOf(ArchiveRecord record) {
         return JsonFields.read(record.getContent(), "kind");
-    }
-
-
-    private Pet requireOwnedPet(long userId, long petId) {
-        Pet pet = petMapper.selectOne(Wrappers.<Pet>lambdaQuery()
-                .eq(Pet::getId, petId)
-                .eq(Pet::getUserId, userId));
-        if (pet == null) {
-            throw BusinessException.notFound();
-        }
-        return pet;
     }
 }

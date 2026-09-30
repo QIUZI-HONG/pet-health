@@ -61,7 +61,9 @@ public class MessageController {
             @RequestParam(name = "unread_only", defaultValue = "false") boolean unreadOnly,
             @RequestParam(defaultValue = "1") @Min(value = 1, message = "页码从 1 开始") long page,
             @RequestParam(name = "page_size", defaultValue = "20")
-            @Min(value = 1, message = "每页至少 1 条") @Max(value = 100, message = "每页最多 100 条") long pageSize) {
+            @Min(value = 1, message = "每页至少 1 条")
+            @Max(value = PageResult.MAX_PAGE_SIZE, message = "每页最多 " + PageResult.MAX_PAGE_SIZE + " 条")
+            long pageSize) {
         long userId = CurrentUser.requireDomain(LoginDomain.APP);
         return ApiResponse.ok(messageService.list(userId, kind, unreadOnly, page, pageSize));
     }
@@ -110,7 +112,7 @@ public class MessageController {
     @GetMapping("/settings")
     public ApiResponse<List<ReminderSettingView>> settings() {
         long userId = CurrentUser.requireDomain(LoginDomain.APP);
-        return ApiResponse.ok(messageService.settings(userId));
+        return ApiResponse.ok(messageService.listSettings(userId));
     }
 
     @PutMapping("/settings")

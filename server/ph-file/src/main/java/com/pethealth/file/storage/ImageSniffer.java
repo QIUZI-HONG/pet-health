@@ -1,5 +1,8 @@
 package com.pethealth.file.storage;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -16,6 +19,8 @@ import java.util.Optional;
  * 这一步不做，缩略图生成时才会炸，而那时文件已经落盘了。
  */
 public final class ImageSniffer {
+
+    private static final Logger log = LoggerFactory.getLogger(ImageSniffer.class);
 
     public static final String MIME_JPEG = "image/jpeg";
     public static final String MIME_PNG = "image/png";
@@ -43,6 +48,9 @@ public final class ImageSniffer {
             }
             return Optional.of(new Probe(mime, image.getWidth(), image.getHeight(), image));
         } catch (IOException e) {
+            // 返回空是对的（对用户就是「换一张图」），但**不能无声**：魔数对而内容损坏的文件
+            // 是客户端 bug 或上传被截断的现场，留一条日志才有线索（docs/conventions.md 禁止吞异常）
+            log.warn("图片解码失败，按不可用处理：mime={} 字节数={}", mime, content.length, e);
             return Optional.empty();
         }
     }

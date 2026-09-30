@@ -3,7 +3,7 @@ package com.pethealth.record.service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.pethealth.api.app.CheckInDay;
 import com.pethealth.api.app.CheckInItem;
-import com.pethealth.api.app.CheckInItemInput;
+import com.pethealth.api.app.CheckInItemRequest;
 import com.pethealth.api.app.CheckInStreak;
 import com.pethealth.api.app.CheckInSubmitRequest;
 import com.pethealth.common.error.BusinessException;
@@ -14,8 +14,8 @@ import com.pethealth.record.domain.ArchiveRecord;
 import com.pethealth.record.domain.Pet;
 import com.pethealth.record.domain.Weight;
 import com.pethealth.record.event.CheckInRecordedEvent;
+import com.pethealth.record.event.CheckInSubmittedEvent;
 import com.pethealth.record.mapper.ArchiveRecordMapper;
-import com.pethealth.record.mapper.PetMapper;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -66,24 +66,29 @@ public class CheckInService {
     }
 
     private final ArchiveRecordMapper recordMapper;
-    private final PetMapper petMapper;
+    private final PetService petService;
     private final HealthScoreService healthScoreService;
     private final ApplicationEventPublisher eventPublisher;
 
     public CheckInService(ArchiveRecordMapper recordMapper,
-                          PetMapper petMapper,
+                          PetService petService,
                           HealthScoreService healthScoreService,
                           ApplicationEventPublisher eventPublisher) {
         this.recordMapper = recordMapper;
-        this.petMapper = petMapper;
+        this.petService = petService;
         this.healthScoreService = healthScoreService;
         this.eventPublisher = eventPublisher;
     }
 
-    /** 查某一天的打卡状态。不传日期则按服务器当天（Asia/Shanghai）。 */
+    /**
+     * 查某一天的打卡状态。不传日期则按服务器当天（Asia/Shanghai）。
+     *
+     * <p>归属校验交给 {@link PetService#requireOwned}：本模块只保留一份实现
+     * （越权与不存在都 40400，不泄露 id 是否存在）。
+     */
     @Transactional(readOnly = true)
-    public CheckInDay day(long userId, long petId, LocalDate date) {
-        requireOwnedPet(userId, petId);
+    public CheckInDay dayState(long userId, long petId, LocalDate date) {
+        petService.requireOwned(userId, petId);
         LocalDate target = date == null ? AppTime.today() : date;
         validateWindow(target);
 
@@ -113,31 +118,35 @@ public class CheckInService {
      */
     @Transactional
     public CheckInDay submit(long userId, long petId, CheckInSubmitRequest request) {
-        Pet pet = requireOwnedPet(userId, petId);
+        Pet pet = petService.requireOwned(userId, petId);
         LocalDate date = AppTime.parseDate(request.date());
         validateWindow(date);
         boolean backfilled = date.isBefore(AppTime.today());
 
         List<Integer> abnormalCategories = new ArrayList<>();
-        for (CheckInItemInput item : request.items()) {
+        for (CheckInItemRequest item : request.items()) {
             upsert(userId, petId, date, item, backfilled);
             if (Boolean.TRUE.equals(item.abnormal())) {
                 abnormalCategories.add(item.category());
             }
         }
         recalculateScores(petId, date);
+        // 打卡发分的接线点（ADR-0046「需要协调」第 3 条）：发事件而不是直接调积分模块——
+        // 档案模块不该知道积分怎么算（ADR-0006），而且监听方必须在**提交之后**才跑：
+        // 发分失败不能把打卡一起回滚（见 CheckInPointsListener）
+        eventPublisher.publishEvent(new CheckInSubmittedEvent(userId, petId, AppTime.today()));
         if (!abnormalCategories.isEmpty()) {
             // 发事件而不是直接调提醒模块：档案模块不该知道提醒存在（ADR-0006）
             eventPublisher.publishEvent(new CheckInRecordedEvent(
                     userId, petId, pet.getName(), date, abnormalCategories));
         }
-        return day(userId, petId, date);
+        return dayState(userId, petId, date);
     }
 
     /** 撤销某一项（填错了）。幂等：本来就没有也返回成功。 */
     @Transactional
     public CheckInDay undo(long userId, long petId, LocalDate date, int category) {
-        requireOwnedPet(userId, petId);
+        petService.requireOwned(userId, petId);
         LocalDate target = date == null ? AppTime.today() : date;
         validateWindow(target);
         if (!CHECK_IN_CATEGORIES.containsKey(category)) {
@@ -149,7 +158,7 @@ public class CheckInService {
                 .eq(ArchiveRecord::getRecordDate, target)
                 .eq(ArchiveRecord::getCategory, category));
         healthScoreService.recalculate(petId, AppTime.today());
-        return day(userId, petId, target);
+        return dayState(userId, petId, target);
     }
 
     /**
@@ -160,7 +169,7 @@ public class CheckInService {
      */
     @Transactional(readOnly = true)
     public CheckInStreak streak(long userId, long petId) {
-        requireOwnedPet(userId, petId);
+        petService.requireOwned(userId, petId);
         LocalDate today = AppTime.today();
         List<LocalDate> dates = recordMapper.selectRecordDatesDesc(petId, today);
         boolean checkedToday = !dates.isEmpty() && dates.get(0).isEqual(today);
@@ -206,7 +215,7 @@ public class CheckInService {
      *       非法值一律挡下（40001）——不再静默存成 null 让趋势算出荒谬数字（测试报告 D1）。</li>
      * </ul>
      */
-    private void upsert(long userId, long petId, LocalDate date, CheckInItemInput item, boolean backfilled) {
+    private void upsert(long userId, long petId, LocalDate date, CheckInItemRequest item, boolean backfilled) {
         boolean abnormal = Boolean.TRUE.equals(item.abnormal());
         BigDecimal weight = item.category() == CATEGORY_WEIGHT ? Weight.parseOrNull(item.value()) : null;
 
@@ -219,7 +228,7 @@ public class CheckInService {
      * 取值与备注存成 JSON。用 JSON 而不是固定列，是因为六项的形状不同（体重是数字、
      * 其余是选项），而交付文档的 DDL 本来就是 {@code content TEXT}。
      */
-    private String buildContent(CheckInItemInput item) {
+    private String buildContent(CheckInItemRequest item) {
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("status", Boolean.TRUE.equals(item.abnormal()) ? "abnormal" : "normal");
         if (item.value() != null && !item.value().isBlank()) {
@@ -260,20 +269,6 @@ public class CheckInService {
             throw BusinessException.paramInvalid(
                     "只能补录最近 " + BACKFILL_WINDOW_DAYS + " 天的记录");
         }
-    }
-
-    /**
-     * 归属校验：越权与不存在都按 404 处理，不泄露 id 是否存在（契约里写明了）。
-     * 返回宠物实体是因为打卡相关的判断（老年专项等）需要它的字段。
-     */
-    private Pet requireOwnedPet(long userId, long petId) {
-        Pet pet = petMapper.selectOne(Wrappers.<Pet>lambdaQuery()
-                .eq(Pet::getId, petId)
-                .eq(Pet::getUserId, userId));
-        if (pet == null) {
-            throw BusinessException.notFound();
-        }
-        return pet;
     }
 
     /** 历史最长连续天数：给「别断了」一点参照。 */

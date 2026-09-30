@@ -8,12 +8,12 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
- * 录入一条疫苗 / 驱虫记录，对应 contract/app.yaml 的 {@code EpidemicRecordInput}。
+ * 录入一条疫苗 / 驱虫记录，对应 contract/app.yaml 的 {@code EpidemicRecordRequest}。
  *
  * <p>{@code nextDueOn} 是疫苗/驱虫提醒的唯一依据：**不填就没有提醒**——宁可少提醒，
  * 也不要替用户猜接种周期（不同疫苗周期不同，猜错比不提醒更糟）。
  */
-public record EpidemicRecordInput(
+public record EpidemicRecordRequest(
 
         @NotNull(message = "kind 不能为空")
         @Min(value = 1, message = "kind 只能是 1（疫苗）或 2（驱虫）")
