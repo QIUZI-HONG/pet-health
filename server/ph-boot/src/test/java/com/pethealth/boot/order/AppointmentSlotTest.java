@@ -144,4 +144,27 @@ class AppointmentSlotTest extends OrderTestSupport {
                 shop.providerId(), date);
         assertThat(orders).as("库里也只能有一条订单占着这个时段").isEqualTo(1);
     }
+
+    @Test
+    @DisplayName("打烊落在午夜边界（23:30）：网格不绕回原点，47 格、末格 23:00–23:30")
+    void gridStopsAtMidnightBoundary() {
+        Shop shop = createShop("LIC-SLOT-BOUNDARY", "128.00");
+        UserActor user = createUser(nextPhone());
+        LocalDate date = tomorrow();
+
+        // 00:00–23:30：最后一格是 23:00–23:30。切网格的循环曾经拿 `LocalTime` 当循环变量，
+        // 而 `23:30.plusMinutes(30)` 会**绕回 00:00**——「还有下一格吗」这个判定因此永远成立，
+        // 列表一路加到堆爆。触发条件不是脏数据，而是**正常的营业时间**（打烊 23:31–23:59，或正好
+        // 23:30），所以这个用例盯的是「网格有界且末格正确」。
+        assertCodeOk(api.put("/api/v1/provider/profile/business-hours",
+                Map.of("hours", List.of(Map.of("day_of_week", date.getDayOfWeek().getValue(),
+                        "open_time", "00:00", "close_time", "23:30"))), shop.token()), "改营业时间");
+
+        ApiClient.ApiCall slots = api.get("/api/v1/app/providers/" + shop.providerId()
+                + "/appointment-slots?service_id=" + shop.serviceId() + "&date=" + date, user.token());
+        assertCodeOk(slots, "查号源");
+        assertThat(slots.data()).hasSize(47);   // 00:00 → 23:00，每 30 分钟一格
+        assertThat(slots.data().get(46).path("start_time").asText()).isEqualTo("23:00");
+        assertThat(slots.data().get(46).path("end_time").asText()).isEqualTo("23:30");
+    }
 }

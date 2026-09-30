@@ -161,11 +161,14 @@ class OrderCreateTest extends OrderTestSupport {
         assertThat(noHours.code()).isEqualTo(40001);
         assertThat(noHours.message()).contains("不营业");
 
-        // 时段已经开始：把营业时间设成 00:00–03:00，今天的那几段都已经过去了
+        // 时段已经开始：今天的第一格（00:00）**在任何时刻都已经开始**。
+        // 这里曾经写 01:00——于是**在 00:00–01:00 之间跑这个用例，那一格就不再是「已经开始」**，
+        // 断言变成 `expected: 40001 but was: 0`（2026-10-01 00:11 真红过一次：与代码无关，
+        // 是墙上时钟走进了用例的假设里）。营业时间给成一整天，槽位就不会落到窗口外。
         assertCodeOk(api.put("/api/v1/provider/profile/business-hours",
                 Map.of("hours", List.of(Map.of("day_of_week", LocalDate.now().getDayOfWeek().getValue(),
-                        "open_time", "00:00", "close_time", "03:00"))), shop.token()), "改营业时间");
-        ApiClient.ApiCall started = placeOrder(user.token(), petId, shop, LocalDate.now(), "01:00");
+                        "open_time", "00:00", "close_time", "23:30"))), shop.token()), "改营业时间");
+        ApiClient.ApiCall started = placeOrder(user.token(), petId, shop, LocalDate.now(), "00:00");
         assertThat(started.code()).isEqualTo(40001);
         assertThat(started.message()).contains("已经开始");
     }

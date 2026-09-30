@@ -86,8 +86,15 @@ final class SlotGrid {
             // 两种都切不出「一天之内的时段」，显式返回空，别让循环在 LocalTime 上绕回原点。
             return List.of();
         }
-        for (LocalTime start = openTime; !start.plusMinutes(SLOT_MINUTES).isAfter(closeTime);
-             start = start.plusMinutes(SLOT_MINUTES)) {
+        // **格数先算出来，不要拿 LocalTime 当循环变量**：`LocalTime` 没有日期，
+        // `23:30.plusMinutes(30)` 会绕回 `00:00`——于是「还有没有下一格」这个判定永远成立，
+        // 循环一路加下去直到 OOM（实测：下单与号源查询双双 50000，且把整个堆打爆，
+        // 不是一次可恢复的报错）。触发条件不是脏数据，而是**正常的营业时间**：
+        // 打烊时间落在 23:31–23:59（或正好 23:30）时最后一格必然跨越午夜。
+        // Java 17 的 `LocalTime` 上这是个经典坑，`closeTime.isAfter(openTime)` 那条守卫拦不住它。
+        int slots = (int) (java.time.Duration.between(openTime, closeTime).toMinutes() / SLOT_MINUTES);
+        for (int i = 0; i < slots; i++) {
+            LocalTime start = openTime.plusMinutes((long) i * SLOT_MINUTES);
             windows.add(new Window(start.format(HH_MM), start.plusMinutes(SLOT_MINUTES).format(HH_MM)));
         }
         return windows;
