@@ -52,11 +52,11 @@ describe("服务者后台 · 登录", () => {
 
     expect(login).toHaveBeenCalledWith({ phone: "13800139000", password: "Passw0rd123" });
     expect(providerTokenStore.get()?.accessToken).toBe("provider-access");
-    // 目标路由是懒加载的（dynamic import），导航在下一个宏任务才落地——多等一轮
-    await flushPromises();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    console.log("DIAG route=", router.currentRoute.value.fullPath,
-      "| text=", wrapper.text().slice(0, 120));
+    // 「跳到今日概览」——用例名与文件头都写了这条，就得真的验它。
+    // 目标路由是懒加载的（dynamic import），导航要等模块加载完才落地，所以用 `vi.waitFor`
+    // 重试而不是「等一拍」：`flushPromises()` 就是 `setTimeout(resolve, 0)`，
+    // 机器一忙就不够，断言会落在导航之前（偶发红、单跑必过）。
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("dashboard"));
   });
 
   it("40300（账号被禁用）时原样展示服务端文案，且不落任何令牌", async () => {

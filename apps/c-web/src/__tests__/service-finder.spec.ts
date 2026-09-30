@@ -41,11 +41,20 @@ const YELLOW: ServiceRecommendationView = {
   degraded: false,
 };
 
-/** 填一段描述并提交（描述长度满足契约的 2–500）。 */
+/**
+ * 填一段描述并提交（描述长度满足契约的 2–500），并等这次提交**真的渲染出来**。
+ *
+ * 等的是「页面变了」而不是「等一拍」。**`flushPromises()` 就是 `setTimeout(resolve, 0)`**
+ * （见 @vue/test-utils 的实现），而一次提交要经过 mock 的 promise → 组件状态 → Vue 重渲染；
+ * 机器一忙（CI 上并行跑别的套件、本机同时跑别的测试）一拍就不够，断言会落在渲染之前——
+ * 表现为**偶发红、单跑必过**，属于最难查的一类。`vi.waitFor` 会重试到条件成立或超时。
+ */
 async function ask(wrapper: Awaited<ReturnType<typeof mountPage>>["wrapper"], text = "我家猫拉稀两次") {
   await wrapper.get("textarea").setValue(text);
+  // 在点击前取快照：setValue 已经让字数计数变了，所以基线要取在这一刻
+  const before = wrapper.text();
   await wrapper.findAll("button").find((node) => node.text().includes("找服务"))!.trigger("click");
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await vi.waitFor(() => expect(wrapper.text()).not.toBe(before));
 }
 
 beforeEach(() => {
