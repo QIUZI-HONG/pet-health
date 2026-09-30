@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-tokens.mjs && vue-tsc -b && vite build && node scripts/check-bundle-size.mjs",
+    "build": "pnpm check:tokens && vue-tsc -b && vite build && pnpm check:bundle",
     "preview": "vite preview",
-    "check:tokens": "node scripts/check-tokens.mjs",
+    "check:tokens": "node ../../packages/config/scripts/check-tokens.mjs",
     "test": "vitest run",
-    "check:bundle": "node scripts/check-bundle-size.mjs"
+    "check:bundle": "node ../../packages/config/scripts/check-bundle-size.mjs --budget 95 --navigation"
   },
   "dependencies": {
     "@pet-health/shared": "workspace:*",

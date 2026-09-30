@@ -2,24 +2,29 @@
 /**
  * 构建前的硬编码色值检查（ADR-0015 / ADR-0008：颜色一律来自 tokens.css 的取色值）。
  *
- * 两个后台与 C 端用**同一套检查**（本文件与 apps/c-web/scripts/check-tokens.mjs 同源）：
- * 「颜色只用 var(--ph-*)」这条纪律在三个端一致，检查也就不该只有 C 端有——
- * 后台没有这道红灯时，最先出现的是「随手写个 #999 把弱文本调灰一点」。
+ * **三个端共用这一份**（原先三端各有一份拷贝，只有头注释不同）。纪律一致，检查就不该只有
+ * C 端有——后台没有这道红灯时，最先出现的是「随手写个 #999 把弱文本调灰一点」。
  *
- * 规则：颜色只能来自 `var(--ph-*)`（定义在 packages/ui/src/tokens.css，值取自视觉稿像素）。
+ * 规则：颜色只能来自 `var(--ph-*)`（定义在 `packages/ui/src/tokens.css`，值取自视觉稿像素）。
  *
  * **只扫样式上下文**，不扫正文：`.css` 整个文件；`.vue` 的 `<style>` 块；`.vue` 模板与 `.ts`
  * 里带样式语义的行（含 color / background / border / fill / stroke）。否则正文里的 issue 引用
  * （「切片 #94」「#101 接真知识库」）会被当成三位十六进制色值误报。
  *
- * 用法：node scripts/check-tokens.mjs        （挂在 pnpm build 里，CI 会跑）
+ * 用法：`pnpm --filter <app> check:tokens`（挂在各端的 build 里，CI 会跑）。
+ * 工作目录取**调用方所在的应用目录**（pnpm 运行脚本时的 cwd 就是包目录），所以三端共用同一个脚本。
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const srcDir = resolve(here, "../src");
+const srcDir = resolve(process.cwd(), "src");
+
+// 反空转前提：扫不到目录就报错退出。否则「路径写错」与「一个硬编码色值都没有」都会打印成功，
+// 红灯看着亮着，其实早就不通电了。
+if (!existsSync(srcDir)) {
+  console.error(`✗ 没找到 ${srcDir}——请在本应用目录下运行（pnpm --filter <app> check:tokens）`);
+  process.exit(1);
+}
 
 const SCAN_EXTENSIONS = [".vue", ".ts", ".css"];
 const COLOR_PATTERNS = [
@@ -95,4 +100,4 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-console.log("  ✓ 没有硬编码色值，颜色全部来自设计 token");
+console.log(`  ✓ 没有硬编码色值（扫了 ${srcDir}），颜色全部来自设计 token`);
