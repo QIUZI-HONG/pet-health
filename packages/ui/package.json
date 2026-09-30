@@ -7,6 +7,13 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./console.css": "./src/console.css"
+  },
+  "dependencies": {
+    "@pet-health/shared": "workspace:*"
+  },
+  "peerDependencies": {
+    "vue": "^3.5.0"
   }
 }

@@ -1,0 +1,413 @@
+/**
+ * 后台的全局基础样式（服务者后台 / 运营后台共用）。
+ *
+ * 与 C 端的 apps/c-web/src/styles/app.css 是**两份**：ADR-0015 让三个端的组件库分家，只有 token 共用，
+ * 所以这里不搬 C 端的类，只放后台两端真正共用的东西——reset、页面标题/说明、卡片、按钮。
+ * 颜色、间距、圆角一律走 var(--ph-*)（token 在 tokens.css，只由本包维护）。
+ *
+ * 后台的视觉依据：交付文档 4.16.8 的文字（1440px 基准、左栏固定导航 + 右侧内容区、配色与 C 端一致）。
+ * 4.2~4.6 那几张规范表是按手机稿写的，其中色彩表已被 ADR-0008 判失效——间距 4px 基线、卡片圆角 16、
+ * 表格表头 44 / 单元格 56 这些与取色稿不矛盾，接表格时按它做。
+ *
+ * 【假设】ADR-0015 说后台用 Element Plus，但本波不引组件库（外壳与状态组件都是自研简版），
+ * 表单一类的样式等真接 Element Plus 时再由它的变量映射到 token，这里不提前长一套后台组件库。
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ph-color-bg);
+  color: var(--ph-color-text);
+  font-family: var(--ph-font-family);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--ph-color-blue);
+  text-decoration: none;
+}
+
+/* ===== 页面标题与说明 =====
+ * 顶栏已经显示模块名（route.meta.title），内容区再写一遍是**有意的**：顶栏在滚动与分栏布局里不保证
+ * 一直在视野内，页面开头需要一个能说明「这一页做什么」的段落。
+ */
+.ph-page-title {
+  margin: 0 0 var(--ph-space-2);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.ph-page-desc {
+  max-width: 880px;
+  margin: 0 0 var(--ph-space-5);
+  color: var(--ph-color-text-sub);
+}
+
+/* ===== 卡片（交付文档 4.12：白底 + 1px 描边 + 圆角 16 + 内边距 16）===== */
+.ph-card {
+  background: var(--ph-color-surface);
+  border: 1px solid var(--ph-color-border);
+  border-radius: var(--ph-radius-card);
+  padding: var(--ph-space-5);
+}
+
+.ph-card__title {
+  margin: 0 0 var(--ph-space-4);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* ===== 按钮 ===== */
+.ph-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ph-space-2);
+  height: 36px;
+  padding: 0 var(--ph-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--ph-radius-button);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.ph-button--primary {
+  background: var(--ph-color-primary);
+  color: var(--ph-color-surface);
+}
+
+.ph-button--primary:hover:not(:disabled) {
+  background: var(--ph-color-primary-dark);
+}
+
+.ph-button--secondary {
+  background: var(--ph-color-surface);
+  border-color: var(--ph-color-border);
+  color: var(--ph-color-text);
+}
+
+.ph-button--secondary:hover:not(:disabled) {
+  border-color: var(--ph-color-primary);
+  color: var(--ph-color-primary);
+}
+
+.ph-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== 文本 ===== */
+.ph-text-sub {
+  color: var(--ph-color-text-sub);
+}
+
+.ph-text-weak {
+  color: var(--ph-color-text-weak);
+}
+
+/* ===== 页头动作区与分段（接数据后每页都要：左边筛选、右边动作）===== */
+.ph-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ph-space-3);
+  margin-bottom: var(--ph-space-4);
+}
+
+.ph-toolbar__spacer {
+  flex: 1;
+}
+
+/* 页内分段（分类 / 项目 / 提案 …）。按钮形态而不是 tab 语义的 a11y 封装：
+   后台一屏一件事，切换的只是数据块，不是页面。 */
+.ph-tabs {
+  display: flex;
+  gap: var(--ph-space-2);
+  margin-bottom: var(--ph-space-4);
+  border-bottom: 1px solid var(--ph-color-border);
+}
+
+.ph-tabs__item {
+  padding: var(--ph-space-3) var(--ph-space-4);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ph-color-text-sub);
+  cursor: pointer;
+}
+
+.ph-tabs__item:hover:not(:disabled) {
+  color: var(--ph-color-text);
+}
+
+.ph-tabs__item--active {
+  border-bottom-color: var(--ph-color-primary);
+  color: var(--ph-color-primary);
+  font-weight: 600;
+}
+
+.ph-tabs__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== 表格（交付文档 4.16.8：表头 44 / 单元格 56）===== */
+.ph-table-wrap {
+  overflow-x: auto;
+  background: var(--ph-color-surface);
+  border: 1px solid var(--ph-color-border);
+  border-radius: var(--ph-radius-card);
+}
+
+.ph-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ph-table th {
+  height: 44px;
+  padding: 0 var(--ph-space-4);
+  border-bottom: 1px solid var(--ph-color-border);
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ph-table td {
+  height: 56px;
+  padding: var(--ph-space-2) var(--ph-space-4);
+  border-bottom: 1px solid var(--ph-color-divider);
+  vertical-align: middle;
+}
+
+.ph-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.ph-table__num {
+  font-family: var(--ph-font-numeric);
+  white-space: nowrap;
+}
+
+.ph-table__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ph-space-2);
+}
+
+.ph-table__action {
+  height: 28px;
+  padding: 0 var(--ph-space-3);
+  border: 1px solid var(--ph-color-border);
+  border-radius: var(--ph-radius-input);
+  background: var(--ph-color-surface);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ph-color-text);
+  cursor: pointer;
+}
+
+.ph-table__action:hover:not(:disabled) {
+  border-color: var(--ph-color-primary);
+  color: var(--ph-color-primary);
+}
+
+.ph-table__action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== 状态标签 ===== */
+.ph-tag {
+  display: inline-block;
+  padding: 2px var(--ph-space-2);
+  border-radius: var(--ph-radius-input);
+  background: var(--ph-color-bg);
+  font-size: 12px;
+  color: var(--ph-color-text-sub);
+  white-space: nowrap;
+}
+
+.ph-tag--success {
+  background: var(--ph-color-primary-light);
+  color: var(--ph-color-primary);
+}
+
+.ph-tag--warning {
+  background: var(--ph-color-orange-light);
+  color: var(--ph-color-orange);
+}
+
+.ph-tag--danger {
+  background: var(--ph-color-danger-light);
+  color: var(--ph-color-danger);
+}
+
+.ph-tag--info {
+  background: var(--ph-color-purple-light);
+  color: var(--ph-color-purple);
+}
+
+/* ===== 表单控件（后台目前不引组件库，【假设】项，见文件头）===== */
+.ph-input,
+.ph-select,
+.ph-textarea {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 var(--ph-space-3);
+  border: 1px solid var(--ph-color-border);
+  border-radius: var(--ph-radius-input);
+  background: var(--ph-color-surface);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ph-color-text);
+}
+
+.ph-textarea {
+  height: auto;
+  min-height: 72px;
+  padding: var(--ph-space-2) var(--ph-space-3);
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.ph-input:focus,
+.ph-select:focus,
+.ph-textarea:focus {
+  border-color: var(--ph-color-primary);
+  outline: none;
+}
+
+.ph-input--invalid,
+.ph-textarea--invalid {
+  border-color: var(--ph-color-danger);
+}
+
+.ph-input:disabled,
+.ph-select:disabled,
+.ph-textarea:disabled {
+  background: var(--ph-color-bg);
+  color: var(--ph-color-text-weak);
+}
+
+.ph-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ph-space-1);
+  min-width: 0;
+}
+
+.ph-field__label {
+  font-size: 13px;
+  color: var(--ph-color-text-sub);
+}
+
+.ph-field__hint {
+  font-size: 12px;
+  color: var(--ph-color-text-weak);
+  line-height: 1.6;
+}
+
+.ph-field__hint--error {
+  color: var(--ph-color-danger);
+}
+
+.ph-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ph-space-4);
+}
+
+.ph-form-grid--full {
+  grid-column: 1 / -1;
+}
+
+/* ===== 提示条（越界、驳回原因、资质到期这类「要看见」的信息）===== */
+.ph-alert {
+  display: block;
+  padding: var(--ph-space-3) var(--ph-space-4);
+  border: 1px solid var(--ph-color-border);
+  border-radius: var(--ph-radius-input);
+  background: var(--ph-color-bg);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.ph-alert--error {
+  border-color: var(--ph-color-danger);
+  background: var(--ph-color-danger-light);
+  color: var(--ph-color-danger);
+}
+
+.ph-alert--warn {
+  border-color: var(--ph-color-orange);
+  background: var(--ph-color-orange-light);
+  color: var(--ph-color-text);
+}
+
+.ph-alert--info {
+  border-color: var(--ph-color-primary);
+  background: var(--ph-color-primary-light);
+  color: var(--ph-color-text);
+}
+
+/* ===== 详情键值表（申请详情、提案详情）===== */
+.ph-kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--ph-space-2) var(--ph-space-4);
+  margin: 0;
+  font-size: 13px;
+}
+
+.ph-kv dt {
+  color: var(--ph-color-text-sub);
+  white-space: nowrap;
+}
+
+.ph-kv dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-all;
+}
+
+/* ===== 分页器（docs/conventions.md：每页 20 条；手势那套已按 ADR-0001 作废）===== */
+.ph-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ph-space-3);
+  margin-top: var(--ph-space-4);
+  font-size: 13px;
+  color: var(--ph-color-text-sub);
+}
+
+/* ===== 段落与列表的小间距 ===== */
+.ph-section {
+  margin-bottom: var(--ph-space-6);
+}
+
+.ph-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ph-space-4);
+}
