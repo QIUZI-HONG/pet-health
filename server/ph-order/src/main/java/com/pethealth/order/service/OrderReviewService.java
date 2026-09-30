@@ -15,7 +15,6 @@ import com.pethealth.order.domain.OrderStatus;
 import com.pethealth.order.domain.ServiceOrder;
 import com.pethealth.order.event.OrderReviewedEvent;
 import com.pethealth.order.mapper.OrderReviewMapper;
-import com.pethealth.order.mapper.ServiceOrderMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -74,15 +73,15 @@ public class OrderReviewService {
     private static final int RATING_SCALE = 1;
 
     private final OrderReviewMapper reviewMapper;
-    private final ServiceOrderMapper orderMapper;
+    private final OrderAccess orderAccess;
     private final ProviderRatingApi providerRatingApi;
     private final ApplicationEventPublisher eventPublisher;
 
-    public OrderReviewService(OrderReviewMapper reviewMapper, ServiceOrderMapper orderMapper,
+    public OrderReviewService(OrderReviewMapper reviewMapper, OrderAccess orderAccess,
                               ProviderRatingApi providerRatingApi,
                               ApplicationEventPublisher eventPublisher) {
         this.reviewMapper = reviewMapper;
-        this.orderMapper = orderMapper;
+        this.orderAccess = orderAccess;
         this.providerRatingApi = providerRatingApi;
         this.eventPublisher = eventPublisher;
     }
@@ -105,7 +104,7 @@ public class OrderReviewService {
             // 契约与 DTO 上的 @Min/@Max 已经在接口层拦过：走到这里说明有路径绕过了校验
             throw BusinessException.paramInvalid("评分只能是 1–5 星");
         }
-        ServiceOrder order = requireMine(userId, orderId);
+        ServiceOrder order = orderAccess.requireMine(userId, orderId);
         if (order.getStatus() == null || order.getStatus() != OrderStatus.COMPLETED) {
             throw BusinessException.conflict("当前订单是「" + order.statusLabel()
                     + "」，只有「已完成」的订单可以评价");
@@ -195,15 +194,6 @@ public class OrderReviewService {
             return;
         }
         providerRatingApi.updateRating(providerId, average.setScale(RATING_SCALE, RoundingMode.HALF_UP));
-    }
-
-    /** 我的订单；不是我的按不存在处理（40400，与 {@code OrderService.getMine} 同一口径）。 */
-    private ServiceOrder requireMine(long userId, long orderId) {
-        ServiceOrder order = orderMapper.selectById(orderId);
-        if (order == null || order.getUserId() == null || order.getUserId() != userId) {
-            throw BusinessException.notFound("订单不存在");
-        }
-        return order;
     }
 
     private static BusinessException alreadyReviewed() {

@@ -71,6 +71,7 @@ public class OrderService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final ServiceOrderMapper orderMapper;
+    private final OrderAccess orderAccess;
     private final AppointmentSlotService slots;
     private final OrderPhotoWallService photoWall;
     private final OrderViews views;
@@ -83,12 +84,13 @@ public class OrderService {
     private final BusinessMessageApi businessMessages;
     private final ProviderReportArchiveApi archiveReports;
 
-    public OrderService(ServiceOrderMapper orderMapper, AppointmentSlotService slots,
+    public OrderService(ServiceOrderMapper orderMapper, OrderAccess orderAccess, AppointmentSlotService slots,
                         OrderPhotoWallService photoWall, OrderViews views, ProviderFacts providerFacts,
                         OrderParties parties, CouponApi couponApi, CatalogPricingApi catalogPricing,
                         PetQueryApi petQueryApi, OrderNoGenerator orderNos,
                         BusinessMessageApi businessMessages, ProviderReportArchiveApi archiveReports) {
         this.orderMapper = orderMapper;
+        this.orderAccess = orderAccess;
         this.slots = slots;
         this.photoWall = photoWall;
         this.views = views;
@@ -170,7 +172,7 @@ public class OrderService {
 
     /** 我的订单详情：**别人的订单一律 40400**（越权与不存在同码，免得用 id 探测）。 */
     public OrderView getMine(long userId, long orderId) {
-        return views.mineView(requireMine(userId, orderId));
+        return views.mineView(orderAccess.requireMine(userId, orderId));
     }
 
     /**
@@ -188,7 +190,7 @@ public class OrderService {
      */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public OrderView cancelByUser(long userId, long orderId, String reason) {
-        ServiceOrder order = requireMine(userId, orderId);
+        ServiceOrder order = orderAccess.requireMine(userId, orderId);
         if (order.getStatus() == OrderStatus.PENDING_ACCEPT) {
             cancel(order, userId, null, OrderStatus.CancelledBy.USER, reason);
         } else if (order.getStatus() == OrderStatus.BOOKED) {
@@ -196,7 +198,7 @@ public class OrderService {
         } else {
             throw notCancellable(order);
         }
-        return views.mineView(requireMine(userId, orderId));
+        return views.mineView(orderAccess.requireMine(userId, orderId));
     }
 
     // ================================================================ 服务者侧
@@ -519,15 +521,6 @@ public class OrderService {
     /** 迁移被状态挡住时的统一答复（40900，不是 40001——这是状态冲突，不是参数写错）。 */
     private static BusinessException conflict(ServiceOrder order, String action) {
         return BusinessException.conflict("当前订单是「" + order.statusLabel() + "」，不能" + action);
-    }
-
-    /** 我的订单；不是我的按不存在处理（40400）。 */
-    private ServiceOrder requireMine(long userId, long orderId) {
-        ServiceOrder order = orderMapper.selectById(orderId);
-        if (order == null || order.getUserId() == null || order.getUserId() != userId) {
-            throw BusinessException.notFound("订单不存在");
-        }
-        return order;
     }
 
     /** 本店订单；不是本店的按不存在处理（40400）。顺手解析出服务者身份，后面的迁移都用它。 */
