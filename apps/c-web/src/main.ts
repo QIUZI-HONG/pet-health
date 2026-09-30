@@ -1,3 +1,16 @@
+/**
+ * C 端入口：装配 Pinia 与路由，然后把应用挂上去。
+ *
+ * <p>**下面几段的顺序是有意的，别随手调**：
+ *
+ * <ol>
+ *   <li>`rememberInviteFromUrl()` 必须在 `mount` **之前**——用户可能从 `?invite=CODE` 落地后先逛一会儿
+ *       才去注册，那时地址栏早已不是落地页；
+ *   <li>`onSessionExpired` 的订阅要在 `bootstrap` **之前**注册，否则「刷新令牌也换不回来」的那次广播
+ *       会没人接，界面会继续显示成已登录；
+ *   <li>`bootstrap()` **不 await**：拉会话失败不该阻塞首屏渲染，页面各自按状态显示空态 / 无权限态。
+ * </ol>
+ */
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import "@pet-health/ui/tokens.css";

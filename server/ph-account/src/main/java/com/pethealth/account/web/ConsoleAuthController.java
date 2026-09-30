@@ -37,6 +37,12 @@ public class ConsoleAuthController {
 
     // ---------------------------------------------------------------- 服务者后台
 
+    /**
+     * 服务者后台登录。
+     *
+     * <p>**不看名单**：任何启用中的账号都能登——BPM-4 的第一步就是「提交入驻申请」，
+     * 那时它还什么资质都没有，如果登不进来就永远提交不了申请。能做什么由入驻状态决定，不是由能不能登决定。
+     */
     @PostMapping("/provider/auth/login")
     public ApiResponse<TokenPair> providerLogin(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.ok(consoleAuth.login(LoginDomain.PROVIDER, request));
@@ -55,6 +61,13 @@ public class ConsoleAuthController {
 
     // ---------------------------------------------------------------- 运营后台
 
+    /**
+     * 运营后台登录。
+     *
+     * <p><b>fail-closed 的白名单</b>：账号 id 必须在 {@code CONSOLE_ADMIN_USER_IDS} 里，
+     * **名单为空 = 谁都进不去**（不是「谁都能进」）。不这么配的话，忘了配名单的部署会变成
+     * 一个对外开放的运营后台——那是最坏的一种默认值。启动日志里有一行 WARN 提醒这件事。
+     */
     @PostMapping("/admin/auth/login")
     public ApiResponse<TokenPair> adminLogin(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.ok(consoleAuth.login(LoginDomain.ADMIN, request));

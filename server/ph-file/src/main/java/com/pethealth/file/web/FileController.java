@@ -35,12 +35,20 @@ public class FileController {
         this.fileService = fileService;
     }
 
+    /**
+     * 取上传凭证（一次可申请多张）。
+     *
+     * <p>校验的是用途、用途标记、类型与体积。**注意声明的类型与体积只是「提前拦」**——
+     * 真正生效的判定在上传落盘那一步（魔数 + 实际字节数）。所以这里放行不等于那张图一定合格，
+     * 客户端不能拿这里的 200 当「没问题」。
+     */
     @PostMapping("/presign")
     public ApiResponse<List<FilePresignView>> presign(@Valid @RequestBody FilePresignRequest request) {
         long userId = CurrentUser.requireDomain(LoginDomain.APP);
         return ApiResponse.ok(fileService.presign(userId, request));
     }
 
+    /** 我的文件列表，可按宠物与用途过滤（两个都可以不传）。 */
     @GetMapping
     public ApiResponse<List<FileView>> list(@RequestParam(required = false) Long petId,
                                            @RequestParam(required = false) String bizType) {
@@ -48,12 +56,26 @@ public class FileController {
         return ApiResponse.ok(fileService.list(userId, petId, bizType));
     }
 
+    /** 文件元数据。不是我的按**不存在**处理（40400），免得用 id 探测别人的图。 */
     @GetMapping("/{fileId}")
     public ApiResponse<FileView> get(@PathVariable long fileId) {
         long userId = CurrentUser.requireDomain(LoginDomain.APP);
         return ApiResponse.ok(fileService.get(userId, fileId));
     }
 
+    /**
+     * 删除文件：连同它的派生物（缩略图等子行）一起删。
+     *
+     * <p><b>两边的「删」不是一回事</b>，这里值得看清楚：
+     *
+     * <ul>
+     *   <li><b>对象存储里的字节是真的删掉的</b>（{@code storage.remove}）——原图与每个子行各自的存储对象；
+     *   <li><b>库里的行只是逻辑删除</b>（{@code isDeleted=1}，全局逻辑删除配置在
+     *       {@code application.yml}）。所以「删了」之后档案里那条引用会指向一个读不出来的图。
+     * </ul>
+     *
+     * <p>缩略图行不当独立文件处理：它的 id 传给这条接口会被按不存在拒绝，见 {@code FileService#requireOwned}。
+     */
     @DeleteMapping("/{fileId}")
     public ApiResponse<Void> delete(@PathVariable long fileId) {
         long userId = CurrentUser.requireDomain(LoginDomain.APP);
