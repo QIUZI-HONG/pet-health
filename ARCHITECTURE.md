@@ -9,7 +9,7 @@
 | --- | --- |
 | 怎么把项目跑起来、环境变量、本机特有的坑 | [`README.md`](README.md) |
 | 领域术语（**命名以它为准**） | [`CONTEXT.md`](CONTEXT.md) |
-| 某个决策为什么这么定 | [`docs/adr/`](docs/adr/)（52 条） |
+| 某个决策为什么这么定 | [`docs/adr/`](docs/adr/)（53 条） |
 | 分页 / 脱敏 / 加密 / 迁移 / 越权口径这些实现级约定 | [`docs/conventions.md`](docs/conventions.md) |
 | 后端跑法、迁移与回滚规程 | [`server/README.md`](server/README.md) |
 | AI 服务的设计细节 | [`docs/design/ai-service.md`](docs/design/ai-service.md) |
@@ -367,9 +367,10 @@ Flyway 管 schema，**每条迁移都配一份 `db/undo/` 回滚脚本**；`serv
 不从平台经手资金（ADR-0002，到店付）、不引消息中间件与 ELK（ADR-0003）、
 只有文字与图片两种输入（ADR-0004）。
 
-**测试基建的两处空缺**：`packages/shared` 目前没有自己的 vitest，它的 http 行为测试寄居在
-`apps/c-web/src/__tests__/`，于是 CI 的 `pnpm -r test` 覆盖不到 shared 自身的改动；
-三端与 `packages/*` 都没有 eslint/prettier（只有 `.editorconfig`）。
+**测试基建的现状**：`packages/shared` **有自己的 vitest**（`vitest.config.ts` + `test` 脚本），
+http 行为测试已迁回本包，CI 的 `pnpm -r test` 覆盖得到；（这句话 2026-09-30 之前写的是「没有」，
+那时确实没有，迁回后没同步——本次修掉。）
+三端与 `packages/*` 仍然都没有 eslint/prettier（只有 `.editorconfig`）。
 
 ## 11. 关键文件索引
 
@@ -408,5 +409,5 @@ Flyway 管 schema，**每条迁移都配一份 `db/undo/` 回滚脚本**；`serv
 | `docs/reference/` | **输入**：甲方交付文档。是验收基准，但**不是最高权威**——偏离它的地方在 ADR-0001~0004 |
 | `docs/research/` | 参考：模型选型与 RAG 调研（结论已进 ADR） |
 | `docs/assets/mockups/` | 参考：视觉稿与取色依据（ADR-0008） |
-| `docs/testing/` | **归档**：历次验收与深测报告。`round4` 是当前有效的功能清单，它自述取代第三轮；round2 及更早已是历史 |
+| `docs/testing/` | **归档**：历次验收与深测报告。`round5` 是当前有效的功能清单（它自述取代第四轮），另有 2026-09-30 的变更评估与 `defect-remediation-plan-*.md`（缺陷与排期，对应 issue #127）；round4 及更早已是历史 |
 | `docs/prior-rounds/` | **归档**：已作废轮次的地图/spec/实现票 |
