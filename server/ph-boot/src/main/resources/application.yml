@@ -135,6 +135,34 @@ app:
     presign-ttl: ${FILE_PRESIGN_TTL:30m}
     read-ttl: ${FILE_READ_TTL:10m}
 
+  # ---- 考核（ADR-0052）----
+  # 能改考核规则与覆盖单项分的账号白名单。**fail-closed**：不配 = 这两个动作没人能做
+  # （不是「谁都能做」），因为让「谁能改分」成为运营后台里可自助修改的配置，等于把门禁的
+  # 钥匙挂在门上——所以它是技术参数而不是业务配置（ADR-0010 的分层）。
+  assessment:
+    # 这里必须显式中转一次：Spring 的 relaxed binding 只把 APP_ASSESSMENT_SUPER_ADMIN_USER_IDS
+    # 映射到该属性，而 ADR-0052 与 contract/admin.yaml 让运维配的是 **ASSESSMENT_SUPER_ADMIN_USER_IDS**
+    # ——少了这一行，照文档配也到不了那个属性，机制会在「测试全绿」的状态下永远 fail-closed。
+    super-admin-user-ids: ${ASSESSMENT_SUPER_ADMIN_USER_IDS:}
+
+  # ---- 订单（ADR-0049）----
+  # 预约提醒的提前量（小时）。提醒是「快到了」，不是「今天有单」——按天跑会让下午 3 点的单
+  # 在凌晨收到提醒，所以窗口按小时算（F026）。去重键按订单，同一条预约只会收到一条。
+  order:
+    appointment-reminder-hours: ${ORDER_APPOINTMENT_REMINDER_HOURS:2}
+
+  # ---- 两个后台的登录准入（ADR-0035「需要协调」第 3 条）----
+  # 能进运营后台的账号 id 名单，逗号分隔。**fail-closed：空名单 = 谁都进不去**（不是谁都能进）
+  # ——运营后台看得到全平台数据，默认开放等于把门禁的钥匙挂在门上。服务者后台不在这里判：
+  # 它的准入是「有没有启用中的服务者绑定」，那是数据里的事实，不是配置。
+  console:
+    admin-user-ids: ${CONSOLE_ADMIN_USER_IDS:}
+
+  # ---- 增长与券池（ADR-0037 / 0044）----
+  # 券到期前多少天提醒用户去用（F026）。提醒的是「快过期」——已经过期时用户无事可做。
+  privilege:
+    coupon-expiring-days: ${PRIVILEGE_COUPON_EXPIRING_DAYS:3}
+
 # ---- AI 服务（ADR-0009：模型调用在独立的 ai/ 服务里，本后端只是它的客户端）----
 # 完整设计见 docs/design/ai-service.md。这些是**技术参数**，改要重启；
 # 业务可调项（提示词/红线词/分级规则/降级开关）在数据库里，运营后台改（ADR-0010）。
@@ -161,3 +189,4 @@ ai:
     # 宁可估成 0 也不瞎编一个价格进日志。输入与输出分开：推理型模型的输出单价通常是输入的几倍
     prompt-cny-per-1k: ${AI_PROMPT_CNY_PER_1K:}
     completion-cny-per-1k: ${AI_COMPLETION_CNY_PER_1K:}
+

@@ -2,7 +2,7 @@ package com.pethealth.boot.security;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.pethealth.api.app.CheckInItemInput;
+import com.pethealth.api.app.CheckInItemRequest;
 import com.pethealth.api.app.CheckInSubmitRequest;
 import com.pethealth.api.app.FilePresignRequest;
 import com.pethealth.boot.support.ApiClient;
@@ -208,7 +208,7 @@ class ConcurrencyRaceTest extends IntegrationTestBase {
 
     private ApiClient.ApiCall submit(String token, long petId, int category, String value) {
         return api.post("/api/v1/app/pets/" + petId + "/check-ins",
-                new CheckInSubmitRequest(today(), List.of(new CheckInItemInput(category, false, value, null))),
+                new CheckInSubmitRequest(today(), List.of(new CheckInItemRequest(category, false, value, null))),
                 token);
     }
 

@@ -1,7 +1,7 @@
 package com.pethealth.boot.record;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.pethealth.api.app.CheckInItemInput;
+import com.pethealth.api.app.CheckInItemRequest;
 import com.pethealth.api.app.CheckInSubmitRequest;
 import com.pethealth.boot.support.ApiClient;
 import com.pethealth.boot.support.IntegrationTestBase;
@@ -439,11 +439,11 @@ class CheckInAndScoreTest extends IntegrationTestBase {
         return AppTime.today();
     }
 
-    private CheckInItemInput item(int category, boolean abnormal, String value, String note) {
-        return new CheckInItemInput(category, abnormal, value, note);
+    private CheckInItemRequest item(int category, boolean abnormal, String value, String note) {
+        return new CheckInItemRequest(category, abnormal, value, note);
     }
 
-    private ApiClient.ApiCall submit(String token, long petId, LocalDate date, CheckInItemInput item) {
+    private ApiClient.ApiCall submit(String token, long petId, LocalDate date, CheckInItemRequest item) {
         return api.post("/api/v1/app/pets/" + petId + "/check-ins",
                 new CheckInSubmitRequest(date.toString(), List.of(item)), token);
     }

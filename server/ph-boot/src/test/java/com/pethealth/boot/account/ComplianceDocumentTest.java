@@ -86,9 +86,24 @@ class ComplianceDocumentTest extends IntegrationTestBase {
         assertThat(body).contains("不是诊断结论").contains("无法替代").contains("兽医");
     }
 
+    /**
+     * 条款**注册前必须读得到**（交付文档 2.5 的合规口径，2026-09-30 验收的 F027）。
+     *
+     * <p>这条原先反过来断言「未登录不能取文档」——而登录页上就挂着「用户协议 / 隐私政策」
+     * 两个链接，未登录点进去只会看到「需要先登录」。协议读不到，「我已阅读并同意」就没有依据。
+     * 所以现在两份都是**免登录只读**（清单与详情），这条用例改成钉住放行。
+     *
+     * <p>同时钉住**边界**：写接口（注销、导出）仍然要登录——放行只对这两条 GET 生效，
+     * 不是「/compliance 前缀一律放行」。
+     */
     @Test
-    @DisplayName("未登录不能取文档")
-    void loginRequired() {
-        assertThat(api.get("/api/v1/app/compliance/documents", null).code()).isEqualTo(40100);
+    @DisplayName("未登录也能读条款（清单与详情都放行），但账号操作仍要登录")
+    void readableWithoutLogin() {
+        assertThat(api.get("/api/v1/app/compliance/documents", null).code()).isEqualTo(0);
+        assertThat(api.get("/api/v1/app/compliance/documents/user_agreement", null).code()).isEqualTo(0);
+        // 未知编号在免登录路径上仍是 40400，不是 40100——免得写成「没登录就一律 401」而看不出参数错
+        assertThat(api.get("/api/v1/app/compliance/documents/not_exists", null).code()).isEqualTo(40400);
+        // 边界：账号操作照旧要登录（注销是 POST，不是 DELETE）
+        assertThat(api.post("/api/v1/app/users/me/deactivation", null, null).code()).isEqualTo(40100);
     }
 }

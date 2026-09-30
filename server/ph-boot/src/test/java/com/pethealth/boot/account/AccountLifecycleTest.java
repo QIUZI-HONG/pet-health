@@ -38,12 +38,13 @@ class AccountLifecycleTest extends IntegrationTestBase {
         long petId = api.createPet(token, "豆豆");
         api.post("/api/v1/app/pets/" + petId + "/check-ins",
                 new com.pethealth.api.app.CheckInSubmitRequest("2026-09-28",
-                        java.util.List.of(new com.pethealth.api.app.CheckInItemInput(1, false, "8.20", null))),
+                        java.util.List.of(new com.pethealth.api.app.CheckInItemRequest(1, false, "8.20", null))),
                 token);
         api.post("/api/v1/app/pets/" + petId + "/epidemic-records",
-                new com.pethealth.api.app.EpidemicRecordInput(1, "狂犬疫苗", "2026-09-20", "2026-10-05"),
+                new com.pethealth.api.app.EpidemicRecordRequest(1, "狂犬疫苗", "2026-09-20", "2026-10-05"),
                 token);
         api.get("/api/v1/app/messages?page=1&page_size=10", token);   // 惰性物化出提醒
+        api.get("/api/v1/app/pets/" + petId + "/health-reports?type=1", token);   // 惰性补出上一期报告
 
         var call = api.get("/api/v1/app/users/me/export", token);
 
@@ -58,6 +59,11 @@ class AccountLifecycleTest extends IntegrationTestBase {
                 .isGreaterThanOrEqualTo(2);
         assertThat(data.path("messages")).isNotEmpty();
         assertThat(data.path("notice").asText()).contains("未逐字段展开");
+        // 健康报告也进导出包（ADR-0031 决定六）：读一次报告列表会补齐上一期，所以这里应有内容；
+        // 没有报告的场景是空数组而不是 null（纯加法，老客户端不受影响）
+        assertThat(pet.path("reports")).isNotEmpty();
+        assertThat(pet.path("reports").get(0).path("type").asInt()).isEqualTo(1);
+        assertThat(pet.path("reports").get(0).path("payload").path("sections")).hasSize(4);
     }
 
     @Test

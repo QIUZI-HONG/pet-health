@@ -321,6 +321,130 @@ class AiConsultTest extends IntegrationTestBase {
                 .data().path("quota_per_day").asInt()).isEqualTo(3);
     }
 
+    // ------------------------------------------------------------ 知识来源与引用口径（#100 / #101）
+
+    @Test
+    @DisplayName("有已复核（vetted）引用：来源下发给 C 端，且这时才允许说「平台知识库」")
+    void vettedCitationsUnlockTheKnowledgeBaseWording() {
+        String token = api.registerAndGetAccessToken(PHONE);
+        long petId = api.createPet(token, "豆豆");
+
+        RESPONDER.set(body -> new StubReply(200, """
+                {"risk_level":2,"possible_causes":["可能：饮食不当 [K-0001]"],
+                 "action_suggestion":"观察 24 小时","need_hospital":true,"care_tips":[],
+                 "citations":[{"entry_id":"K-0001","title":"犬核心疫苗的接种时间表","category":"vaccine",
+                   "source_title":"WSAVA 2024 犬猫疫苗接种指南","source_version":"2024 版",
+                   "source_url":"https://wsava.org/","review_status":"vetted"}],
+                 "unvetted_hits":[],"images_used":0,"red_flag_hits":[],"grading_rule_hits":[],
+                 "guard_hits":[],"red_flag_check":"ok","retrieval_check":"ok","degraded":false,
+                 "degrade_reason":null,"model_name":"stub","model_version":"stub",
+                 "prompt_version":"p1","latency_ms":10}
+                """));
+        RECEIVED.clear();
+
+        ApiClient.ApiCall call = api.post("/api/v1/app/pets/" + petId + "/ai-consults",
+                new AiConsultRequest("疫苗要打几针", null), token);
+
+        assertThat(call.code()).isZero();
+        var citation = call.data().path("citations").get(0);
+        assertThat(citation.path("entry_id").asText()).isEqualTo("K-0001");
+        // 来源要能点回原始资料：只给内部编号等于来源不可追溯（63 号调研 §4.5）
+        assertThat(citation.path("source_title").asText()).contains("WSAVA");
+        assertThat(citation.path("review_status").asText()).isEqualTo("vetted");
+        // **「基于知识库」的解禁条件是「至少一条 vetted 引用」**（ADR-0040 第二节）
+        assertThat(call.data().path("disclaimer").asText()).contains("平台知识库");
+        assertThat(call.data().path("unvetted_used").asBoolean()).isFalse();
+
+        var row = jdbc.queryForMap("SELECT citations, unvetted_hits, retrieval_check FROM ai_consult "
+                + "WHERE pet_id = ?", petId);
+        assertThat(row.get("citations").toString()).contains("K-0001").contains("WSAVA");
+        assertThat(row.get("unvetted_hits")).isNull();
+        assertThat(row.get("retrieval_check")).isEqualTo("ok");
+    }
+
+    @Test
+    @DisplayName("只命中未复核条目：不进 citations，且回答里必须明说「尚未经兽医复核」")
+    void unvettedHitsAreDisclosedButNotCited() {
+        String token = api.registerAndGetAccessToken(PHONE);
+        long petId = api.createPet(token, "豆豆");
+
+        RESPONDER.set(body -> new StubReply(200, """
+                {"risk_level":2,"possible_causes":[],"action_suggestion":"观察 24 小时",
+                 "need_hospital":true,"care_tips":[],"citations":[],"unvetted_hits":["K-0010"],
+                 "images_used":0,"red_flag_hits":[],"grading_rule_hits":[],"guard_hits":[],
+                 "red_flag_check":"ok","retrieval_check":"ok","degraded":false,"degrade_reason":null,
+                 "model_name":"stub","model_version":"stub","prompt_version":"p1","latency_ms":10}
+                """));
+        RECEIVED.clear();
+
+        ApiClient.ApiCall call = api.post("/api/v1/app/pets/" + petId + "/ai-consults",
+                new AiConsultRequest("今天吐了两次", null), token);
+
+        // 未复核内容不许被当作依据：它不出现在来源列表里，只以一句如实说明出现
+        assertThat(call.data().path("citations")).isEmpty();
+        assertThat(call.data().path("unvetted_used").asBoolean()).isTrue();
+        String disclaimer = call.data().path("disclaimer").asText();
+        assertThat(disclaimer).contains("尚未经兽医复核");
+        assertThat(disclaimer).as("没有 vetted 引用时 C 端不许出现「知识库」")
+                .doesNotContain("知识库");
+
+        // 留痕把两件事分开记：事后才能回答「这句话当时有依据吗」
+        var row = jdbc.queryForMap("SELECT citations, unvetted_hits FROM ai_consult WHERE pet_id = ?", petId);
+        assertThat(row.get("citations")).isNull();
+        assertThat(row.get("unvetted_hits").toString()).contains("K-0010");
+    }
+
+    @Test
+    @DisplayName("检索读不到知识域：回答照常（HTTP 200、不降级），如实记 retrieval_check=unavailable")
+    void retrievalUnavailableIsRecordedNotFatal() {
+        String token = api.registerAndGetAccessToken(PHONE);
+        long petId = api.createPet(token, "豆豆");
+
+        RESPONDER.set(body -> new StubReply(200, """
+                {"risk_level":2,"possible_causes":["可能：饮食不当"],"action_suggestion":"观察 24 小时",
+                 "need_hospital":true,"care_tips":[],"citations":[],"unvetted_hits":[],
+                 "images_used":0,"red_flag_hits":[],"grading_rule_hits":[],"guard_hits":[],
+                 "red_flag_check":"ok","retrieval_check":"unavailable","degraded":false,
+                 "degrade_reason":null,"model_name":"stub","model_version":"stub",
+                 "prompt_version":"p1","latency_ms":10}
+                """));
+        RECEIVED.clear();
+
+        ApiClient.ApiCall call = api.post("/api/v1/app/pets/" + petId + "/ai-consults",
+                new AiConsultRequest("今天吐了两次", null), token);
+
+        // 「检索失败 = 降级为无来源的通用建议，咨询本身仍然成功」（ADR-0040 第二节）
+        assertThat(call.status()).isEqualTo(200);
+        assertThat(call.data().path("degraded").asBoolean()).isFalse();
+        assertThat(call.data().path("citations")).isEmpty();
+        assertThat(call.data().path("disclaimer").asText()).doesNotContain("知识库");
+        assertThat(jdbc.queryForMap("SELECT retrieval_check FROM ai_consult WHERE pet_id = ?", petId)
+                .get("retrieval_check")).isEqualTo("unavailable");
+    }
+
+    @Test
+    @DisplayName("分级规则命中进留痕：归因要能分清「模型判的」与「规则抬的档」")
+    void gradingRuleHitsArePersisted() {
+        String token = api.registerAndGetAccessToken(PHONE);
+        long petId = api.createPet(token, "豆豆");
+
+        RESPONDER.set(body -> new StubReply(200, """
+                {"risk_level":3,"possible_causes":[],"action_suggestion":"立即送医","need_hospital":true,
+                 "care_tips":["老年动物耐受差，建议立即就医。"],"citations":[],"unvetted_hits":[],
+                 "images_used":0,"red_flag_hits":[],"grading_rule_hits":["GR-002"],"guard_hits":[],
+                 "red_flag_check":"ok","retrieval_check":"empty","degraded":false,"degrade_reason":null,
+                 "model_name":"stub","model_version":"stub","prompt_version":"p1","latency_ms":10}
+                """));
+        RECEIVED.clear();
+
+        ApiClient.ApiCall call = api.post("/api/v1/app/pets/" + petId + "/ai-consults",
+                new AiConsultRequest("最近没精神", null), token);
+
+        assertThat(call.code()).isZero();
+        assertThat(jdbc.queryForMap("SELECT grading_rule_hits, retrieval_check FROM ai_consult "
+                + "WHERE pet_id = ?", petId).get("grading_rule_hits").toString()).contains("GR-002");
+    }
+
     // ------------------------------------------------------------ 越权
 
     @Test

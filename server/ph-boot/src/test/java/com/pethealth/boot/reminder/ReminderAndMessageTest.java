@@ -2,9 +2,9 @@ package com.pethealth.boot.reminder;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.pethealth.api.app.CheckInItemInput;
+import com.pethealth.api.app.CheckInItemRequest;
 import com.pethealth.api.app.CheckInSubmitRequest;
-import com.pethealth.api.app.EpidemicRecordInput;
+import com.pethealth.api.app.EpidemicRecordRequest;
 import com.pethealth.boot.support.ApiClient;
 import com.pethealth.boot.support.IntegrationTestBase;
 import com.pethealth.common.time.AppTime;
@@ -110,7 +110,7 @@ class ReminderAndMessageTest extends IntegrationTestBase {
 
         api.post("/api/v1/app/pets/" + petId + "/check-ins",
                 new CheckInSubmitRequest(today().toString(),
-                        List.of(new CheckInItemInput(3, true, null, "有点软"))), token);
+                        List.of(new CheckInItemRequest(3, true, null, "有点软"))), token);
 
         JsonNode highlights = highlights(token);
         assertThat(highlights).hasSize(1);
@@ -127,7 +127,7 @@ class ReminderAndMessageTest extends IntegrationTestBase {
 
         api.post("/api/v1/app/pets/" + petId + "/check-ins",
                 new CheckInSubmitRequest(today().toString(),
-                        List.of(new CheckInItemInput(3, false, "normal", null))), token);
+                        List.of(new CheckInItemRequest(3, false, "normal", null))), token);
 
         assertThat(highlights(token)).isEmpty();
     }
@@ -297,7 +297,7 @@ class ReminderAndMessageTest extends IntegrationTestBase {
         for (int i = 0; i < 5; i++) {
             api.post("/api/v1/app/pets/" + petId + "/check-ins",
                     new CheckInSubmitRequest(today().minusDays(i).toString(),
-                            List.of(new CheckInItemInput(3, true, null, "异常"))), token);
+                            List.of(new CheckInItemRequest(3, true, null, "异常"))), token);
         }
 
         assertThat(highlights(token)).hasSize(3);
@@ -462,28 +462,28 @@ class ReminderAndMessageTest extends IntegrationTestBase {
         String intruderToken = register("13200000022");
 
         ApiClient.ApiCall foreign = api.post("/api/v1/app/pets/" + petId + "/epidemic-records",
-                new EpidemicRecordInput(1, "狂犬疫苗", today().toString(), null), intruderToken);
+                new EpidemicRecordRequest(1, "狂犬疫苗", today().toString(), null), intruderToken);
         assertThat(foreign.code()).isEqualTo(40400);
 
         ApiClient.ApiCall badRange = api.post("/api/v1/app/pets/" + petId + "/epidemic-records",
-                new EpidemicRecordInput(1, "狂犬疫苗", today().toString(), today().minusDays(1).toString()),
+                new EpidemicRecordRequest(1, "狂犬疫苗", today().toString(), today().minusDays(1).toString()),
                 ownerToken);
         assertThat(badRange.status()).isEqualTo(400);
         assertThat(badRange.code()).isEqualTo(40001);
 
         ApiClient.ApiCall future = api.post("/api/v1/app/pets/" + petId + "/epidemic-records",
-                new EpidemicRecordInput(1, "狂犬疫苗", today().plusDays(1).toString(), null), ownerToken);
+                new EpidemicRecordRequest(1, "狂犬疫苗", today().plusDays(1).toString(), null), ownerToken);
         assertThat(future.status()).isEqualTo(400);
 
         // 格式对但日子不存在（2026-02-31）：要 40001，不是 50000（测试报告 D11；
         // 两个日期字段都要走同一处解析）
         ApiClient.ApiCall impossible = api.post("/api/v1/app/pets/" + petId + "/epidemic-records",
-                new EpidemicRecordInput(1, "狂犬疫苗", "2026-02-31", null), ownerToken);
+                new EpidemicRecordRequest(1, "狂犬疫苗", "2026-02-31", null), ownerToken);
         assertThat(impossible.status()).isEqualTo(400);
         assertThat(impossible.code()).isEqualTo(40001);
 
         ApiClient.ApiCall impossibleDue = api.post("/api/v1/app/pets/" + petId + "/epidemic-records",
-                new EpidemicRecordInput(1, "狂犬疫苗", today().toString(), "2026-02-31"), ownerToken);
+                new EpidemicRecordRequest(1, "狂犬疫苗", today().toString(), "2026-02-31"), ownerToken);
         assertThat(impossibleDue.status()).isEqualTo(400);
         assertThat(impossibleDue.code()).isEqualTo(40001);
     }
@@ -542,7 +542,7 @@ class ReminderAndMessageTest extends IntegrationTestBase {
     private long addEpidemicRecord(String token, long petId, int kind, String name,
                                    LocalDate givenOn, LocalDate nextDueOn) {
         ApiClient.ApiCall call = api.post("/api/v1/app/pets/" + petId + "/epidemic-records",
-                new EpidemicRecordInput(kind, name, givenOn.toString(), nextDueOn.toString()), token);
+                new EpidemicRecordRequest(kind, name, givenOn.toString(), nextDueOn.toString()), token);
         assertThat(call.code()).as("录入防疫记录应当成功：" + call.body()).isZero();
         return call.data().path("id").asLong();
     }
@@ -550,14 +550,14 @@ class ReminderAndMessageTest extends IntegrationTestBase {
     private void submitNormalCheckIn(String token, long petId) {
         ApiClient.ApiCall call = api.post("/api/v1/app/pets/" + petId + "/check-ins",
                 new CheckInSubmitRequest(today().toString(),
-                        List.of(new CheckInItemInput(2, false, "normal", null))), token);
+                        List.of(new CheckInItemRequest(2, false, "normal", null))), token);
         assertThat(call.code()).as("打卡应当成功：" + call.body()).isZero();
     }
 
     private void checkInWeight(String token, long petId, LocalDate date, String weight) {
         ApiClient.ApiCall call = api.post("/api/v1/app/pets/" + petId + "/check-ins",
                 new CheckInSubmitRequest(date.toString(),
-                        List.of(new CheckInItemInput(1, false, weight, null))), token);
+                        List.of(new CheckInItemRequest(1, false, weight, null))), token);
         assertThat(call.code()).as("打卡应当成功：" + call.body()).isZero();
     }
 

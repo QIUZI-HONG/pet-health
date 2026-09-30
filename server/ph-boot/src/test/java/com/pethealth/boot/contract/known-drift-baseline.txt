@@ -1,0 +1,99 @@
+# 契约 ↔ DTO 的**已知漂移**基线（ADR-0047 的自动校验用）。
+#
+# 每行一条，格式固定四段：文件|schema|字段路径|差异类型
+#   - 字段路径为空 = 差异在 schema 这一层（没有对应 DTO / 类名不一致 / DTO 无 schema）
+#   - 差异类型用 ContractDtoDrift.Kind 的枚举名；英文名是键，中文文案改了不会让基线失效
+#   - 首段文件名为空 = 该 DTO 在 app/provider/admin 三份契约里都没有对应 schema
+#   - 行末用 # 注明这一段归谁修（域 / 切片号），谁修完谁删行。
+#
+# 纪律（这条基线是**棘轮**，不是免责声明）：
+#   1. 修好一处就删一行——留着不删，baselineHasNoStaleEntries() 会红；
+#   2. 新增一行必须知道自己在欠什么，别把新漂移混进来；
+#   3. 契约是只读输入：改契约（含给 schema 改名）要先找契约写入者，改完重跑 pnpm gen:api。
+#
+# **当前为空**：ADR-0047 那一轮的 24 处已由契约写入者一次清偿，基线随之清空——
+#   - ① 类名与 schema 名不一致 9 处：app.yaml 的裸名词改成 Java 那边的 `*View` 名
+#     （Pet→PetView / HealthScore→HealthScoreView / EpidemicRecord→EpidemicRecordView /
+#      ReminderSetting→ReminderSettingView / ArchiveSection→ArchiveSectionView /
+#      ArchiveRecord→ArchiveRecordView / TimelineEvent→TimelineEventView /
+#      HealthReport→HealthReportView / CareMode→CareModeView），$ref 与前端引用同步；
+#   - ② DTO 有、契约无 schema 13 处：admin.yaml 补上 AI 运营接口（切片 #103 的 AiOpsDtos）
+#     与 AI 调用统计的跨模块形状（AiConsultStatsApi.ConsultStats）；
+#   - ③ 未声明字段 2 处：app.yaml 的 AiConsultView 补 citations / unvetted_used（#98）。
+#
+# 新增条目之前先读上面第 2 条：**这个文件里只该出现仍然存在的差异**。
+#
+# ---------------------------------------------------------------------------
+# 2026-09-30 · 交易域契约先定稿（ADR-0047 的「按域先写后派」）
+#
+# 下面这一批**全部是** `SCHEMA_WITHOUT_DTO`：契约（app.yaml / provider.yaml）按 ADR 写完了，
+# 而 ph-api 里还没有对应的 DTO——实现由后续路线接手（交易域 #77 / #109、三道照片墙 #107、
+# 券的 C 端 #110、邀请与积分 #111 / #113、权益 #112 的 C 端出口）。
+#
+# **它们不是「已实现接口的漂移」**：同一次扫描里 MISSING_IN_DTO / UNDECLARED_IN_DTO /
+# SHAPE_MISMATCH / REQUIRED_NOT_ENFORCED / REQUIRED_NOT_DECLARED / SCHEMA_CLASS_NAME_MISMATCH /
+# DTO_WITHOUT_SCHEMA 七类**零命中**——已实现的那 110 多张 schema 与 DTO 一个字段都没动。
+# 「契约先行 → 实现跟上」这段时间里，这些条目就是那段欠账本身；
+# 实现落地后请**逐行删掉**（baselineHasNoStaleEntries() 会在漏删时红）。
+#
+# DTO 落地的类名请与这里的 schema 名逐字一致（conventions.md 的命名表）：
+#   ph-api 的 com.pethealth.api.order（新建包）/ com.pethealth.api.app（C 端的订单与增长视图）。
+# 契约是只读输入：发现形状不对时先报告，由契约写入者改契约、重跑 pnpm gen:api，再广播。
+# 负责人：交易域实现路线。
+# ---------------------------------------------------------------------------
+# 2026-09-30 · 接线切片（邀请归因 / 打卡发分 / 服务者身份适配器）
+#
+# `InviteAttributionRequest` / `InviteAttributionView` 两张 schema 的 DTO 已落地在
+# ph-api 的 com.pethealth.api.app（`POST /api/v1/app/invites/attribution` 的实现），
+# 按棘轮纪律把上面那两行删掉——它们不再是差异。
+# C 端的邀请码 / 邀请中心 / 积分中心 / 兑换视图仍未实现（下一波），继续留在基线里。
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 2026-09-30 · 交易域订单切片已落地（#77 / #107 / #109）
+#
+# **交易域的 15 行已删**（12 张 schema 的 DTO 落在 ph-api 的 `com.pethealth.api.order`，
+# 类名与 schema 名逐字一致）：AppointmentSlotView / OrderCreateRequest / OrderSummaryView /
+# OrderView / OrderCancelRequest / OrderPhotoWallView / OrderPhotoSlotView /
+# ProviderOrderSummaryView / ProviderOrderView / OrderPhotoSlotRequest / OrderReportRequest /
+# OrderCancelRejectRequest——其中 OrderCancelRequest / OrderPhotoWallView / OrderPhotoSlotView
+# 在 app.yaml 与 provider.yaml 各写一份，所以是 15 行。
+#
+# 2026-09-30 · C 端增长链路四个出口已落地（/coupons、/points、/points/exchange、/rights、
+# /invites/code）：DTO 在 ph-api 的 com.pethealth.api.app，读侧写在 ph-privilege 的
+# AppGrowthConsole + AppGrowthController（写侧 /points/exchange 归 ph-privilege，
+# 因为它要改积分与券实例——ADR-0006）。**基线到此为空**：ADR-0047 那一轮之后
+# 交易域与增长链路两批 schema 全部落地。
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 2026-09-30 · 社区切片（#84 / F020）契约与 DTO **同轮落地**：本轮登 0 行、删 0 行
+#
+# 9 张 schema 与 9 个 DTO（`com.pethealth.api.content`）逐字同名、字段逐项对上，
+# 所以它们**从来没有进过这份基线**——「先写契约、实现跟上」的那段欠账在这一轮不存在：
+#
+#   app.yaml：CommunityCardCreateRequest / CommunityCardView /
+#            CommunityQuestionCreateRequest / CommunityQuestionView /
+#            CommunityAnswerCreateRequest / CommunityAnswerView
+#   admin.yaml：ContentReviewItemView / SensitiveWordView / SensitiveWordRequest
+#
+# 负责人：社区实现（切片 #84）。这一批的差异归零，不需要后续清偿。
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 2026-09-30 · 考核（F022）契约与 DTO **同轮落地**：本轮登 13 行、删 13 行（净 0 行）
+#
+# 13 张 Assessment* schema 已由 `com.pethealth.api.provider.AssessmentDtos` 落地
+# （类名与 schema 名逐字一致）：
+#   provider.yaml：AssessmentSummaryView / AssessmentItemView / AssessmentOverrideView /
+#                  AssessmentView
+#   admin.yaml：上面四张（同一份 DTO，契约各写一遍）+ AssessmentLevelRuleView /
+#               AssessmentRuleView / AssessmentLevelRuleRequest / AssessmentRuleRequest /
+#               AssessmentOverrideRequest
+# 所以那 13 行 SCHEMA_WITHOUT_DTO 在同一个提交里删掉了——「契约先定稿 → 实现跟上」这段欠账
+# 在本轮结束时归零（只留下下面这一条字段级的、不归本轮的欠账）。
+# 负责人：考核实现（已清偿）。
+# ---------------------------------------------------------------------------
+# `ops_config_check` 是 **AI 服务侧已产出、Java 侧尚未接线** 的字段（ADR-0050 §三）：
+# `ai/app/models.py` 的 `ConsultResponse.ops_config_check`（ok / unavailable）随响应返回，
+# 而 Java 侧的落库（`ai_consult` 加列）与映射还没做。契约先声明，接线由 Java 侧的 AI 留痕切片完成。
+# 负责人：Java 侧 AI 留痕接线（不在考核切片内，见 ADR-0052 的「需要协调」）。
+# ---------------------------------------------------------------------------
+admin.yaml|ConsultAuditView|ops_config_check|MISSING_IN_DTO
