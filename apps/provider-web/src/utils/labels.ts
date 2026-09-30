@@ -18,15 +18,16 @@ import type { CouponContributionView, ProviderQualificationView } from "../api/p
 import { centsToAmount, parseAmountToCents, shiftDate, todayIso, type TagClass,
   couponSourceLabel as sharedCouponSourceLabel, couponStatusLabel as sharedCouponStatusLabel } from "@pet-health/shared";
 
-const PROVIDER_CATEGORIES: Record<number, string> = {
-  1: "直接同业",
-  2: "直接异业",
-  3: "间接异业",
-};
-
-/** 门店分类：1 直接同业 / 2 直接异业 / 3 间接异业。 */
-export function providerCategoryLabel(category?: number | null): string {
-  return (category != null && PROVIDER_CATEGORIES[category]) || "—";
+/**
+ * 门店联盟分类。
+ *
+ * **名称以服务端给的 `category_name` 为准**（取值域从 V43 起由运营维护：
+ * `provider_alliance_category` 表，运营可增改启停）。本地不再放一份 1/2/3 的标签表——
+ * 那会让「运营改了维度名」或「新增了一档」在这页上显示不出来（显示成旧文案或「—」）。
+ * 服务端返回 null 说明那个取值当前查不到维度，如实显示「—」。
+ */
+export function providerCategoryLabel(categoryName?: string | null): string {
+  return categoryName && categoryName.trim() !== "" ? categoryName : "—";
 }
 
 /** 资质到期提示：`已过期` / `30 天内到期` / `长期有效`。 */

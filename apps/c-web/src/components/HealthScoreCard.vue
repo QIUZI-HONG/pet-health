@@ -31,13 +31,21 @@ function ringColor(grade: string): string {
   if (grade === "良好") return "var(--ph-color-primary)";
   if (grade === "尚可") return "var(--ph-color-warning)";
   if (grade === "暂无数据") return "var(--ph-color-border)";
-  return "var(--ph-color-danger)";
+  // 「需关注」用暖橙而不是警示红：视觉稿 4.16.10 的清单写明「红色仅用于高风险提醒与异常状态」，
+  // 而分数低多半是记录不连续（ADR-0018），不是健康出问题——用红色会把它说成病
+  return "var(--ph-color-orange)";
 }
 
+/**
+ * 进度条填充色：**视觉稿 4.16.1 的开发者对照要点**——「五维进度条颜色随分数变
+ * （≥90 绿 / ≥80 黄 / 其他暖橙）」。阈值与颜色都不是随手取的：同一份清单里
+ * 「红色仅用于高风险提醒与异常状态」，所以低分是暖橙，不是红；而 90/80 是稿子给的档
+ * （原先实现写的是 85/70，与稿子不一致，2026-09-30 按稿子对齐）。
+ */
 function barColor(score: number): string {
-  if (score >= 85) return "var(--ph-color-primary)";
-  if (score >= 70) return "var(--ph-color-warning)";
-  return "var(--ph-color-danger)";
+  if (score >= 90) return "var(--ph-color-primary)";
+  if (score >= 80) return "var(--ph-color-warning)";
+  return "var(--ph-color-orange)";
 }
 
 function dimensionLabel(dimension: HealthScoreDimension): string {

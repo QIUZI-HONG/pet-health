@@ -19,7 +19,7 @@
 import { ref } from "vue";
 import { formatDateTime, toApiFailure } from "@pet-health/shared";
 import { ConsoleListState } from "@pet-health/ui";
-import { adminApp, type ProviderProfileView, type ProviderRow } from "../api/adminApi";
+import { adminApp, type AllianceCategoryView, type ProviderProfileView, type ProviderRow } from "../api/adminApi";
 import { useAdminSession } from "../session";
 import { usePagedList, useSubmitAction } from "@pet-health/ui";
 import { businessHoursText, providerStatusLabel, providerStatusTone, providerTypeLabel } from "@pet-health/shared";
@@ -30,6 +30,72 @@ const { isSuperAdmin } = useAdminSession();
 const statusFilter = ref("");
 const typeFilter = ref("");
 const keyword = ref("");
+
+/**
+ * 联盟分类维度（一期验收标准的「分类维度维护与归属」里的归属那一半）。
+ *
+ * 维度列表读失败**不挡住这一页**：它是选择项，不是本页的主数据——读不到时只把归属那一段
+ * 置灰并说明，列表与状态处置照旧可用。
+ */
+const allianceOptions = ref<AllianceCategoryView[]>([]);
+const allianceError = ref("");
+const allianceChoice = ref<string>("");
+const allianceSubmitting = ref(false);
+const allianceDone = ref("");
+
+async function loadAllianceOptions(): Promise<void> {
+  allianceError.value = "";
+  try {
+    allianceOptions.value = await adminApp.listAllianceCategories();
+  } catch (error) {
+    allianceError.value = toApiFailure(error, "联盟分类维度加载失败").message;
+  }
+}
+
+async function saveAlliance(providerId: number): Promise<void> {
+  const target = allianceOptions.value.find((option) => String(option.id) === allianceChoice.value);
+  if (!target) {
+    allianceError.value = "请先选一档联盟分类";
+    return;
+  }
+  allianceSubmitting.value = true;
+  allianceDone.value = "";
+  allianceError.value = "";
+  try {
+    detail.value = await adminApp.updateProviderAlliance(providerId, { category: target.id ?? 0 });
+    allianceDone.value = `联盟分类已改为「${target.name}」`;
+    reload();
+  } catch (error) {
+    allianceError.value = toApiFailure(error, "联盟分类变更失败，请稍后重试").message;
+  } finally {
+    allianceSubmitting.value = false;
+  }
+}
+
+/**
+ * 区域编码（V45）。**留空提交 = 清空**，这是刻意的：门店可能从一个片区摘下来，
+ * 而「清空」与「没设过」在库里是同一个值（NULL）——这一列只用于筛选，没有依赖非空性的规则。
+ */
+const regionChoice = ref("");
+const regionSubmitting = ref(false);
+const regionDone = ref("");
+const regionError = ref("");
+
+async function saveRegion(providerId: number): Promise<void> {
+  regionSubmitting.value = true;
+  regionDone.value = "";
+  regionError.value = "";
+  try {
+    const next = regionChoice.value.trim();
+    detail.value = await adminApp.updateProviderRegion(providerId, next === "" ? null : next);
+    regionDone.value = next === "" ? "区域编码已清空" : `区域编码已改为「${next}」`;
+    reload();
+  } catch (error) {
+    regionError.value = toApiFailure(error, "区域编码变更失败，请稍后重试").message;
+  } finally {
+    regionSubmitting.value = false;
+  }
+}
 
 const providers = usePagedList<ProviderRow>(
   ({ page, pageSize }, signal) =>
@@ -69,9 +135,17 @@ async function openDetail(row: ProviderRow): Promise<void> {
   detailRequestId.value = "";
   confirmingRetire.value = false;
   reason.value = "";
+  allianceChoice.value = "";
+  allianceDone.value = "";
+  allianceError.value = "";
+  regionChoice.value = "";
+  regionDone.value = "";
+  regionError.value = "";
   submit.clear();
   try {
     detail.value = await adminApp.getProvider(row.id);
+    allianceChoice.value = detail.value.category == null ? "" : String(detail.value.category);
+    regionChoice.value = detail.value.region_code ?? "";
   } catch (error) {
     const failure = toApiFailure(error, "服务者详情加载失败，请稍后重试");
     detailError.value = failure.message;
@@ -100,6 +174,8 @@ function canFreeze(status?: number): boolean {
 function canUnfreeze(status?: number): boolean {
   return status === 3;
 }
+
+void loadAllianceOptions();
 </script>
 
 <template>
@@ -151,6 +227,7 @@ function canUnfreeze(status?: number): boolean {
             <tr>
               <th>门店</th>
               <th>类型</th>
+              <th>联盟分类</th>
               <th>地址</th>
               <th>状态</th>
               <th>评分 / 考核分</th>
@@ -162,6 +239,7 @@ function canUnfreeze(status?: number): boolean {
             <tr v-for="row in providers.items.value" :key="row.id">
               <td>{{ row.name }}</td>
               <td>{{ providerTypeLabel(row.type) }}</td>
+              <td>{{ row.category_name ?? "—" }}</td>
               <td>{{ row.address }}</td>
               <td><span class="ph-tag" :class="providerStatusTone(row.status)">{{ providerStatusLabel(row.status) }}</span></td>
               <td class="ph-table__num">{{ row.rating ?? "—" }} / {{ row.monthly_score ?? "—" }}</td>
@@ -222,6 +300,8 @@ function canUnfreeze(status?: number): boolean {
       <dl class="ph-kv">
         <dt>类型</dt>
         <dd>{{ providerTypeLabel(detail.type) }}</dd>
+        <dt>联盟分类</dt>
+        <dd>{{ detail.category_name ?? "—（维度查不到，检查联盟分类维度那一分段）" }}</dd>
         <dt>地址</dt>
         <dd>{{ detail.address }}</dd>
         <dt>联系电话</dt>
@@ -233,6 +313,60 @@ function canUnfreeze(status?: number): boolean {
         <dt>通过时间</dt>
         <dd>{{ detail.approved_at ? formatDateTime(detail.approved_at) : "—" }}</dd>
       </dl>
+
+      <label class="ph-field ph-prov__remark">
+        <span class="ph-field__label">联盟分类归属（改的是服务者，会进审核流水）</span>
+        <select v-model="allianceChoice" class="ph-select" :disabled="allianceOptions.length === 0">
+          <option value="">未选择</option>
+          <option
+            v-for="option in allianceOptions"
+            :key="option.id"
+            :value="String(option.id)"
+            :disabled="option.enabled !== 1"
+          >
+            {{ option.name }}{{ option.enabled === 1 ? "" : "（已停用，不可新指派）" }}
+          </option>
+        </select>
+        <span class="ph-field__hint">
+          停用档不能作为新归属（既有归属不受影响）。维度自身在「联盟分类维度」分段维护。
+        </span>
+      </label>
+      <div class="ph-prov__actions">
+        <button
+          type="button"
+          class="ph-button ph-button--secondary"
+          :disabled="allianceSubmitting || !allianceChoice || detail.id === undefined"
+          @click="detail.id && saveAlliance(detail.id)"
+        >
+          {{ allianceSubmitting ? "提交中…" : "保存归属" }}
+        </button>
+        <button type="button" class="ph-button ph-button--secondary" :disabled="allianceSubmitting" @click="loadAllianceOptions">
+          重读维度
+        </button>
+      </div>
+      <p v-if="allianceError" class="ph-alert ph-alert--error">{{ allianceError }}</p>
+      <p v-if="allianceDone" class="ph-alert ph-alert--info">{{ allianceDone }}</p>
+
+      <label class="ph-field ph-prov__remark">
+        <span class="ph-field__label">区域编码（改的是服务者，会进审核流水）</span>
+        <input v-model="regionChoice" class="ph-input" maxlength="32" placeholder="如 SH-XH；留空表示清空" />
+        <span class="ph-field__hint">
+          大写字母 / 数字 / 连字符。它是运营侧的片区划分，C 端找店可按它筛选——
+          **排他性的「区域保护」仍未定**，这一格只负责把片区写对。
+        </span>
+      </label>
+      <div class="ph-prov__actions">
+        <button
+          type="button"
+          class="ph-button ph-button--secondary"
+          :disabled="regionSubmitting || detail.id === undefined"
+          @click="detail.id && saveRegion(detail.id)"
+        >
+          {{ regionSubmitting ? "提交中…" : "保存区域" }}
+        </button>
+      </div>
+      <p v-if="regionError" class="ph-alert ph-alert--error">{{ regionError }}</p>
+      <p v-if="regionDone" class="ph-alert ph-alert--info">{{ regionDone }}</p>
 
       <label class="ph-field ph-prov__remark">
         <span class="ph-field__label">处置原因（可选，会进审核流水）</span>

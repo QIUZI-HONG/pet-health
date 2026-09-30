@@ -233,6 +233,29 @@ describe("评分卡", () => {
     expect(wrapper.findAll(".ph-score__bar-fill")).toHaveLength(3);
   });
 
+  it("五维进度条按视觉稿的档位配色：≥90 绿 / ≥80 黄 / 其他**暖橙**（不是红）", () => {
+    // 口径来自视觉稿 4.16.1 的开发者对照要点，以及 4.16.10 清单里
+    // 「红色仅用于高风险提醒与异常状态」——低分多半是记录不连续（ADR-0018），用红会读成生病
+    const wrapper = mount(HealthScoreCard, {
+      props: {
+        score: makeScore({
+          dimensions: [
+            { key: "physiology", name: "生理", score: 95, included: true },
+            { key: "behavior", name: "行为", score: 82, included: true },
+            { key: "hygiene", name: "卫生", score: 41, included: true },
+          ],
+        }),
+      },
+    });
+
+    const fills = wrapper.findAll(".ph-score__bar-fill");
+    expect(fills).toHaveLength(3);
+    expect(fills[0].attributes("style")).toContain("var(--ph-color-primary)");
+    expect(fills[1].attributes("style")).toContain("var(--ph-color-warning)");
+    expect(fills[2].attributes("style")).toContain("var(--ph-color-orange)");
+    expect(fills[2].attributes("style")).not.toContain("danger");
+  });
+
   it("一条记录都没有时显示「还没有评分」，不是 0 分", () => {
     const wrapper = mount(HealthScoreCard, { props: { score: makeScore({ total_score: undefined, grade: "暂无数据" }) } });
 

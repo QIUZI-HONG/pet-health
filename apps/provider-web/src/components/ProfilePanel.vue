@@ -178,7 +178,7 @@ const statusLabel = computed(() => providerStatusLabel(props.profile?.status));
       <dt>门店状态</dt>
       <dd><span class="ph-tag" :class="providerStatusTone(props.profile.status)">{{ statusLabel }}</span></dd>
       <dt>门店类型</dt>
-      <dd>{{ providerTypeLabel(props.profile.type) }} · {{ providerCategoryLabel(props.profile.category) }}</dd>
+      <dd>{{ providerTypeLabel(props.profile.type) }} · {{ providerCategoryLabel(props.profile.category_name) }}</dd>
       <dt>当前营业时间</dt>
       <dd>{{ hoursText }}</dd>
       <dt>当前联系电话</dt>

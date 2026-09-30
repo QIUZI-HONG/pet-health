@@ -21,6 +21,7 @@ import { ApiError, formatDate, toApiFailure } from "@pet-health/shared";
 import { ConsoleListState } from "@pet-health/ui";
 import {
   providerApp,
+  uploadQualificationImage,
   type ProviderQualificationRequest,
   type ProviderQualificationView,
 } from "../api/providerApi";
@@ -50,13 +51,23 @@ interface MaterialRow {
   certNo: string;
   validFrom: string;
   validUntil: string;
+  /** 材料图的**文件 id**（库里存的就是它，ADR-0053）。没传图时为 null，提交会被拒。 */
+  fileId: number | null;
+  /** 预览地址：新传的是本地临时地址、回填的是后端签发的读地址；只用于显示。 */
+  previewUrl: string;
 }
 
 const rows = ref<MaterialRow[]>([emptyRow()]);
 const submit = useSubmitAction("材料提交失败，请稍后重试");
 
+/** 正在上传的是第几行（-1 = 没有在传）。一份材料一张图，所以只需要记一个下标。 */
+const uploadingIndex = ref(-1);
+const uploadError = ref("");
+const fileInput = ref<HTMLInputElement | null>(null);
+let pickingIndex = -1;
+
 function emptyRow(): MaterialRow {
-  return { type: "1", name: "", certNo: "", validFrom: "", validUntil: "" };
+  return { type: "1", name: "", certNo: "", validFrom: "", validUntil: "", fileId: null, previewUrl: "" };
 }
 
 async function load(): Promise<void> {
@@ -96,12 +107,17 @@ const noValid = computed(() => hasNoValidQualification(materials.value));
 /** 打开补交表单：把现有材料抄成待编辑的行（证件号留空，见文件头说明）。 */
 function openForm(): void {
   submit.clear();
+  uploadError.value = "";
   const copied = materials.value.map<MaterialRow>((item) => ({
     type: String(item.type ?? 1),
     name: item.name ?? "",
     certNo: "",
     validFrom: item.valid_from ?? "",
     validUntil: item.valid_until ?? "",
+    // 图片**要带回来**（与证件号不同）：证件号是脱敏值、回填没意义，而图片只是被引用，
+    // 把 id 原样送回去就能保住它——不然「整体替换」会把所有材料的图都清掉。
+    fileId: item.file_id ?? null,
+    previewUrl: item.file_url ?? "",
   }));
   rows.value = copied.length > 0 ? copied : [emptyRow()];
   formVisible.value = true;
@@ -116,11 +132,59 @@ function removeRow(index: number): void {
   rows.value.splice(index, 1);
 }
 
+/** 点「选择图片」：记住是哪一行，再把同一个隐藏 input 叫起来（一个 input 服务所有行）。 */
+function chooseImage(index: number): void {
+  uploadError.value = "";
+  pickingIndex = index;
+  fileInput.value?.click();
+}
+
+async function onPicked(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const picked = input.files?.[0] ?? null;
+  // 读完必须清空：不清的话，连续两次选**同一个文件**不会触发 change（照片墙踩过同一个坑）
+  input.value = "";
+  const index = pickingIndex;
+  pickingIndex = -1;
+  const row = rows.value[index];
+  if (!picked || !row) return;
+
+  uploadError.value = "";
+  uploadingIndex.value = index;
+  try {
+    row.fileId = await uploadQualificationImage(picked);
+    row.previewUrl = URL.createObjectURL(picked);
+  } catch (error) {
+    const failure = toApiFailure(error, "图片上传失败，请重试");
+    uploadError.value = failure.requestId
+      ? `${failure.message}（请求 ID：${failure.requestId}）`
+      : failure.message;
+  } finally {
+    uploadingIndex.value = -1;
+  }
+}
+
+/** 撤掉这一行的图：只清表单里的引用，已上传的文件留在文件域（本端没有删除接口）。 */
+function removeImage(index: number): void {
+  const row = rows.value[index];
+  if (!row) return;
+  row.fileId = null;
+  row.previewUrl = "";
+}
+
 const localError = computed(() => {
   const reversed = rows.value.find(
     (row) => row.validFrom !== "" && row.validUntil !== "" && row.validUntil < row.validFrom,
   );
   if (reversed) return "到期日不能早于生效日";
+  // 后端也会拒（40001），但在这里先拦能说清是**哪一份**缺图——服务者一次补交好几份时，
+  // 只回一句「请先上传材料图片」等于让他自己一份份找
+  const missing = rows.value.findIndex((row) => row.fileId === null);
+  if (missing >= 0) {
+    const row = rows.value[missing]!;
+    const label = row.name.trim() === "" ? `第 ${missing + 1} 份材料` : `「${row.name.trim()}」`;
+    return `${label}还没有上传材料图片`;
+  }
   return "";
 });
 
@@ -133,6 +197,7 @@ async function confirmSubmit(): Promise<void> {
     type: Number(row.type),
     name: row.name.trim() === "" ? undefined : row.name.trim(),
     cert_no: row.certNo.trim() === "" ? null : row.certNo.trim(),
+    file_id: row.fileId!,
     valid_from: row.validFrom === "" ? null : row.validFrom,
     valid_until: row.validUntil === "" ? null : row.validUntil,
   }));
@@ -185,6 +250,7 @@ async function confirmSubmit(): Promise<void> {
               <th>类型</th>
               <th>名称</th>
               <th>证件号</th>
+              <th>材料图片</th>
               <th>有效期</th>
               <th>状态</th>
               <th>有效期提示</th>
@@ -195,6 +261,12 @@ async function confirmSubmit(): Promise<void> {
               <td>{{ qualificationTypeLabel(item.type) }}</td>
               <td>{{ item.name ?? "—" }}</td>
               <td>{{ item.cert_no ?? "—" }}</td>
+              <td>
+                <a v-if="item.file_url" :href="item.file_url" target="_blank" rel="noreferrer">
+                  <img :src="item.file_url" class="ph-qual__thumb" alt="材料图片" />
+                </a>
+                <span v-else class="ph-text-weak">未上传</span>
+              </td>
               <td class="ph-table__num">
                 {{ item.valid_from ? formatDate(item.valid_from) : "—" }} ~
                 {{ item.valid_until ? formatDate(item.valid_until) : "长期有效" }}
@@ -218,28 +290,64 @@ async function confirmSubmit(): Promise<void> {
       <h4 class="ph-card__title">补交 / 更新资质材料</h4>
       <p class="ph-alert ph-alert--warn">
         提交的清单会<strong>整体替换</strong>现有全部材料，要保留的请一起填上。证件号读回来是脱敏值
-        （如 9133**********1234），无法回填，需要保留的要重新输入一次。
+        （如 9133**********1234），无法回填，需要保留的要重新输入一次；<strong>材料图片必传</strong>
+        （审核要看图），已有的图会带过来，不换就留着。
       </p>
 
+      <!--
+        一个隐藏 input 服务所有行（与照片墙同一手法）：点哪一行的「选择图片」先记下下标，
+        change 时按它回填。`change` 里必须把 input.value 清空，否则连续选同一个文件不会触发。
+      -->
+      <input
+        ref="fileInput"
+        class="ph-qual__file"
+        type="file"
+        accept="image/jpeg,image/png"
+        @change="onPicked"
+      />
+
       <div v-for="(row, index) in rows" :key="index" class="ph-qual__row">
-        <select v-model="row.type" class="ph-select" aria-label="材料类型">
-          <option value="1">营业执照</option>
-          <option value="2">执业许可证</option>
-          <option value="3">法人身份证</option>
-          <option value="4">训犬师认证</option>
-          <option value="5">健康证</option>
-          <option value="6">其他</option>
-        </select>
-        <input v-model="row.name" class="ph-input" maxlength="128" placeholder="材料名称" />
-        <input v-model="row.certNo" class="ph-input" maxlength="64" placeholder="证件号（重填）" />
-        <input v-model="row.validFrom" class="ph-input" type="date" aria-label="生效日" />
-        <input v-model="row.validUntil" class="ph-input" type="date" aria-label="到期日" />
-        <button type="button" class="ph-table__action" :disabled="rows.length <= 1" @click="removeRow(index)">
-          删除
-        </button>
+        <div class="ph-qual__fields">
+          <select v-model="row.type" class="ph-select" aria-label="材料类型">
+            <option value="1">营业执照</option>
+            <option value="2">执业许可证</option>
+            <option value="3">法人身份证</option>
+            <option value="4">训犬师认证</option>
+            <option value="5">健康证</option>
+            <option value="6">其他</option>
+          </select>
+          <input v-model="row.name" class="ph-input" maxlength="128" placeholder="材料名称" />
+          <input v-model="row.certNo" class="ph-input" maxlength="64" placeholder="证件号（重填）" />
+          <input v-model="row.validFrom" class="ph-input" type="date" aria-label="生效日" />
+          <input v-model="row.validUntil" class="ph-input" type="date" aria-label="到期日" />
+          <button type="button" class="ph-table__action" :disabled="rows.length <= 1" @click="removeRow(index)">
+            删除
+          </button>
+        </div>
+        <div class="ph-qual__image">
+          <img v-if="row.previewUrl" :src="row.previewUrl" class="ph-qual__thumb" alt="材料图片预览" />
+          <button
+            type="button"
+            class="ph-button ph-button--secondary"
+            :disabled="uploadingIndex === index"
+            @click="chooseImage(index)"
+          >
+            {{ uploadingIndex === index ? "上传中…" : row.fileId === null ? "选择图片" : "换一张" }}
+          </button>
+          <button
+            v-if="row.fileId !== null"
+            type="button"
+            class="ph-button ph-button--text"
+            @click="removeImage(index)"
+          >
+            移除图片
+          </button>
+          <span v-else class="ph-text-weak">必传：审核要看材料图</span>
+        </div>
       </div>
       <button type="button" class="ph-button ph-button--secondary" @click="addRow">再加一份材料</button>
 
+      <p v-if="uploadError" class="ph-alert ph-alert--error ph-qual__alert">{{ uploadError }}</p>
       <p v-if="localError" class="ph-alert ph-alert--error ph-qual__alert">{{ localError }}</p>
       <p v-if="submit.errorMessage.value" class="ph-alert ph-alert--error ph-qual__alert">
         {{ submit.errorMessage.value }}
@@ -263,10 +371,35 @@ async function confirmSubmit(): Promise<void> {
 }
 
 .ph-qual__row {
+  margin-bottom: var(--ph-space-4);
+}
+
+.ph-qual__fields {
   display: grid;
   grid-template-columns: 140px minmax(0, 1fr) minmax(0, 1fr) 150px 150px max-content;
   gap: var(--ph-space-2);
-  margin-bottom: var(--ph-space-2);
+}
+
+/* 隐藏 input：一个控件服务所有行，点「选择图片」时由代码叫起来（与照片墙同一手法） */
+.ph-qual__file {
+  display: none;
+}
+
+.ph-qual__image {
+  display: flex;
+  align-items: center;
+  gap: var(--ph-space-3);
+  margin-top: var(--ph-space-2);
+}
+
+/* 缩略图尺寸与照片墙保持一致（96×96 裁切），两处的「一张图」在界面上就是同一个东西 */
+.ph-qual__thumb {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: var(--ph-radius-input);
+  border: 1px solid var(--ph-color-border);
+  background: var(--ph-color-surface);
 }
 
 .ph-qual__alert {

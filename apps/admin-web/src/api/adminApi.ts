@@ -19,6 +19,9 @@ import { adminHttp } from "./client";
 
 export type ProviderProfileView = Schemas["ProviderProfileView"];
 export type ProviderStatusRequest = Schemas["ProviderStatusRequest"];
+export type ProviderAllianceRequest = Schemas["ProviderAllianceRequest"];
+export type AllianceCategoryView = Schemas["AllianceCategoryView"];
+export type AllianceCategoryRequest = Schemas["AllianceCategoryRequest"];
 export type BusinessHour = Schemas["BusinessHour"];
 export type OnboardingApplicationSummary = Schemas["OnboardingApplicationSummary"];
 export type OnboardingApplicationView = Schemas["OnboardingApplicationView"];
@@ -106,7 +109,10 @@ export type Paged<T> = Omit<Schemas["PageResult"], "list"> & { list: T[] };
 export type Row<T, K extends keyof T> = T & Required<Pick<T, K>>;
 
 export type ApplicationRow = Row<OnboardingApplicationSummary, "id" | "status" | "submitted_at">;
-export type ProviderRow = Row<ProviderProfileView, "id" | "name" | "status" | "address" | "updated_at">;
+export type ProviderRow = Row<
+  ProviderProfileView,
+  "id" | "name" | "status" | "address" | "category" | "category_name" | "updated_at"
+>;
 export type CategoryRow = Row<ServiceCategoryView, "id" | "code" | "item_code_prefix" | "name" | "status" | "updated_at">;
 export type ItemRow = Row<ServiceItemView, "id" | "code" | "name" | "price_min" | "price_max" | "status" | "updated_at">;
 export type ProposalRow = Row<CatalogItemProposalSummary, "id" | "status" | "submitted_at">;
@@ -247,6 +253,37 @@ export const adminApp = {
   /** 冻结（3）= 清退落点 / 解冻（1）。被驳回（2）的服务者不能从这里恢复为正常。 */
   updateProviderStatus(providerId: number, body: ProviderStatusRequest): Promise<ProviderProfileView> {
     return adminHttp.put<ProviderProfileView>(`${BASE}/providers/${providerId}/status`, body);
+  },
+  /** 指定联盟分类归属。目标维度必须是启用中的（停用档 40001）。 */
+  updateProviderAlliance(providerId: number, body: ProviderAllianceRequest): Promise<ProviderProfileView> {
+    return adminHttp.put<ProviderProfileView>(`${BASE}/providers/${providerId}/alliance`, body);
+  },
+  /**
+   * 指定区域编码（V45）。传 null / 空串表示**清空**——门店可能从一个片区摘下来。
+   *
+   * 「区域保护」目前只到这一格：**可维护、可筛选**，排他性规则仍未定（见契约说明）。
+   */
+  updateProviderRegion(providerId: number, regionCode: string | null): Promise<ProviderProfileView> {
+    return adminHttp.put<ProviderProfileView>(`${BASE}/providers/${providerId}/region`, {
+      region_code: regionCode,
+    });
+  },
+
+  // ---- 联盟分类维度（`provider.category` 的值域，运营可维护）----
+  // 不分页：维度的量级是「十几档」，分页在这里只会多一次点击
+  listAllianceCategories(signal?: AbortSignal): Promise<AllianceCategoryView[]> {
+    return adminHttp.get<AllianceCategoryView[]>(`${BASE}/alliance-categories`, undefined, { signal });
+  },
+  createAllianceCategory(body: AllianceCategoryRequest): Promise<AllianceCategoryView> {
+    return adminHttp.post<AllianceCategoryView>(`${BASE}/alliance-categories`, body);
+  },
+  /** 改名称 / 说明 / 顺序。**编码不可改**（契约里写明修改路径会忽略 code）。 */
+  updateAllianceCategory(categoryId: number, body: AllianceCategoryRequest): Promise<AllianceCategoryView> {
+    return adminHttp.put<AllianceCategoryView>(`${BASE}/alliance-categories/${categoryId}`, body);
+  },
+  /** 启用 / 停用。停用**不移动既有归属**，只挡住新的指派。 */
+  updateAllianceCategoryStatus(categoryId: number, enabled: 0 | 1): Promise<AllianceCategoryView> {
+    return adminHttp.put<AllianceCategoryView>(`${BASE}/alliance-categories/${categoryId}/status`, { enabled });
   },
 
   // ---- 服务上架审核 ----

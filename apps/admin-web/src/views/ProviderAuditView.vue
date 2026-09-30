@@ -7,6 +7,10 @@
  * 入驻与资质审核（服务者发起 → 运营审批）、服务者状态处置（清退 = 冻结，**只对超级管理员**）、
  * 服务上架审核（服务者定价 → 运营再审一眼）。
  *
+ * 第四段「联盟分类维度」是一期验收标准新加的那一块：它是 `provider.category` 的值域
+ * （改造前那是一个只在提交入驻申请时写一次、两端都改不了的列）。它挂在这一页，
+ * 因为「哪家店属于哪一档」要在「服务者列表与状态」的详情里改，两者是同一件事的两半。
+ *
  * 清退入口的可见性：ADR-0037 把它划给超级管理员，而令牌里只有登录域、没有角色
  * （ADR-0035「需要协调」），前端没有可信来源判断谁是超管——所以**不渲染**该入口，
  * 由 `ProviderListPanel` 写明原因（见那里的文件头说明）。
@@ -14,13 +18,14 @@
 import { ref } from "vue";
 import { ConsoleGate } from "@pet-health/ui";
 import { useAdminSession } from "../session";
+import AllianceCategoryPanel from "../components/AllianceCategoryPanel.vue";
 import ApplicationReviewPanel from "../components/ApplicationReviewPanel.vue";
 import ProviderListPanel from "../components/ProviderListPanel.vue";
 import ServiceReviewPanel from "../components/ServiceReviewPanel.vue";
 
 const { status } = useAdminSession();
 
-type Tab = "applications" | "providers" | "listings";
+type Tab = "applications" | "providers" | "listings" | "alliance";
 const tab = ref<Tab>("applications");
 </script>
 
@@ -61,10 +66,19 @@ const tab = ref<Tab>("applications");
         >
           服务上架审核
         </button>
+        <button
+          type="button"
+          class="ph-tabs__item"
+          :class="{ 'ph-tabs__item--active': tab === 'alliance' }"
+          @click="tab = 'alliance'"
+        >
+          联盟分类维度
+        </button>
       </nav>
 
       <ApplicationReviewPanel v-if="tab === 'applications'" />
       <ProviderListPanel v-else-if="tab === 'providers'" />
+      <AllianceCategoryPanel v-else-if="tab === 'alliance'" />
       <ServiceReviewPanel v-else />
     </ConsoleGate>
   </section>

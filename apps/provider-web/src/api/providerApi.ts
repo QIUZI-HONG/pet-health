@@ -42,6 +42,12 @@ export type OrderPhotoSlotView = Schemas["OrderPhotoSlotView"];
 export type OrderReportRequest = Schemas["OrderReportRequest"];
 export type FilePresignRequest = Schemas["FilePresignRequest"];
 export type FilePresignView = Schemas["FilePresignView"];
+
+/**
+ * 服务者侧允许的图片用途。取值直接取自契约（不手写字面量），
+ * 所以契约里加了新用途、这里会跟着变——反之契约删了某个用途，这里也会立刻编译不过。
+ */
+export type ProviderImageBizType = FilePresignRequest["biz_type"];
 export type FileView = Schemas["FileView"];
 export type ProviderOrderCancelRequest = Schemas["ProviderOrderCancelRequest"];
 export type OrderCancelRejectRequest = Schemas["OrderCancelRejectRequest"];
@@ -53,6 +59,7 @@ export type CouponView = Schemas["CouponView"];
 export type AssessmentSummaryView = Schemas["AssessmentSummaryView"];
 export type AssessmentView = Schemas["AssessmentView"];
 export type AssessmentItemView = Schemas["AssessmentItemView"];
+export type ProviderInviteCodeView = Schemas["ProviderInviteCodeView"];
 export type AssessmentOverrideView = Schemas["AssessmentOverrideView"];
 
 /**
@@ -249,13 +256,13 @@ export const providerApp = {
     return providerHttp.post<OrderView>(`${BASE}/orders/${orderId}/report`, body, { idempotencyKey: newIdempotencyKey() });
   },
 
-  // ---- 文件（切片 #107 的服务留痕照片；协议见 ADR-0020）----
+  // ---- 文件（服务留痕照片 + 资质材料图；协议见 ADR-0020 / ADR-0053）----
   //
   // 这一份是**服务者侧**的 presign：`/api/v1/app/files/**` 只认 C 端令牌（JwtAuthenticationFilter
   // 按路径前缀判登录域，ADR-0012），门店的令牌打过去等于没登录。契约里本端的 `biz_type`
-  // **只收 care**（服务留痕），别的一律 40001——所以类型上也只有一个取值可用。
-  /** 申请服务留痕照片的上传凭证（一次最多 9 张）。字节直传到返回的 `upload_url`，不经业务接口。 */
-  presignCarePhotos(body: FilePresignRequest): Promise<FilePresignView[]> {
+  // 收 `care`（服务留痕）与 `qualification`（资质材料），别的一律 40001——所以这里也收窄成这两取值。
+  /** 申请图片上传凭证（一次最多 9 张）。字节直传到返回的 `upload_url`，不经业务接口。 */
+  presignImages(body: FilePresignRequest): Promise<FilePresignView[]> {
     return providerHttp.post<FilePresignView[]>(`${BASE}/files/presign`, body);
   },
 
@@ -336,28 +343,42 @@ export const providerApp = {
   getAssessment(period: string, signal?: AbortSignal): Promise<AssessmentView> {
     return providerHttp.get<AssessmentView>(`${BASE}/assessments/${period}`, undefined, { signal });
   },
+
+  // ---- 门店推广码（营销中心的物料，也是考核拉新项的取数来源）----
+  /**
+   * 我的推广码与拉新战况。**还没生成过时 `code` 为 null**（不是错误）——
+   * 界面据此显示「生成推广码」按钮，见 MarketingView。
+   */
+  getInviteCode(signal?: AbortSignal): Promise<ProviderInviteCodeView> {
+    return providerHttp.get<ProviderInviteCodeView>(`${BASE}/invite-code`, undefined, { signal });
+  },
+  /** 生成推广码（幂等：重复调用返回同一个码，不会换码）。 */
+  ensureInviteCode(): Promise<ProviderInviteCodeView> {
+    return providerHttp.post<ProviderInviteCodeView>(`${BASE}/invite-code`, {});
+  },
 };
 
 /**
  * 「相机拍到电脑 → 一次选多张 → 直传」的一条龙（ADR-0020 的形态，与 C 端 `uploadFiles` 同构）。
  *
  * <p>与 C 端那份的区别只有一处：**回传的是 `file_id` 而不是文件列表**——服务者侧没有
- * 「我的文件」列表接口（契约里只开了 presign），而照片墙要的就是 id：挂到槽位上之后，
- * 签名读地址由订单详情的 `photo_wall.slots[].photos[].thumb_url` 给出来。
+ * 「我的文件」列表接口（契约里只开了 presign），而业务要的就是 id：挂到槽位上之后，
+ * 签名读地址由业务侧（订单详情的 `photo_wall`、资质材料的 `file_url`）给出来。
  *
  * <p>一次申请凭证、逐个直传，返回的顺序与选中的文件一致。上传没有「部分成功」这种交付：
- * 任何一个字节传失败，调用方（照片墙面板）就把这一批整体当作没上传——槽位里不会挂上半个集合。
- * **代价**：已经落定的那几个文件会留在文件域（本端没有删除接口，见面板的说明），
- * 重选一次即可把它们换掉，但它们不会被回收。
+ * 任何一个字节传失败，调用方就把这一批整体当作没上传。
+ * **代价**：已经落定的那几个文件会留在文件域（本端没有删除接口），重选即可换掉，但它们不会被回收。
  */
-export async function uploadCarePhotos(
-  petId: number,
+export async function uploadProviderImages(
+  bizType: ProviderImageBizType,
   files: File[],
-  onProgress?: (done: number, total: number) => void,
+  options: { petId?: number; onProgress?: (done: number, total: number) => void } = {},
 ): Promise<number[]> {
-  const presigned = await providerApp.presignCarePhotos({
-    biz_type: "care",
-    pet_id: petId,
+  const presigned = await providerApp.presignImages({
+    biz_type: bizType,
+    // `pet_id` **只有 care 要传**：照片墙要求「照片是这只宠物的」，而文件域自己判不了这件事
+    // （宠物不是它的表）。资质材料不关联宠物，传了反而会给图挂上一个无关的宠物。
+    ...(options.petId === undefined ? {} : { pet_id: options.petId }),
     items: files.map((file) => ({
       mime: file.type === "image/png" ? "image/png" : "image/jpeg",
       size_bytes: file.size,
@@ -371,7 +392,32 @@ export async function uploadCarePhotos(
     if (!target) break;
     await providerHttp.putRaw(target.upload_url, file);
     fileIds.push(target.file_id);
-    onProgress?.(fileIds.length, files.length);
+    options.onProgress?.(fileIds.length, files.length);
   }
   return fileIds;
+}
+
+/** 订单服务留痕照片（三道照片墙）：`biz_type=care`，要带宠物 id。 */
+export function uploadCarePhotos(
+  petId: number,
+  files: File[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<number[]> {
+  return uploadProviderImages("care", files, { petId, onProgress });
+}
+
+/**
+ * 资质材料图：`biz_type=qualification`，不关联宠物（ADR-0053）。
+ *
+ * <p>一份材料一张图就够。做成单张而不是「一次多张」：多图会让「哪张属于这份材料」变成
+ * 一个新问题，而审核要看的恰恰是「一份材料、一张能看清的证」。
+ */
+export async function uploadQualificationImage(file: File): Promise<number> {
+  const fileIds = await uploadProviderImages("qualification", [file]);
+  const fileId = fileIds[0];
+  if (fileId === undefined) {
+    // 契约保证 items 与返回一一对应；真走到这里说明响应形状变了，宁可报错也别拿 undefined 当 id
+    throw new Error("上传未返回文件 id");
+  }
+  return fileId;
 }

@@ -19,6 +19,7 @@ import { formatDate, formatDateTime, toApiFailure } from "@pet-health/shared";
 import { ConsoleListState, ConsoleState } from "@pet-health/ui";
 import {
   providerApp,
+  uploadQualificationImage,
   type OnboardingApplicationRequest,
   type OnboardingApplicationView,
   type OnboardingRow,
@@ -58,17 +59,48 @@ const formVisible = ref(false);
 const editingId = ref<number | null>(null);
 const submit = useSubmitAction("提交失败，请稍后重试");
 
+/** 表单里的一行材料。`type` 留字符串，提交时转数字（select 的值是字符串）。 */
+interface QualificationFormRow {
+  type: string;
+  name: string;
+  certNo: string;
+  validFrom: string;
+  validUntil: string;
+  /** 材料图的**文件 id**（ADR-0053）；没传图时 null，提交会被后端拒。 */
+  fileId: number | null;
+  /** 预览地址：新传的是本地临时地址、回填的是后端签发的读地址；只用于显示。 */
+  previewUrl: string;
+}
+
+function emptyQualification(): QualificationFormRow {
+  return { type: "1", name: "", certNo: "", validFrom: "", validUntil: "", fileId: null, previewUrl: "" };
+}
+
 const form = reactive({
   name: "",
   type: "1",
-  category: "1",
   address: "",
   contactPhone: "",
   applicantName: "",
   intro: "",
-  /** 表单里的材料行；`type` 留字符串，提交时转数字（select 的值是字符串） */
-  qualifications: [{ type: "1", name: "", certNo: "", validFrom: "", validUntil: "" }],
+  qualifications: [emptyQualification()],
 });
+
+/**
+ * 联盟分类只读展示（一期验收标准的「分类维度维护与归属」）。
+ *
+ * 服务者**不能自选**联盟分类：它是平台侧的分类（交付文档 2.2 把它划在平台侧），
+ * 由运营在服务者审核里归类（`PUT /providers/{provider_id}/alliance`）。所以这里不再是一个
+ * 写死的三选下拉（那张表的取值域从 V43 起由运营维护，写死会让「运营新增一档」在这页看不见）。
+ * 首次提交时还没有分类，显示「由平台审核时归类」。
+ */
+const categoryText = ref("由平台审核时归类");
+
+/** 正在上传的是第几行（-1 = 没有在传）；一份材料一张图，所以只需记一个下标。 */
+const uploadingIndex = ref(-1);
+const uploadError = ref("");
+const qualificationFileInput = ref<HTMLInputElement | null>(null);
+let pickingIndex = -1;
 
 /** 「现在能做什么」由列表整体决定：有待审核的不能提交，有被驳回的只能改那一份。 */
 const pendingExists = computed(() => applications.items.value.some((item) => item.status === 0));
@@ -110,12 +142,11 @@ function openForm(source: OnboardingRow | null): void {
   editingId.value = source ? source.id : null;
   form.name = source?.provider_name ?? "";
   form.type = String(source?.provider_type ?? 1);
-  form.category = "1";
   form.address = "";
   form.contactPhone = "";
   form.applicantName = source?.applicant_name ?? "";
   form.intro = "";
-  form.qualifications = [{ type: "1", name: "", certNo: "", validFrom: "", validUntil: "" }];
+  form.qualifications = [emptyQualification()];
   formVisible.value = true;
   // 重提要带上门店全貌与材料：那两段只有详情接口给，先取回来再填
   if (source) {
@@ -135,7 +166,7 @@ function fillFromDetail(view: OnboardingApplicationView): void {
   const provider = view.provider;
   form.name = provider?.name ?? form.name;
   form.type = String(provider?.type ?? form.type);
-  form.category = String(provider?.category ?? 1);
+  categoryText.value = provider?.category_name ?? "由平台审核时归类";
   form.address = provider?.address ?? "";
   form.applicantName = view.applicant_name ?? form.applicantName;
   form.intro = provider?.intro ?? "";
@@ -146,14 +177,58 @@ function fillFromDetail(view: OnboardingApplicationView): void {
     // 证件号读回来的是脱敏值（ADR-0013），不能当明文回填，留空让服务者重新填
     validFrom: item.valid_from ?? "",
     validUntil: item.valid_until ?? "",
+    // 图片**要带回来**（与证件号不同）：证件号是脱敏值、回填没意义，而图片只是被引用，
+    // 把 id 原样送回去就能保住它——不然重提会把材料的图全清掉
+    fileId: item.file_id ?? null,
+    previewUrl: item.file_url ?? "",
   }));
   if (form.qualifications.length === 0) {
-    form.qualifications = [{ type: "1", name: "", certNo: "", validFrom: "", validUntil: "" }];
+    form.qualifications = [emptyQualification()];
   }
 }
 
 function addQualification(): void {
-  form.qualifications.push({ type: "1", name: "", certNo: "", validFrom: "", validUntil: "" });
+  form.qualifications.push(emptyQualification());
+}
+
+/** 点「选择图片」：记住是哪一行，再把同一个隐藏 input 叫起来（一个 input 服务所有行）。 */
+function chooseQualificationImage(index: number): void {
+  uploadError.value = "";
+  pickingIndex = index;
+  qualificationFileInput.value?.click();
+}
+
+async function onQualificationPicked(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const picked = input.files?.[0] ?? null;
+  // 读完必须清空：不清的话，连续两次选**同一个文件**不会触发 change（照片墙踩过同一个坑）
+  input.value = "";
+  const index = pickingIndex;
+  pickingIndex = -1;
+  const row = form.qualifications[index];
+  if (!picked || !row) return;
+
+  uploadError.value = "";
+  uploadingIndex.value = index;
+  try {
+    row.fileId = await uploadQualificationImage(picked);
+    row.previewUrl = URL.createObjectURL(picked);
+  } catch (error) {
+    const failure = toApiFailure(error, "图片上传失败，请重试");
+    uploadError.value = failure.requestId
+      ? `${failure.message}（请求 ID：${failure.requestId}）`
+      : failure.message;
+  } finally {
+    uploadingIndex.value = -1;
+  }
+}
+
+/** 撤掉这一行的图：只清表单里的引用，已上传的文件留在文件域（本端没有删除接口）。 */
+function removeQualificationImage(index: number): void {
+  const row = form.qualifications[index];
+  if (!row) return;
+  row.fileId = null;
+  row.previewUrl = "";
 }
 
 /** 至少留一份材料（契约要求至少一份）：按钮在那时已禁用，这里再兜一道。 */
@@ -175,6 +250,14 @@ const localError = computed(() => {
     (item) => item.validFrom !== "" && item.validUntil !== "" && item.validUntil < item.validFrom,
   );
   if (reversed) return "材料的到期日不能早于生效日";
+  // 图必传（ADR-0053）。先在这里拦能说清是**哪一份**缺图——只回一句后端那句通用文案，
+  // 一次填好几份材料的人得自己一份份找
+  const missingImage = form.qualifications.findIndex((item) => item.fileId === null);
+  if (missingImage >= 0) {
+    const row = form.qualifications[missingImage]!;
+    const label = row.name.trim() === "" ? `第 ${missingImage + 1} 份材料` : `「${row.name.trim()}」`;
+    return `${label}还没有上传材料图片`;
+  }
   return "";
 });
 
@@ -187,7 +270,7 @@ async function confirmSubmit(): Promise<void> {
   const body: OnboardingApplicationRequest = {
     name: form.name.trim(),
     type: Number(form.type),
-    category: Number(form.category),
+    // 不带 category：联盟分类由平台归类（服务端在不传时归到顺序最小的启用维度）
     intro: form.intro.trim() === "" ? null : form.intro.trim(),
     address: form.address.trim(),
     contact_phone: form.contactPhone.trim(),
@@ -196,6 +279,7 @@ async function confirmSubmit(): Promise<void> {
       type: Number(item.type),
       name: item.name.trim() === "" ? undefined : item.name.trim(),
       cert_no: item.certNo.trim() === "" ? null : item.certNo.trim(),
+      file_id: item.fileId!,
       valid_from: item.validFrom === "" ? null : item.validFrom,
       valid_until: item.validUntil === "" ? null : item.validUntil,
     })),
@@ -418,12 +502,11 @@ onMounted(reload);
           </select>
         </label>
         <label class="ph-field">
-          <span class="ph-field__label">经营类别</span>
-          <select v-model="form.category" class="ph-select">
-            <option value="1">直接同业</option>
-            <option value="2">直接异业</option>
-            <option value="3">间接异业</option>
-          </select>
+          <span class="ph-field__label">联盟分类</span>
+          <input class="ph-input" :value="categoryText" disabled />
+          <span class="ph-field__hint">
+            联盟分类由平台在审核时归类，服务者不能自选；审核通过后可在「门店信息」里看到结果。
+          </span>
         </label>
         <label class="ph-field">
           <span class="ph-field__label">联系人</span>
@@ -444,10 +527,22 @@ onMounted(reload);
         </label>
       </div>
 
-      <h5 class="ph-onboarding__sub">资质材料（至少一份）</h5>
+      <h5 class="ph-onboarding__sub">资质材料（至少一份，每份都要传图）</h5>
       <p class="ph-field__hint">
-        材料图片上传还没接到本域，这一波先登记材料信息与有效期；证件号会加密保存、展示时脱敏。
+        证件号会加密保存、展示时脱敏；<strong>材料图片必传</strong>——审核要按图看材料。
+        先在电脑上把证件拍好，再在这里选图上传。
       </p>
+      <!--
+        一个隐藏 input 服务所有行（与照片墙同一手法）：点哪一行的「选择图片」先记下下标，
+        change 时按它回填。`change` 里必须把 input.value 清空，否则连续选同一个文件不会触发。
+      -->
+      <input
+        ref="qualificationFileInput"
+        class="ph-onboarding__file"
+        type="file"
+        accept="image/jpeg,image/png"
+        @change="onQualificationPicked"
+      />
       <div v-for="(item, index) in form.qualifications" :key="index" class="ph-onboarding__material">
         <select v-model="item.type" class="ph-select ph-onboarding__material-type" aria-label="材料类型">
           <option value="1">营业执照</option>
@@ -469,9 +564,30 @@ onMounted(reload);
         >
           删除
         </button>
+        <div class="ph-onboarding__material-image">
+          <img v-if="item.previewUrl" :src="item.previewUrl" class="ph-onboarding__thumb" alt="材料图片预览" />
+          <button
+            type="button"
+            class="ph-button ph-button--secondary"
+            :disabled="uploadingIndex === index"
+            @click="chooseQualificationImage(index)"
+          >
+            {{ uploadingIndex === index ? "上传中…" : item.fileId === null ? "选择图片" : "换一张" }}
+          </button>
+          <button
+            v-if="item.fileId !== null"
+            type="button"
+            class="ph-button ph-button--text"
+            @click="removeQualificationImage(index)"
+          >
+            移除图片
+          </button>
+          <span v-else class="ph-text-weak">必传：审核要看材料图</span>
+        </div>
       </div>
       <button type="button" class="ph-button ph-button--secondary" @click="addQualification">再加一份材料</button>
 
+      <p v-if="uploadError" class="ph-alert ph-alert--error ph-onboarding__alert">{{ uploadError }}</p>
       <p v-if="localError" class="ph-alert ph-alert--error ph-onboarding__alert">{{ localError }}</p>
       <p v-if="submit.errorMessage.value" class="ph-alert ph-alert--error ph-onboarding__alert">
         {{ submit.errorMessage.value }}
@@ -533,7 +649,30 @@ onMounted(reload);
   display: grid;
   grid-template-columns: 140px minmax(0, 1fr) minmax(0, 1fr) 150px 150px max-content;
   gap: var(--ph-space-2);
-  margin-bottom: var(--ph-space-2);
+  margin-bottom: var(--ph-space-4);
+}
+
+/* 隐藏 input：一个控件服务所有行，点「选择图片」时由代码叫起来（与照片墙同一手法） */
+.ph-onboarding__file {
+  display: none;
+}
+
+/* 图片那一行横跨整格宽度，落在这份材料的字段下面 */
+.ph-onboarding__material-image {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--ph-space-3);
+}
+
+/* 缩略图尺寸与照片墙保持一致（96×96 裁切），两处的「一张图」在界面上就是同一个东西 */
+.ph-onboarding__thumb {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: var(--ph-radius-input);
+  border: 1px solid var(--ph-color-border);
+  background: var(--ph-color-surface);
 }
 
 .ph-onboarding__alert {
