@@ -14,33 +14,105 @@ import { computed, ref } from "vue";
 import {
   formatDate,
   speciesLabel,
+  uploadFiles,
   cApp,
   toUserMessage,
   createLatestGuard,
-  type AiConsultView,
-} from "@pet-health/shared";
+  type AiConsultView, riskTone, type RiskTone } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import SessionGate from "../components/SessionGate.vue";
 
 const session = useSessionStore();
+/** 已上传的图片 file_id（最多 4 张，与契约的上限一致）；随咨询一起发给 AI。 */
+const fileIds = ref<number[]>([]);
+const uploading = ref(false);
+const uploadError = ref("");
 const draft = ref("");
 const sending = ref(false);
 const errorMessage = ref("");
 const result = ref<AiConsultView | null>(null);
 
 /** 风险等级的中性文案：绿/黄/红只说就医紧迫程度，不说病名（CONTEXT.md 的 RiskLevel）。 */
-const RISK_LABEL: Record<number, string> = {
-  1: "🟢 可以居家观察",
-  2: "🟡 建议尽快就医",
-  3: "🔴 建议立即就医",
+const RISK_LABEL: Record<RiskTone, string> = {
+  green: "🟢 可以居家观察",
+  yellow: "🟡 建议尽快就医",
+  red: "🔴 建议立即就医",
 };
 
-const riskLabel = computed(() => (result.value ? RISK_LABEL[result.value.risk_level] ?? "" : ""));
+const riskLabel = computed(() => (result.value ? RISK_LABEL[riskTone(result.value.risk_level)] : ""));
+
+/** 契约里 `file_ids` 最多 4 张（`maxItems: 4`）。 */
+const MAX_IMAGES = 4;
 
 /** 契约里 `question` 是 2–500 字：一个字的描述信息量不够，后端也会按 40001 拒。 */
 const MIN_QUESTION_LENGTH = 2;
 const canSend = computed(() => draft.value.trim().length >= MIN_QUESTION_LENGTH && !sending.value);
+
+/** 转人工的提交结果（幂等：重复提交返回同一条工单，所以这里只说「已受理」）。 */
+const transferring = ref(false);
+const transferError = ref("");
+const transferMessage = ref("");
+
+/**
+ * 选图 → 直传（先经 /files 拿凭证再直传，切片 #95 的路径）→ 记下 file_id。
+ *
+ * 上限 4 张与契约一致：多了后端会按 40001 拒，不如在这里就说清楚。
+ * 上传失败不拦咨询：图片是增强（皮肤问题只看照片只有三成把握），文字描述才是必填的那一项。
+ */
+async function pickImages(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = "";
+  if (files.length === 0) return;
+  const petId = session.activePet?.id;
+  if (!petId) {
+    uploadError.value = "先添加一只宠物再上传照片。";
+    return;
+  }
+  const room = MAX_IMAGES - fileIds.value.length;
+  if (files.length > room) {
+    uploadError.value = `最多 ${MAX_IMAGES} 张，还能再加 ${room} 张。`;
+    return;
+  }
+  uploading.value = true;
+  uploadError.value = "";
+  try {
+    const uploaded = await uploadFiles({ petId, bizType: "ai_consult", files });
+    fileIds.value = [...fileIds.value, ...uploaded.map((file) => file.id).filter((id): id is number => id != null)];
+  } catch (error) {
+    uploadError.value = toUserMessage(error, "图片上传失败，可以先只发文字描述。");
+  } finally {
+    uploading.value = false;
+  }
+}
+
+function removeImage(fileId: number): void {
+  fileIds.value = fileIds.value.filter((id) => id !== fileId);
+}
+
+/**
+ * 转人工：把这次咨询交给平台人工跟进。
+ *
+ * 幂等由服务端保证（一次咨询只能转一次），所以这里不做「防重复提交」的额外判断——
+ * 连点两下拿到的是同一条工单，界面如实说「已受理」即可。
+ * 口径上它**不收费**：本项目钱在门店付、平台不经手资金（ADR-0036），所以按钮上不写价格。
+ */
+async function transfer(): Promise<void> {
+  const petId = session.activePet?.id;
+  const consultId = result.value?.id;
+  if (!petId || !consultId || transferring.value) return;
+  transferring.value = true;
+  transferError.value = "";
+  try {
+    await cApp.transferToHuman(petId, consultId);
+    transferMessage.value = "已受理：人工会查看这次咨询，回复会出现在消息中心（预计 2 小时内）。";
+  } catch (error) {
+    transferError.value = toUserMessage(error, "提交失败，请稍后重试。");
+  } finally {
+    transferring.value = false;
+  }
+}
 
 /**
  * 并发守卫：一次咨询要花几秒，期间用户可能切了宠物。
@@ -61,11 +133,18 @@ async function send(): Promise<void> {
   sending.value = true;
   errorMessage.value = "";
   try {
-    const answer = await cApp.consultAi(petId, { question }, signal);
+    const answer = await cApp.consultAi(
+      petId,
+      // file_ids 只在有图时带上：契约里它是可选的，传空数组等于说「有图但没传」
+      fileIds.value.length > 0 ? { question, file_ids: [...fileIds.value] } : { question },
+      signal,
+    );
     // 两道判断：期间又发了一次（守卫），或者**换过宠物**（结论的对象已经变了）
     if (!latest.isCurrent(seq) || session.activePet?.id !== petId) return;
     result.value = answer;
     draft.value = "";
+    fileIds.value = [];
+    transferMessage.value = "";
   } catch (error) {
     if (!latest.isCurrent(seq)) return;
     errorMessage.value = toUserMessage(error, "咨询失败，请稍后重试");
@@ -116,6 +195,39 @@ async function send(): Promise<void> {
                 <li v-for="(tip, index) in result.care_tips ?? []" :key="index">{{ tip }}</li>
               </ul>
             </div>
+            <p v-if="result.need_hospital" class="ph-answer__flag">
+              建议尽快就医；拿到结果后可以点下面的「转人工」让平台人工再看一次。
+            </p>
+            <div v-if="(result.citations ?? []).length > 0" class="ph-answer__block">
+              <h4>参考的知识条目</h4>
+              <ul>
+                <li v-for="citation in result.citations ?? []" :key="citation.entry_id">
+                  {{ citation.title ?? citation.entry_id }}
+                  <span class="ph-text-weak">（{{ citation.entry_id }}）</span>
+                </li>
+              </ul>
+              <!-- 未复核提醒：服务端只说「这次用到了未复核条目」，不说是哪几条（ADR-0033） -->
+              <p v-if="result.unvetted_used" class="ph-text-weak">
+                其中部分条目尚未经兽医复核，仅供参考。
+              </p>
+            </div>
+            <div class="ph-answer__block">
+              <h4>还需要人帮忙？</h4>
+              <p class="ph-text-sub">
+                转人工后由平台人工查看这次咨询并回复（预计 2 小时内），**不收费**——
+                本项目钱在门店直接付给服务者，平台不经手资金。
+              </p>
+              <button
+                type="button"
+                class="ph-button ph-button--secondary"
+                :disabled="transferring || transferMessage !== ''"
+                @click="transfer"
+              >
+                {{ transferring ? "提交中…" : transferMessage !== "" ? "已受理" : "转人工咨询" }}
+              </button>
+              <p v-if="transferMessage" class="ph-text-sub">{{ transferMessage }}</p>
+              <p v-if="transferError" class="ph-answer__error">{{ transferError }}</p>
+            </div>
             <p class="ph-note">{{ result.disclaimer }}</p>
             <p class="ph-note">
               今日免费咨询还剩 {{ result.remaining_today }} 次（每天 {{ result.quota_per_day }} 次）。
@@ -124,6 +236,24 @@ async function send(): Promise<void> {
               </template>
             </p>
           </article>
+
+          <div class="ph-ai__uploads">
+            <label class="ph-button ph-button--secondary ph-ai__upload">
+              {{ uploading ? "上传中…" : "加照片（最多 4 张）" }}
+              <input
+                type="file"
+                accept="image/jpeg,image/png"
+                multiple
+                :disabled="uploading || fileIds.length >= MAX_IMAGES"
+                @change="pickImages"
+              />
+            </label>
+            <span v-for="fileId in fileIds" :key="fileId" class="ph-ai__thumb">
+              图 {{ fileId }}
+              <button type="button" class="ph-ai__thumb-remove" @click="removeImage(fileId)">×</button>
+            </span>
+          </div>
+          <p v-if="uploadError" class="ph-answer__error">{{ uploadError }}</p>
 
           <div class="ph-ai__composer">
             <textarea
@@ -141,8 +271,8 @@ async function send(): Promise<void> {
           </div>
           <p v-if="errorMessage" class="ph-answer__error">{{ errorMessage }}</p>
           <p class="ph-note">
-            图片上传与多轮对话在后面接；目前先支持文字描述——皮肤问题只看照片只有三成把握，
-            所以症状文本必须写清楚。
+            图片可以一起发（皮肤问题只看照片只有三成把握，61 号调研实测），所以文字描述仍要写清楚；
+            多轮对话与视频输入还没做（视频按 ADR-0004 不做）。
           </p>
         </div>
 
@@ -194,6 +324,40 @@ async function send(): Promise<void> {
   display: flex;
   flex-direction: column;
   min-height: 420px;
+}
+
+.ph-ai__uploads {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ph-space-2);
+  margin-bottom: var(--ph-space-2);
+}
+
+/* 文件选择框藏起来，靠 label 当按钮——原生控件的样式在三端没法统一 */
+.ph-ai__upload input {
+  display: none;
+}
+
+.ph-ai__thumb {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ph-space-1);
+  padding: 2px var(--ph-space-2);
+  background: var(--ph-color-bg);
+  border: 1px solid var(--ph-color-border);
+  border-radius: var(--ph-radius-input);
+  font-size: 12px;
+  color: var(--ph-color-text-sub);
+}
+
+.ph-ai__thumb-remove {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font-size: 14px;
+  color: var(--ph-color-text-weak);
+  cursor: pointer;
 }
 
 .ph-ai__composer {

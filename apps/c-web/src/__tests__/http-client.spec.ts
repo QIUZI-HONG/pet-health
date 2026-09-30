@@ -120,6 +120,18 @@ describe("请求层：信封、鉴权头、错误分类", () => {
     expect(business().calls[0].headers.Authorization).toBeUndefined();
   });
 
+  it("写操作带 Idempotency-Key；一切默认请求都不带（ADR-0028：不带它的行为完全不变）", async () => {
+    business().handler = async () => envelope(0, null);
+
+    await http.post("/orders", { pet_id: 1 }, { idempotencyKey: "key-1" });
+    expect(business().calls[0].headers["Idempotency-Key"]).toBe("key-1");
+
+    // 不能给所有写请求都塞一个空串或随机值：契约说「不带这个头的请求行为不变」，
+    // 而随机键等于把每次重试都当成一次新的写操作
+    await http.post("/orders", { pet_id: 1 });
+    expect(business().calls[1].headers["Idempotency-Key"]).toBeUndefined();
+  });
+
   it("业务错误（40001）不重试：重试只会重复同样的失败", async () => {
     business().handler = async () => envelope(40001, null, "参数不合法");
 

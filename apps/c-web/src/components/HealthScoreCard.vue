@@ -10,9 +10,9 @@
  * 未计入的维度（防疫待录入、老年未开启）显示灰色与原因，不参与总分平均。
  */
 import { computed } from "vue";
-import type { HealthScore, HealthScoreDimension } from "@pet-health/shared";
+import type { HealthScoreView, HealthScoreDimension } from "@pet-health/shared";
 
-const props = defineProps<{ score: HealthScore | null; loading?: boolean }>();
+const props = defineProps<{ score: HealthScoreView | null; loading?: boolean }>();
 
 /**
  * 记录天数还少时给一句提醒。

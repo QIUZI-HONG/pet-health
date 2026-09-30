@@ -8,9 +8,16 @@
  *
  * 任一项提交即算当日已打卡，所以进度显示 n/6，但完成标记看 `done`。
  * 组件只负责交互与呈现；发请求、刷新评分都是页面的活（emit 出去）。
+ *
+ * **补录（F005 的第二半）**：卡片顶部可以换日期，范围就是后端的可补录窗口
+ * （今天 + 过去 7 天，`CheckInService.BACKFILL_WINDOW_DAYS`）。窗口两端由页面通过
+ * `minDate` / `maxDate` 传进来（`maxDate` 用**服务端给的业务日期**，不用浏览器本地时区），
+ * 越界的日期在这里被拦下、不发请求：后端也会拒（40001），但让用户走到「提交后才被拒」
+ * 是白跑一趟。
  */
 import { computed, ref } from "vue";
-import type { CheckInDay, CheckInItem, CheckInItemInput } from "@pet-health/shared";
+import { formatDate } from "@pet-health/shared";
+import type { CheckInDay, CheckInItem, CheckInItemRequest } from "@pet-health/shared";
 
 const props = defineProps<{
   day: CheckInDay | null;
@@ -19,11 +26,17 @@ const props = defineProps<{
   saving?: boolean;
   /** 昨天各项的取值，用于「和昨天一样」；没有则为空。 */
   yesterdayValues?: Record<number, { value?: string; note?: string }>;
+  /** 可补录窗口的最早一天（`YYYY-MM-DD`）：后端只收今天 + 过去 7 天。 */
+  minDate?: string;
+  /** 窗口的最后一天 = 服务端的「今天」（业务日期，Asia/Shanghai）。 */
+  maxDate?: string;
 }>();
 
 const emit = defineEmits<{
-  submit: [items: CheckInItemInput[]];
+  submit: [items: CheckInItemRequest[]];
   undo: [category: number];
+  /** 换一个业务日期（补录）：页面据此重新拉那一天的打卡状态。 */
+  changeDate: [date: string];
 }>();
 
 /** 展开录入的行（一次只开一行，避免桌面上一片输入框）。 */
@@ -37,7 +50,7 @@ const draft = ref<{ abnormal: boolean; value: string; note: string }>({
 /**
  * 体重这一项要挡住非法值。取值范围与建档一致（`0.01–999.99`，契约 `PetCreateRequest.weight`）。
  *
- * 为什么前端也要拦：后端这一项的 `value` 只当字符串存（`CheckInItemInput.value`），
+ * 为什么前端也要拦：后端这一项的 `value` 只当字符串存（`CheckInItemRequest.value`），
  * `abc` / `0` / `-5` 都收得下，会落进档案并参与体重趋势——首页会算出「体重下降了 2000080%」
  * 这种提醒（实测复现）。前端拦一道，用户至少当场知道哪里填错了。
  */
@@ -55,6 +68,41 @@ const progressText = computed(() =>
   props.day ? `${props.day.completed_count}/${props.day.total_count}` : "—",
 );
 
+/**
+ * 看的是不是今天：决定「补录」提示与下面那个按钮的叫法（见 template）。
+ * 页面没给窗口（`maxDate` 缺失）时按「今天」处理——不因为拿不到窗口就把用户说成在补录。
+ */
+const viewingToday = computed(() => !props.maxDate || props.day?.date === props.maxDate);
+
+/** 换日期时的越界提示；正常情况下是空串（日期输入的 min/max 先挡一道）。 */
+const dateError = ref("");
+
+/**
+ * 换一个业务日期（补录）。**越界不发请求**：`min` / `max` 只是浏览器的提示，
+ * 手输、粘贴、或将来换个控件都能绕过它，所以这里再判一次——
+ * 送到后端才被拒（40001）用户已经白等一次往返，而且错误会显示在整页的错误条上。
+ */
+function changeDate(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  const value = input.value;
+  if (value === "") return;
+  if (props.minDate && value < props.minDate) {
+    dateError.value = `只能补录最近 7 天（${props.minDate} 起）的记录。`;
+    input.value = props.day?.date ?? "";   // 回写：输入框停在一个不会被后端接受的日期上会误导用户
+    return;
+  }
+  if (props.maxDate && value > props.maxDate) {
+    dateError.value = "不能给将来的日期打卡。";
+    input.value = props.day?.date ?? "";
+    return;
+  }
+  dateError.value = "";
+  if (value !== props.day?.date) {
+    emit("changeDate", value);
+  }
+}
+
+/** 展开 / 收起一行录入：一次只开一行；打开时用这一行现有取值初始化草稿，体重项不给默认值。 */
 function toggle(item: CheckInItem): void {
   if (expandedCategory.value === item.category) {
     expandedCategory.value = null;
@@ -68,6 +116,7 @@ function toggle(item: CheckInItem): void {
   };
 }
 
+/** 单项提交（提完收起录入行）：非法体重不发（后端这一项不校验），值要洗掉「异常 + normal」组合。 */
 function submitRow(category: number): void {
   if (category === 1 && weightInvalid.value) return;   // 非法体重不发出去（后端这一项不校验）
   const raw = draft.value.value.trim();
@@ -85,6 +134,7 @@ function submitRow(category: number): void {
   expandedCategory.value = null;
 }
 
+/** 一键「全部正常」：六项一次提交（F005 的 3 秒量级）；体重没有「正常」这种取值，留空等用户补。 */
 function submitAllNormal(): void {
   emit(
     "submit",
@@ -100,6 +150,7 @@ function submitAllNormal(): void {
 /** 「和昨天一样」：把昨天的取值原样提交到今天（没有昨天的数据就不显示这个按钮）。 */
 const hasYesterday = computed(() => Object.keys(props.yesterdayValues ?? {}).length > 0);
 
+/** 「和昨天一样」：把昨天的取值原样提交到今天；没有昨天数据时按钮不显示，这里是兜底不发空请求。 */
 function submitSameAsYesterday(): void {
   const previous = props.yesterdayValues ?? {};
   const filled = Object.entries(previous).map(([category, item]) => ({
@@ -121,6 +172,7 @@ const VALUE_LABELS: Record<string, string> = {
   high: "偏多",
 };
 
+/** 行内状态文案：异常优先显示备注；线值按 VALUE_LABELS 翻译，用户自己填的数值原样显示。 */
 function statusText(item: CheckInItem): string {
   if (!item.filled) return "未记录";
   if (item.abnormal) {
@@ -146,8 +198,36 @@ function statusText(item: CheckInItem): string {
     <p v-if="props.loading" class="ph-text-sub">加载中…</p>
 
     <template v-else-if="props.day">
+      <!-- 补录入口：日期范围就是后端的可补录窗口（今天 + 过去 7 天）。回写与拦截见 changeDate -->
+      <div class="ph-checkin__dates">
+        <label class="ph-checkin__date">
+          <span class="ph-field__label">日期</span>
+          <input
+            type="date"
+            class="ph-field__input"
+            :value="props.day.date"
+            :min="props.minDate"
+            :max="props.maxDate"
+            aria-label="打卡日期"
+            @change="changeDate"
+          />
+        </label>
+        <span v-if="!viewingToday" class="ph-checkin__backfill">
+          正在补录 {{ formatDate(props.day.date) }} 的记录（只能补最近 7 天）
+        </span>
+        <button
+          v-if="!viewingToday && props.maxDate"
+          type="button"
+          class="ph-button ph-button--text"
+          @click="emit('changeDate', props.maxDate ?? '')"
+        >
+          回到今天
+        </button>
+      </div>
+      <p v-if="dateError" class="ph-field__hint">{{ dateError }}</p>
+
       <p v-if="props.day.done && props.day.completed_count < props.day.total_count" class="ph-text-sub ph-checkin__note">
-        今天已打卡（记一项就算完成，剩下的随时补）。
+        {{ viewingToday ? "今天已打卡（记一项就算完成，剩下的随时补）。" : "这一天已打卡（记一项就算完成，剩下的随时补）。" }}
       </p>
 
       <ul class="ph-checkin__list">
@@ -215,7 +295,7 @@ function statusText(item: CheckInItem): string {
           :disabled="props.saving"
           @click="submitSameAsYesterday"
         >
-          和昨天一样
+          {{ viewingToday ? "和昨天一样" : "和前一天一样" }}
         </button>
       </div>
     </template>
@@ -253,6 +333,29 @@ function statusText(item: CheckInItem): string {
 .ph-checkin__note {
   margin: var(--ph-space-2) 0 0;
   font-size: 12px;
+}
+
+/* 补录那一行：日期选择 + 一句「你在看哪一天」。它是卡片顶部的一条，不参与下面的逐项列表 */
+.ph-checkin__dates {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--ph-space-3);
+  margin-top: var(--ph-space-3);
+  padding-bottom: var(--ph-space-3);
+  border-bottom: 1px solid var(--ph-color-divider);
+}
+
+.ph-checkin__date {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ph-space-1);
+}
+
+.ph-checkin__backfill {
+  padding-bottom: var(--ph-space-2);
+  font-size: 12px;
+  color: var(--ph-color-orange);
 }
 
 .ph-checkin__list {

@@ -11,7 +11,7 @@
  * 知道其实是后端抖了。
  */
 import { defineStore } from "pinia";
-import { ApiError, cApp, tokenStore, type Pet, type UserProfile } from "@pet-health/shared";
+import { ApiError, cApp, tokenStore, type PetView, type TokenPair, type UserProfile } from "@pet-health/shared";
 
 export type SessionStatus = "idle" | "loading" | "authenticated" | "anonymous" | "error";
 
@@ -20,7 +20,7 @@ interface SessionState {
   /** 本地是否有令牌（不代表服务端认可）。用于区分「没登录」与「登录了但取不到数据」。 */
   hasSession: boolean;
   user: UserProfile | null;
-  pets: Pet[];
+  pets: PetView[];
   /** 启动失败的原因；用于错误态展示与重试。 */
   errorMessage: string;
   /** 后端返回的请求 ID，报障时直接给这个。 */
@@ -44,7 +44,7 @@ export const useSessionStore = defineStore("session", {
     /** 服务端认可当前身份（`/users/me` 取到了）。 */
     isLoggedIn: (state) => state.status === "authenticated",
     /** 当前宠物：服务端记的那只；它被删掉或没切换过时回退到列表第一只（契约里的约定）。 */
-    activePet(state): Pet | null {
+    activePet(state): PetView | null {
       if (state.pets.length === 0) return null;
       const active = state.pets.find((pet) => pet.id === state.user?.active_pet_id);
       return active ?? state.pets[0] ?? null;
@@ -109,8 +109,18 @@ export const useSessionStore = defineStore("session", {
       this.errorRequestId = "";
     },
 
-    async login(phone: string, password: string): Promise<void> {
-      const tokens = await cApp.login({ phone, password });
+    /**
+     * 把服务端返回的最新资料收进会话。
+     *
+     * <p>为什么不复用 {@link reload}：那条路径会连带重拉宠物列表（两次请求）。改昵称/头像
+     * 只影响用户自己那份资料，而 `PUT /users/me` 的响应体**就是**更新后的 `UserProfile`
+     * （契约里这么定的），直接收下即可——多打一次 `/users/me` 只是把服务端的同一份数据再取一遍。
+     */
+    applyProfile(user: UserProfile): void {
+      this.user = user;
+    },
+
+    async login(phone: string, password: string): Promise<void> {      const tokens = await cApp.login({ phone, password });
       this.applyTokens(tokens);
       this.user = tokens.user ?? null;
       await this.reload();
@@ -149,7 +159,7 @@ export const useSessionStore = defineStore("session", {
       }
     },
 
-    applyTokens(tokens: { access_token: string; refresh_token: string }): void {
+    applyTokens(tokens: TokenPair): void {
       tokenStore.save({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
       this.hasSession = true;
     },

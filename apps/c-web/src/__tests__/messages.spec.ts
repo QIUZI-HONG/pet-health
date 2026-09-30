@@ -8,7 +8,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia, type Pinia } from "pinia";
 import { createRouter, createMemoryHistory } from "vue-router";
-import type { MessageView, ReminderSetting, EpidemicRecord } from "@pet-health/shared";
+import type { MessageView, ReminderSettingView, EpidemicRecordView } from "@pet-health/shared";
 import MessagesView from "../views/MessagesView.vue";
 
 const listMessages = vi.fn();
@@ -22,6 +22,21 @@ const updateReminderSetting = vi.fn();
 const { getUnreadCount } = vi.hoisted(() => ({ getUnreadCount: vi.fn() }));
 const listEpidemicRecords = vi.fn();
 const createEpidemicRecord = vi.fn();
+// 档案页（RecordsView）在切片 #102 / #115 / #116 之后还会拉分项、照护模式、报告与时间轴：
+// 这些桩不补上，本文件里「档案页的防疫记录」那组用例会因为档案页整体加载失败而红
+const listArchiveSections = vi.fn().mockResolvedValue([]);
+// 就医记录（F004）：档案页自己拉 `section=medical` 的列表，这个桩不补上整页会进错误态
+const listArchiveRecords = vi.fn().mockResolvedValue({ list: [], page: 1, page_size: 20, total: 0, has_more: false });
+const listTimeline = vi.fn().mockResolvedValue({ list: [], page: 1, page_size: 10, total: 0, has_more: false });
+const listHealthReports = vi.fn().mockResolvedValue({ list: [], page: 1, page_size: 12, total: 0, has_more: false });
+const getCareMode = vi.fn().mockResolvedValue({
+  active: false,
+  reasons: [],
+  age_threshold_years: 7,
+  disabled_by_user: false,
+  effects: [],
+  notice: "",
+});
 
 vi.mock("@pet-health/shared", async () => {
   const actual = await vi.importActual<typeof import("@pet-health/shared")>("@pet-health/shared");
@@ -36,6 +51,11 @@ vi.mock("@pet-health/shared", async () => {
       updateReminderSetting: (...args: unknown[]) => updateReminderSetting(...args),
       listEpidemicRecords: (...args: unknown[]) => listEpidemicRecords(...args),
       createEpidemicRecord: (...args: unknown[]) => createEpidemicRecord(...args),
+      listArchiveSections: (...args: unknown[]) => listArchiveSections(...args),
+      listArchiveRecords: (...args: unknown[]) => listArchiveRecords(...args),
+      listTimeline: (...args: unknown[]) => listTimeline(...args),
+      listHealthReports: (...args: unknown[]) => listHealthReports(...args),
+      getCareMode: (...args: unknown[]) => getCareMode(...args),
       getUnreadCount: getUnreadCount,
       me: vi.fn(),
       listPets: vi.fn().mockResolvedValue([]),
@@ -69,7 +89,7 @@ function makeMessage(overrides: Partial<MessageView> = {}): MessageView {
   } as MessageView;
 }
 
-function makeSetting(overrides: Partial<ReminderSetting> = {}): ReminderSetting {
+function makeSetting(overrides: Partial<ReminderSettingView> = {}): ReminderSettingView {
   return {
     type: 1,
     name: "疫苗到期",
@@ -77,7 +97,7 @@ function makeSetting(overrides: Partial<ReminderSetting> = {}): ReminderSetting 
     platform_enabled: true,
     closable: true,
     ...overrides,
-  } as ReminderSetting;
+  } as ReminderSettingView;
 }
 
 async function mountMessages(): Promise<{ wrapper: ReturnType<typeof mount>; pinia: Pinia }> {
@@ -250,11 +270,11 @@ describe("防疫记录的到期文案", () => {
       pets: [{ id: 1, name: "豆豆", species: 1, gender: 0 } as never],
       user: { id: 1, nickname: "我", phone: "138****8000", gender: 0 } as never,
     });
-    const records: EpidemicRecord[] = [
+    const records: EpidemicRecordView[] = [
       { id: 1, kind: 1, name: "狂犬疫苗", given_on: "2026-09-01", next_due_on: "2026-10-05", days_until_due: 7 },
       { id: 2, kind: 2, name: "体外驱虫", given_on: "2026-09-01", next_due_on: "2026-09-20", days_until_due: -8 },
       { id: 3, kind: 1, name: "犬四联", given_on: "2026-09-01", next_due_on: undefined, days_until_due: undefined },
-    ] as EpidemicRecord[];
+    ] as EpidemicRecordView[];
     listEpidemicRecords.mockResolvedValue(records);
 
     const wrapper = mount(RecordsView, { global: { plugins: [pinia, router] } });

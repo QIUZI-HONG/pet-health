@@ -9,7 +9,7 @@
  */
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ApiError, cApp, formatDate, genderLabel, speciesLabel, todayIso, toUserMessage, type Pet } from "@pet-health/shared";
+import { toApiFailure, cApp, formatDate, genderLabel, speciesLabel, todayIso, toUserMessage, type PetView } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import ComplianceCard from "../components/ComplianceCard.vue";
 import SessionGate from "../components/SessionGate.vue";
@@ -20,12 +20,18 @@ const session = useSessionStore();
 const route = useRoute();
 const router = useRouter();
 
-const recycleBin = ref<Pet[]>([]);
+const recycleBin = ref<PetView[]>([]);
 const errorMessage = ref("");
 const requestId = ref("");
 const formError = ref("");
 const saving = ref(false);
 const showingForm = ref(false);
+
+// 资料编辑（昵称 / 头像 / 性别）——与宠物表单各自独立，互不干扰
+const editingProfile = ref(false);
+const profileSaving = ref(false);
+const profileError = ref("");
+const profileForm = reactive({ nickname: "", avatar: "", gender: 0 });
 
 /** 正在编辑的宠物 id；null 表示这是「新建」。 */
 const editingId = ref<number | null>(null);
@@ -52,12 +58,9 @@ async function loadRecycleBin(): Promise<void> {
   try {
     recycleBin.value = await cApp.listPets(true);
   } catch (error) {
-    if (error instanceof ApiError) {
-      errorMessage.value = error.message;
-      requestId.value = error.requestId;
-    } else {
-      errorMessage.value = "加载失败，请稍后重试";
-    }
+    const failure = toApiFailure(error, "加载失败，请稍后重试");
+    errorMessage.value = failure.message;
+    requestId.value = failure.requestId;
   }
 }
 
@@ -94,6 +97,7 @@ watch(
   { immediate: true },
 );
 
+/** 打开建档表单：editingId 归零——这张表单两用，不清就会走成「编辑」。 */
 function openForm(): void {
   formError.value = "";
   editingId.value = null;
@@ -101,7 +105,7 @@ function openForm(): void {
 }
 
 /** 编辑：把现有值填进同一个表单，省得再写一套。 */
-function openEdit(pet: Pet): void {
+function openEdit(pet: PetView): void {
   formError.value = "";
   editingId.value = pet.id;
   form.name = pet.name;
@@ -117,6 +121,7 @@ function openEdit(pet: Pet): void {
   showingForm.value = true;
 }
 
+/** 收起表单顺带清空：留着上次的值，下一次建档会带出上一只宠物的数据。 */
 function closeForm(): void {
   showingForm.value = false;
   editingId.value = null;
@@ -129,6 +134,7 @@ function closeForm(): void {
   form.chronicDesc = "";
 }
 
+/** 建档与编辑共用（靠 editingId 分叉）；成功后两处都要重拉：宠物列表在 store，回收站只在本页。 */
 async function submit(): Promise<void> {
   if (!canSubmit.value) return;
   formError.value = "";
@@ -166,7 +172,69 @@ async function submit(): Promise<void> {
   }
 }
 
-async function remove(pet: Pet): Promise<void> {
+/**
+ * 资料编辑（昵称 / 头像 / 性别）。
+ *
+ * <p>契约把「不改」与「清空」分成两件事（`UpdateProfileRequest` 的说明）：**字段不传 = 不改，
+ * `avatar` 传空串 = 清空**。所以这里的模型是：输入框留空表示「这次不改头像」，
+ * 真要清掉已设置的头像请点「清除头像」——不让「留空」同时兼任两种意思，
+ * 否则用户想改昵称却顺手清掉了头像。
+ */
+async function submitProfile(): Promise<void> {
+  const nickname = profileForm.nickname.trim();
+  if (!nickname || profileSaving.value) {
+    return;
+  }
+  const avatar = profileForm.avatar.trim();
+  profileError.value = "";
+  profileSaving.value = true;
+  try {
+    const updated = await cApp.updateMe({
+      nickname,
+      gender: profileForm.gender as 0 | 1 | 2,
+      // 留空 = **不传这个字段**（不是传空串——空串在契约里是「清空」）。
+      // 用条件展开而不是 `avatar: undefined`：后者在 JS 对象里仍然有这个键，
+      // 「不传」这件事就只靠 JSON.stringify 顺手丢掉 undefined 来兜着，读代码时看不出来。
+      ...(avatar === "" ? {} : { avatar }),
+    });
+    session.applyProfile(updated);
+    editingProfile.value = false;
+  } catch (error) {
+    profileError.value = toUserMessage(error, "保存失败，请稍后重试");
+  } finally {
+    profileSaving.value = false;
+  }
+}
+
+/** 清空头像：`avatar: ""` 是契约里「清掉」的写法（与「不传」区分开）。 */
+async function clearAvatar(): Promise<void> {
+  if (profileSaving.value) {
+    return;
+  }
+  profileError.value = "";
+  profileSaving.value = true;
+  try {
+    const updated = await cApp.updateMe({ avatar: "" });
+    session.applyProfile(updated);
+    profileForm.avatar = "";
+  } catch (error) {
+    profileError.value = toUserMessage(error, "清除失败，请稍后重试");
+  } finally {
+    profileSaving.value = false;
+  }
+}
+
+/** 打开表单时用当前资料填初值（每次打开都重填，免得留下上一次没保存的输入）。 */
+function openProfileForm(): void {
+  profileForm.nickname = session.user?.nickname ?? "";
+  profileForm.avatar = session.user?.avatar ?? "";
+  profileForm.gender = session.user?.gender ?? 0;
+  profileError.value = "";
+  editingProfile.value = true;
+}
+
+/** 删除＝软删除（30 天内可恢复）；两处列表都要重拉，否则一边还留着它。 */
+async function remove(pet: PetView): Promise<void> {
   try {
     await cApp.deletePet(pet.id);
     // 刷新也可能失败（后端抖一下），一并收在这一层——否则会变成没人接的 Promise 拒绝
@@ -177,7 +245,8 @@ async function remove(pet: Pet): Promise<void> {
   }
 }
 
-async function restore(pet: Pet): Promise<void> {
+/** 恢复同理：会话里的宠物列表与本页回收站都要重拉，两边才是同一份事实。 */
+async function restore(pet: PetView): Promise<void> {
   try {
     await cApp.restorePet(pet.id);
     await session.refreshPets();
@@ -187,7 +256,8 @@ async function restore(pet: Pet): Promise<void> {
   }
 }
 
-async function activate(pet: Pet): Promise<void> {
+/** 设为当前宠物：接口返回更新后的 UserProfile，store 直接换掉；本页没有跟着变的字段，不必再刷。 */
+async function activate(pet: PetView): Promise<void> {
   try {
     await session.activatePet(pet.id);
   } catch (error) {
@@ -195,7 +265,8 @@ async function activate(pet: Pet): Promise<void> {
   }
 }
 
-function restorableUntil(pet: Pet): string {
+/** 回收站里的「可恢复到」文案：日期是服务端按 30 天算好的（restorable_until），前端不再算一遍。 */
+function restorableUntil(pet: PetView): string {
   return formatDate(pet.restorable_until);
 }
 </script>
@@ -339,8 +410,45 @@ function restorableUntil(pet: Pet): string {
             </li>
           </ul>
           <p class="ph-note">
-            手机号与昵称暂时只读展示，资料编辑在后面接；数据导出与账号注销见上方「账号与条款」。
+            手机号是登录凭证，暂不提供修改；昵称与头像在这里改。数据导出与账号注销见上方「账号与条款」。
           </p>
+
+          <form v-if="editingProfile" class="ph-stack" @submit.prevent="submitProfile">
+            <label class="ph-field">
+              <span class="ph-field__label">昵称 *</span>
+              <input v-model="profileForm.nickname" class="ph-input" type="text" maxlength="64" />
+            </label>
+            <label class="ph-field">
+              <span class="ph-field__label">头像地址</span>
+              <input v-model="profileForm.avatar" class="ph-input" type="text" maxlength="512"
+                     placeholder="留空表示不设置；清掉已设置的头像请点「清除头像」" />
+            </label>
+            <label class="ph-field">
+              <span class="ph-field__label">性别</span>
+              <select v-model.number="profileForm.gender" class="ph-input">
+                <option :value="0">未设置</option>
+                <option :value="1">男</option>
+                <option :value="2">女</option>
+              </select>
+            </label>
+            <p v-if="profileError" class="ph-error">{{ profileError }}</p>
+            <div class="ph-row">
+              <button class="ph-button" type="submit" :disabled="profileSaving || !profileForm.nickname.trim()">
+                {{ profileSaving ? "保存中…" : "保存资料" }}
+              </button>
+              <button class="ph-button ph-button--secondary" type="button" :disabled="profileSaving"
+                      @click="clearAvatar">
+                清除头像
+              </button>
+              <button class="ph-button ph-button--secondary" type="button" :disabled="profileSaving"
+                      @click="editingProfile = false">
+                取消
+              </button>
+            </div>
+          </form>
+          <button v-else class="ph-button ph-button--secondary" type="button" @click="openProfileForm">
+            编辑资料
+          </button>
         </article>
         </div>
       </div>
@@ -358,11 +466,6 @@ function restorableUntil(pet: Pet): string {
 
 .ph-card__head .ph-card__title {
   margin-bottom: 0;
-}
-
-.ph-card__note {
-  margin: var(--ph-space-1) 0 var(--ph-space-4);
-  font-size: 13px;
 }
 
 .ph-pets {
@@ -408,31 +511,6 @@ function restorableUntil(pet: Pet): string {
   align-items: center;
   gap: var(--ph-space-2);
   white-space: nowrap;
-}
-
-.ph-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ph-space-3);
-  margin-top: var(--ph-space-4);
-  padding-top: var(--ph-space-4);
-  border-top: 1px solid var(--ph-color-divider);
-}
-
-.ph-form__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--ph-space-3);
-}
-
-.ph-form__error {
-  margin: 0;
-  color: var(--ph-color-danger);
-}
-
-.ph-form__actions {
-  display: flex;
-  gap: var(--ph-space-3);
 }
 
 .ph-facts {

@@ -115,6 +115,15 @@ a {
   font-weight: 600;
 }
 
+/* 卡片里的一行说明（多行注释、与副标题同号）。
+   原先这份样式在 ProfileView 与 RecordsView 各写了一份（13px / 12px，值还不一样），
+   而 MessagesView 用了类名却没有任何定义——同一行提示在三个页面三种大小。
+   卡片说明是**跨页面复用的基类**，所以放全局。 */
+.ph-card__note {
+  margin: var(--ph-space-1) 0 var(--ph-space-4);
+  font-size: 13px;
+}
+
 /* ===== 基类：文本 ===== */
 .ph-text-sub {
   color: var(--ph-color-text-sub);
@@ -189,6 +198,10 @@ a {
   margin-top: var(--ph-space-4);
 }
 
+/* 四态修饰类（`--empty` / `--error` / `--forbidden`）**只有类名没有规则**，是有意的：
+   它们是给「这是什么状态」留的语义钩子（读 DOM、写测试、将来做差异化样式都靠它），
+   视觉差异目前全在 `.ph-state` 基类上——所以它们不是漏写的样式。 */
+
 /* ===== 基类：表单字段 =====
  * 登录页与「我的」页共用一份，高度差异用 --lg 修饰符，不要各写一套（会悄悄分叉成 36/40 两种）。
  */
@@ -223,6 +236,36 @@ a {
 .ph-field__input:focus {
   outline: none;
   border-color: var(--ph-color-primary);
+}
+
+/* 表单容器：栅格、错误行、按钮行。
+   这几个类原先只在 ProfileView 的 scoped 块里定义，而 RecordsView 也用它们——
+   scoped 样式**只在定义它的组件里生效**，所以档案页的表单实际只有 .ph-field 生效，
+   栅格与按钮行是浏览器默认排列（肉眼就是「两个输入框没对齐」）。
+   跨页面复用的表单骨架属于全局基类（与 .ph-field 同理）。 */
+.ph-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ph-space-3);
+  margin-top: var(--ph-space-4);
+  padding-top: var(--ph-space-4);
+  border-top: 1px solid var(--ph-color-divider);
+}
+
+.ph-form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ph-space-3);
+}
+
+.ph-form__error {
+  margin: 0;
+  color: var(--ph-color-danger);
+}
+
+.ph-form__actions {
+  display: flex;
+  gap: var(--ph-space-3);
 }
 
 /* 独立整页表单（登录）用大一号的输入框 */

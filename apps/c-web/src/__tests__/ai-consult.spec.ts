@@ -12,6 +12,8 @@ import AiConsultView from "../views/AiConsultView.vue";
 const transport = vi.hoisted(() => ({
   request: vi.fn(),
   post: vi.fn(),
+  /** 直传图片走 axios.put（http.putRaw）——上传用例要断言它被调到了正确的凭证地址。 */
+  put: vi.fn(),
 }));
 
 vi.mock("axios", () => {
@@ -20,7 +22,7 @@ vi.mock("axios", () => {
     post: transport.post,
     interceptors: { request: { use: () => undefined } },
   };
-  const axios = { create: () => instance };
+  const axios = { create: () => instance, put: transport.put };
   return { default: axios, ...axios };
 });
 
@@ -183,5 +185,111 @@ describe("AiConsultView", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("请描述一下症状");
+  });
+});
+
+/**
+ * 本轮补的三件事（第十一节之后的增量）：**图片一起发**、**引用要展示**、
+ * **转人工**（口径：登记工单给平台人工，不收费——钱在门店付，ADR-0036）。
+ */
+/** 造一个图片文件（与 photo-upload.spec.ts 同一手法：只需 mime 与 size 真实）。 */
+function image(name: string, type = "image/jpeg", size = 1024): File {
+  return new File([new Uint8Array(size)], name, { type });
+}
+
+describe("AI 管家页：图片 / 引用 / 转人工", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    transport.put.mockResolvedValue({ status: 204, data: "" });
+  });
+
+  it("图片一起发：先申请凭证再直传，咨询请求带上 file_ids", async () => {
+    transport.request.mockImplementation((config: { url: string, method?: string }) => {
+      if (config.url === "/api/v1/app/files/presign") {
+        return Promise.resolve(ok([{ file_id: 31, upload_url: "/api/v1/open/files/31/content?token=x", role: "original" }]));
+      }
+      if (config.url === "/api/v1/app/files") {
+        return Promise.resolve(ok([
+          { id: 31, biz_type: "ai_consult", role: "original", mime: "image/jpeg", size_bytes: 1024, url: "/u31", thumb_url: "/t31" },
+        ]));
+      }
+      return Promise.resolve(ok(consult()));
+    });
+
+    const wrapper = await mountLoggedIn();
+    const input = wrapper.find('input[type="file"]');
+    Object.defineProperty(input.element, "files", { value: [image("skin.jpg")], configurable: true });
+    await input.trigger("change");
+    await flushPromises();
+
+    // 凭证申请用的是 ai_consult 这个 biz_type（契约的枚举值之一）
+    const presign = transport.request.mock.calls.find((call) => call[0]?.url === "/api/v1/app/files/presign");
+    expect(presign?.[0].data.biz_type).toBe("ai_consult");
+    expect(transport.put).toHaveBeenCalledTimes(1);
+    // 上传成功后页面上能看到这张图（可以在发送前移除）
+    expect(wrapper.find(".ph-ai__thumb").exists()).toBe(true);
+
+    await wrapper.get("textarea").setValue("皮肤上有一块掉毛");
+    await wrapper.findAll("button").find((node) => node.text().includes("发送"))!.trigger("click");
+    await flushPromises();
+
+    // http.post 走 axios 的 request 口（{url, method, data}），与既有用例同一层断言
+    const consultCall = transport.request.mock.calls.find(
+      (call) => String(call[0]?.url).includes("/ai-consults") && call[0]?.method === "POST",
+    );
+    expect(consultCall?.[0].data.file_ids).toEqual([31]);
+  });
+
+  it("引用要展示，并说明其中有未复核条目（服务端只说「有」，不说是哪几条）", async () => {
+    transport.request.mockResolvedValue(ok(consult({
+      citations: [{ entry_id: "K-0011", title: "犬猫腹泻的家庭观察要点" }],
+      unvetted_used: true,
+    })));
+
+    const wrapper = await mountLoggedIn();
+    await wrapper.get("textarea").setValue("拉稀两天了");
+    await wrapper.findAll("button").find((node) => node.text().includes("发送"))!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("参考的知识条目");
+    expect(wrapper.text()).toContain("犬猫腹泻的家庭观察要点");
+    expect(wrapper.text()).toContain("K-0011");
+    expect(wrapper.text()).toContain("尚未经兽医复核");
+  });
+
+  it("转人工：点一次调接口，受理后按钮变「已受理」且不可再点（幂等不在前端重造）", async () => {
+    transport.request.mockImplementation((config: { url: string }) => {
+      if (String(config.url).includes("/transfer")) {
+        return Promise.resolve(ok({ id: 9, consult_id: 1, risk_level: 2, status: 0, created_at: "2026-09-30 14:00:00" }));
+      }
+      return Promise.resolve(ok(consult()));
+    });
+
+    const wrapper = await mountLoggedIn();
+    await wrapper.get("textarea").setValue("吐了两次");
+    await wrapper.findAll("button").find((node) => node.text().includes("发送"))!.trigger("click");
+    await flushPromises();
+
+    const transfer = wrapper.findAll("button").find((node) => node.text().includes("转人工"))!;
+    await transfer.trigger("click");
+    await flushPromises();
+
+    const call = transport.request.mock.calls.find((item) => String(item[0]?.url).includes("/transfer"));
+    expect(call?.[0].url).toBe("/api/v1/app/pets/7/ai-consults/1/transfer");
+    expect(wrapper.text()).toContain("已受理");
+    expect(wrapper.findAll("button").find((node) => node.text().includes("已受理"))!.attributes("disabled")).toBeDefined();
+    // 不收费：按钮与说明里都不出现价格（钱在门店付，ADR-0036）
+    expect(wrapper.text()).not.toContain("39");
+  });
+
+  it("建议尽快就医时给出就医提示（need_hospital 不只是个字段）", async () => {
+    transport.request.mockResolvedValue(ok(consult({ need_hospital: true })));
+
+    const wrapper = await mountLoggedIn();
+    await wrapper.get("textarea").setValue("一直吐");
+    await wrapper.findAll("button").find((node) => node.text().includes("发送"))!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("建议尽快就医");
   });
 });

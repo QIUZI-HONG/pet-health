@@ -81,8 +81,26 @@ describe("合规文档页", () => {
     transport.request.mockResolvedValue(ok(document()));
   });
 
+  /**
+   * 条款页**不套登录闸门**（F027）：注册前必须读得到协议，否则「我已阅读并同意」没有依据。
+   * 所以这里刻意装一个**匿名**会话（`status: "anonymous"`、无令牌）——那正是用户从登录页
+   * 点进来的样子。装 pinia 不是为了登录态，而是因为「读完去哪儿」那一步要读会话。
+   */
+  async function mountLegal() {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const { useSessionStore } = await import("../stores/session");
+    useSessionStore().$patch({ status: "anonymous", hasSession: false, user: null } as never);
+    return mount(LegalView, {
+      global: {
+        plugins: [pinia],
+        stubs: { RouterLink: { props: ["to"], template: '<a :href="to"><slot /></a>' } },
+      },
+    });
+  }
+
   it("占位正文要明确标注，不能当生效条款展示", async () => {
-    const wrapper = mount(LegalView, { global: { stubs: { SessionGate: { template: "<slot />" } } } });
+    const wrapper = await mountLegal();
     await flushPromises();
 
     const text = wrapper.text();
@@ -91,13 +109,25 @@ describe("合规文档页", () => {
     expect(text).toContain("不作为生效条款");
   });
 
+  it("未登录也读得到正文，回退按钮指向首页而不是「我的」", async () => {
+    const wrapper = await mountLegal();
+    await flushPromises();
+
+    // 匿名态：正文照常渲染——这一条就是 F027 的回归护栏
+    expect(wrapper.text()).toContain("隐私政策");
+    expect(wrapper.text()).toContain("不作为生效条款");
+    // 未登录没有「我的」，回退按钮落首页
+    expect(wrapper.find("a").attributes("href")).toBe("/");
+    expect(wrapper.text()).toContain("返回首页");
+  });
+
   it("已定稿时显示版本与生效日期，不再显示占位提示", async () => {
     transport.request.mockResolvedValue(ok(document({
       is_placeholder: false, version: "v1", effective_from: "2026-10-01",
       body: "我们收集以下信息……（已定稿正文）",
     })));
 
-    const wrapper = mount(LegalView, { global: { stubs: { SessionGate: { template: "<slot />" } } } });
+    const wrapper = await mountLegal();
     await flushPromises();
 
     const text = wrapper.text();

@@ -1,6 +1,6 @@
 # C 端组件
 
-自研轻量组件（[ADR-0015](../../../docs/adr/0015-frontend-component-strategy.md)）：C 端不用 Element Plus，
+自研轻量组件（[ADR-0015](../../../../docs/adr/0015-frontend-component-strategy.md)）：C 端不用 Element Plus，
 因为它一眼就是「后台管理系统」，与视觉稿的卡片化观感差太远。
 
 ## 规矩
@@ -14,7 +14,7 @@
 
 | 组件 | 用途 |
 | --- | --- |
-| `AppSidebar` | 左侧主导航（5 个主页面） |
+| `AppSidebar` | 左侧主导航（主页面 + 消息中心 + 交易与权益那一组） |
 | `AppTopbar` | 顶栏：当前宠物、通知、账号 |
 | `PetSwitcher` | 宠物切换下拉（多宠家庭） |
 | `SessionGate` | 四态的统一入口：加载中 / 服务异常 / 未登录 / 正常内容（页面用它包内容，别自己写 if 链） |
@@ -22,10 +22,17 @@
 | `CheckInCard` | 今日健康任务：行内录入、一键「全部正常」「和昨天一样」、撤销单项 |
 | `PhotoUploader` | 档案照片上传（预签名直传，JPEG/PNG，单张 ≤10MB，最多 9 张） |
 | `ComplianceCard` | 账号与条款：三份合规文档入口 + 数据导出 + 注销（二次确认） |
+| `OrderAmountCard` | 金额区块：总额 / 券抵扣 / **预估实付** + 「费用在门店直接付给服务者」（下单结果与订单详情共用） |
+| `CouponCard` | 券卡片：面额 / 门槛 / 有效期 / 核销门店（券包、下单页选券、兑换结果共用） |
+| `OrderPhotoWallCard` | 三道照片墙进度（只读）：槽位与「还缺哪一道」的口径都取自服务端 |
 | `states/StateLoading` | 加载态 |
 | `states/StateEmpty` | 空态 |
 | `states/StateError` | 错误态（带重试） |
 | `states/StateForbidden` | 无权限 / 未登录态（带去登录） |
+
+> 交易与权益那三个（`OrderAmountCard` / `CouponCard` / `OrderPhotoWallCard`）里，前两个是跨页面复用的；
+> `OrderPhotoWallCard` 只服务订单详情，放进来是因为它带着一段容易写错的口径——槽位名与「缺哪一道」
+> 必须用服务端给的结论（自己数数组长度就会与后端的报工校验不一致）。
 
 > 从 `HealthScoreCard` 起的四个组件是**只服务一个页面**的（首页 / 档案页 / 我的页），按上面的规矩本该
 > 留在页面里；把它们放进来是因为各自都带着一段不长但容易写错的行为（评分分档、打卡的幂等交互、

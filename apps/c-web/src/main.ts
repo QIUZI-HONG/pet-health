@@ -7,10 +7,15 @@ import { router } from "./router";
 import { onSessionExpired } from "@pet-health/shared";
 import { useSessionStore } from "./stores/session";
 import { useMessageStore } from "./stores/messages";
+import { rememberInviteFromUrl } from "./utils/invite";
 
 const app = createApp(App);
 app.use(createPinia());
 app.use(router);
+
+// 分享链接带 ?invite=CODE 时记住它（ADR-0039 第一节：落地页记住 7 天，这条是前端行为）。
+// 在挂载前做：用户可能从链接落到首页、逛一会儿才去注册，那时地址栏已经不是落地页了。
+rememberInviteFromUrl();
 
 // 刷新令牌也换不回来时，请求层会广播「会话失效」：这里把身份与未读角标一起清掉，
 // 界面立刻回到未登录，而不是继续显示「已登录」（测试报告 D15）

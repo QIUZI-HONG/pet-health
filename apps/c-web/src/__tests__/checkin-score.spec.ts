@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 import CheckInCard from "../components/CheckInCard.vue";
 import HealthScoreCard from "../components/HealthScoreCard.vue";
-import type { CheckInDay, HealthScore } from "@pet-health/shared";
+import type { CheckInDay, HealthScoreView } from "@pet-health/shared";
 
 function makeDay(overrides: Partial<CheckInDay> = {}): CheckInDay {
   const names = ["体重", "饮食", "排泄", "行为", "情绪", "卫生"];
@@ -34,7 +34,7 @@ function makeDay(overrides: Partial<CheckInDay> = {}): CheckInDay {
   } as CheckInDay;
 }
 
-function makeScore(overrides: Partial<HealthScore> = {}): HealthScore {
+function makeScore(overrides: Partial<HealthScoreView> = {}): HealthScoreView {
   return {
     total_score: 66,
     grade: "需关注",
@@ -49,7 +49,7 @@ function makeScore(overrides: Partial<HealthScore> = {}): HealthScore {
     calc_date: "2026-09-27",
     disclaimer: "评分用于观察趋势，不能替代兽医诊断。",
     ...overrides,
-  } as HealthScore;
+  } as HealthScoreView;
 }
 
 describe("打卡卡", () => {
@@ -179,7 +179,7 @@ it("点行内展开 → 勾「不太正常」→ 保存，提交里带 abnormal:
   });
 
   /**
-   * 体重这一项**后端不校验**（`CheckInItemInput.value` 是自由字符串），`abc` / `0` / `-5` / `99999`
+   * 体重这一项**后端不校验**（`CheckInItemRequest.value` 是自由字符串），`abc` / `0` / `-5` / `99999`
    * 都收得下并落进档案、参与体重趋势——实测首页会出现「体重下降了 2000080%」这种提醒。
    * 前端拦一道：非法值不发请求，并当场告诉用户哪里不对。
    */

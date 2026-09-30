@@ -6,11 +6,16 @@
  * 没有就回首页——用户从深链接被拦下来时不该丢上下文。
  *
  * 没有短信通道，所以是手机号 + 密码（ADR-0012 / 0027 的取舍）；验证码登录等短信落地后作为并列方式补上。
+ *
+ * **邀请码在这里填，而且只有这一次**（ADR-0039 第一节）：归因的时点就是注册那一刻，
+ * 注册成功后由本页立即调一次 `/invites/attribution`；接口层没有任何「事后补填」的出口
+ * （补填就是刷券的入口）。分享链接带 `?invite=CODE` 时这里预填，链接只做预填、以用户填的为准。
  */
-import { computed, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ApiError } from "@pet-health/shared";
+import { toApiFailure } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
+import { attributeAfterRegister, readRememberedInvite } from "../utils/invite";
 
 const session = useSessionStore();
 const router = useRouter();
@@ -21,7 +26,21 @@ const submitting = ref(false);
 const errorMessage = ref("");
 const requestId = ref("");
 
-const form = reactive({ phone: "", password: "", nickname: "" });
+const form = reactive({ phone: "", password: "", nickname: "", inviteCode: "" });
+
+/**
+ * 归因的渠道标签（契约：1 分享链接（预填）/ 2 注册表单手工填）。
+ * 预填来自链接、用户没动过就是 1；用户自己敲/改了就是 2——两者都算「用户填了码」。
+ */
+const inviteChannel = ref(2);
+
+onMounted(() => {
+  const remembered = readRememberedInvite();
+  if (remembered) {
+    form.inviteCode = remembered.code;
+    inviteChannel.value = remembered.channel;
+  }
+});
 
 /** 失焦后才提示：刚打开页面、还没开始填就红一片是很烦人的。 */
 const phoneTouched = ref(false);
@@ -50,6 +69,11 @@ function switchMode(): void {
   requestId.value = "";
 }
 
+/** 手改邀请码 → 渠道标签变成「注册表单手工填」（契约的两个取值都由前端如实上报）。 */
+function onInviteInput(): void {
+  inviteChannel.value = 2;
+}
+
 async function submit(): Promise<void> {
   if (!canSubmit.value) return;
   errorMessage.value = "";
@@ -58,18 +82,23 @@ async function submit(): Promise<void> {
   try {
     if (isRegister.value) {
       await session.register(form.phone, form.password, form.nickname.trim() || undefined);
+      // 归因只有一次机会，时点就是注册那一刻（ADR-0039 第一节）：注册成功后立即调一次。
+      // **不 await**：这是一次旁路调用，超时或失败都不能把用户拦在注册页（失败只进日志）。
+      const inviteCode = form.inviteCode.trim();
+      if (inviteCode) {
+        // 服务端返回的那句话由**跳转之后的页面**展示（首页的提示条，中转见 utils/invite.ts）——
+        // 注册页在这一刻就要卸载了，留在这里显示等于没显示
+        void attributeAfterRegister(inviteCode, inviteChannel.value);
+      }
     } else {
       await session.login(form.phone, form.password);
     }
     const redirect = route.query.redirect;
     await router.push(typeof redirect === "string" && redirect ? redirect : { name: "home" });
   } catch (error) {
-    if (error instanceof ApiError) {
-      errorMessage.value = error.message;
-      requestId.value = error.requestId;
-    } else {
-      errorMessage.value = "登录失败，请稍后重试";
-    }
+    const failure = toApiFailure(error, "登录失败，请稍后重试");
+    errorMessage.value = failure.message;
+    requestId.value = failure.requestId;
   } finally {
     submitting.value = false;
   }
@@ -119,6 +148,19 @@ async function submit(): Promise<void> {
         <label v-if="isRegister" class="ph-field">
           <span class="ph-field__label">昵称（可选）</span>
           <input v-model.trim="form.nickname" class="ph-field__input ph-field__input--lg" maxlength="64" placeholder="怎么称呼你" />
+        </label>
+        <label v-if="isRegister" class="ph-field">
+          <span class="ph-field__label">邀请码（可选）</span>
+          <input
+            v-model.trim="form.inviteCode"
+            class="ph-field__input ph-field__input--lg"
+            maxlength="32"
+            placeholder="好友的邀请码"
+            @input="onInviteInput"
+          />
+          <span class="ph-field__label">
+            邀请码只在注册时有效，注册完成后无法补填——请现在确认。
+          </span>
         </label>
 
         <p v-if="errorMessage" class="ph-login__error">

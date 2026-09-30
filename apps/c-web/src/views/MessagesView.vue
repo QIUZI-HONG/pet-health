@@ -8,18 +8,21 @@
  * 口径提醒：本项目没有推送通道，所以页面上要说清「主动」的含义——系统主动**生成**，
  * 用户回到站内就能看到；不要写成「实时推送」（ADR-0019）。
  */
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
-  ApiError,
+  toApiFailure,
   toUserMessage,
+  riskTone,
+  type RiskTone,
   cApp,
   createLatestGuard,
   formatDateTime,
   type MessageView,
-  type ReminderSetting,
+  type ReminderSettingView,
 } from "@pet-health/shared";
 import { useMessageStore } from "../stores/messages";
 import { useSessionStore } from "../stores/session";
+import { startVisiblePolling } from "../utils/poll";
 import SessionGate from "../components/SessionGate.vue";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import StateError from "../components/states/StateError.vue";
@@ -28,7 +31,7 @@ import StateLoading from "../components/states/StateLoading.vue";
 const messageStore = useMessageStore();
 const session = useSessionStore();
 const messages = ref<MessageView[]>([]);
-const settings = ref<ReminderSetting[]>([]);
+const settings = ref<ReminderSettingView[]>([]);
 const loading = ref(true);
 const saving = ref(false);
 const errorMessage = ref("");
@@ -50,6 +53,10 @@ const unreadCount = computed(() => messageStore.unread);
  */
 const latest = createLatestGuard();
 
+/**
+ * 取消息与提醒设置（append 是「加载更多」）；旧响应一律丢弃（见上面的 latest），
+ * 落地的同时让 store 把未读数刷成服务端口径。
+ */
 async function load(append = false): Promise<void> {
   const { token: seq, signal } = latest.claim();
   loading.value = !append;
@@ -68,12 +75,9 @@ async function load(append = false): Promise<void> {
     await messageStore.refresh();
   } catch (error) {
     if (!latest.isCurrent(seq)) return;
-    if (error instanceof ApiError) {
-      errorMessage.value = error.message;
-      requestId.value = error.requestId;
-    } else {
-      errorMessage.value = "加载失败，请稍后重试";
-    }
+    const failure = toApiFailure(error, "加载失败，请稍后重试");
+    errorMessage.value = failure.message;
+    requestId.value = failure.requestId;
   } finally {
     if (latest.isCurrent(seq)) {
       loading.value = false;
@@ -94,6 +98,47 @@ watch(
   { immediate: true },
 );
 
+/**
+ * 后台刷新（轮询兜底，ADR-0040 第三节）。与 `load()` 的三处差别都是为了**不打扰正在看页面的人**：
+ *
+ *  1. **不进加载态**：否则每 30 秒整页闪一次骨架；
+ *  2. **翻过页就不动列表**：只把未读数刷成服务端口径。拉第 1 页会覆盖 `messages`，
+ *     等于把用户翻到第 3 页的结果吃掉——他要看的正是那几页；
+ *  3. **有请求在飞时不发**：与用户刚触发的加载抢同一个 `latest` 号，两边都会白做一次。
+ *
+ * 失败**不写错误条**：后台刷新失败不该把用户正在看的页面变成错误态，下一个周期还会再试。
+ */
+async function pollRefresh(): Promise<void> {
+  // 未登录时不轮询：那只会每 30 秒换回一个 40100（页面这时显示的是闸门，没有任何要刷新的数据）
+  if (!session.isLoggedIn) return;
+  if (loading.value || saving.value) return;
+  try {
+    if (page.value > 1) {
+      await messageStore.refresh();
+      return;
+    }
+    const result = await cApp.listMessages({ unreadOnly: unreadOnly.value, page: 1, pageSize: 20 });
+    messages.value = result.list ?? [];
+    page.value = result.page ?? 1;
+    hasMore.value = result.has_more ?? false;
+    await messageStore.refresh();
+  } catch {
+    // 静默：见上面第 3 条
+  }
+}
+
+/** 轮询只在页面可见时跑（切到别的标签页就停表）；卸载时必须停，否则定时器会去改一个没了的页面。 */
+let stopPolling: () => void = () => {};
+
+onMounted(() => {
+  stopPolling = startVisiblePolling(pollRefresh);
+});
+
+onBeforeUnmount(() => {
+  stopPolling();
+});
+
+/** 标记已读：用服务端返回的那一条替换本地项（不整页重拉），未读数随后由 store 刷成服务端口径。 */
 async function markRead(message: MessageView): Promise<void> {
   if (message.read) return;
   try {
@@ -116,6 +161,7 @@ async function remove(message: MessageView): Promise<void> {
   }
 }
 
+/** 全部已读：完成后整页重载——未读数是服务端口径，本地改标记盖不住它。 */
 async function markAllRead(): Promise<void> {
   saving.value = true;
   try {
@@ -129,7 +175,8 @@ async function markAllRead(): Promise<void> {
   }
 }
 
-async function toggleSetting(setting: ReminderSetting, event: Event): Promise<void> {
+/** 改一个类型的提醒开关：不可关闭的类型不发请求；失败要把复选框拨回去，见下面 inline 的说明。 */
+async function toggleSetting(setting: ReminderSettingView, event: Event): Promise<void> {
   if (!setting.closable) return;   // 不可关闭的那类，开关是灰的，点了也不该发请求
   const input = event.target as HTMLInputElement;
   saving.value = true;
@@ -145,16 +192,17 @@ async function toggleSetting(setting: ReminderSetting, event: Event): Promise<vo
   }
 }
 
+/** 风险档 → 底色类名；分档判据在 shared 的 riskTone，这里只拼类名。 */
 function riskClass(message: MessageView): string {
-  if (message.risk_level === 3) return "ph-msg__risk--red";
-  if (message.risk_level === 2) return "ph-msg__risk--yellow";
-  return "ph-msg__risk--green";
+  return `ph-msg__risk--${riskTone(message.risk_level)}`;
 }
 
+/** 列表里的短标签：分档判据来自 shared，这里只决定「这一档显示什么词」。 */
+const RISK_WORD: Record<RiskTone, string> = { red: "紧急", yellow: "请关注", green: "" };
+
+/** 列表里的短词；绿档不出标签，所以是空串（模板按它是否为空决定渲不渲染）。 */
 function riskLabel(message: MessageView): string {
-  if (message.risk_level === 3) return "紧急";
-  if (message.risk_level === 2) return "请关注";
-  return "";
+  return RISK_WORD[riskTone(message.risk_level)];
 }
 </script>
 
@@ -162,7 +210,8 @@ function riskLabel(message: MessageView): string {
   <section>
     <h2 class="ph-page-title">消息中心</h2>
     <p class="ph-page-desc">
-      系统为你生成的健康提醒与业务通知都汇总在这里。没有推送通道（ADR-0019），所以提醒是「回到站内就能看到」。
+      系统为你生成的健康提醒与业务通知都汇总在这里。没有推送通道（ADR-0019），所以提醒是「回到站内就能看到」；
+      页面开着时会定时刷新（关掉这个标签页就停）。
     </p>
 
     <SessionGate forbidden-description="登录后查看你的提醒与通知。">
