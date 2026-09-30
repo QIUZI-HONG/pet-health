@@ -13,6 +13,9 @@
   "dependencies": {
     "@pet-health/shared": "workspace:*"
   },
+  "devDependencies": {
+    "@pet-health/config": "workspace:*"
+  },
   "peerDependencies": {
     "vue": "^3.5.0"
   }

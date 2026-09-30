@@ -3,11 +3,12 @@
  *
  * 为什么值得单独一组：请求层是**所有页面共用的那条路**——令牌怎么带、40101 怎么静默刷新、
  * 刷新失败怎么收场、什么错误重试、什么错误不重试，全在 `packages/shared/src/http/client.ts` 一个文件里。
- * 而 `packages/shared` 至今**没有自己的测试运行器**（package.json 里没有 test 脚本），
  * 这些行为此前只被「组件测试里 mock 掉的 shared」绕过去：D15 修好的「会话失效广播」
  * 在请求层里一行断言都没有。
  *
- * 放在这里是因为 C 端是当前唯一配了 runner 的包（补 shared 自己的 runner 是另一件事，见测试报告）。
+ * **这份测试原先住在 `apps/c-web/src/__tests__/`**：那时 c-web 是唯一配了 runner 的包，
+ * 而它一行 c-web 的东西都不 import。现在 `packages/shared` 有了自己的 vitest，
+ * 测试回到被测代码所在的包——改 shared 的人不必再去 C 端的测试目录里找。
  *
  * 桩打在 axios 层（与 photo-upload / ai-consult 同一手法）：`client.ts` 建两个实例，
  * 第一个是业务客户端、第二个是刷新专用（不挂请求拦截器、避免刷新失败后递归刷新）。
