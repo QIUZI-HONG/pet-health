@@ -47,7 +47,7 @@ tags:
   - name: order
     description: 订单与履约：接单 / 核销 / 三道照片墙 / 报工（切片 #77 / #107 / #109；决策见 ADR-0038 / ADR-0040）
   - name: file
-    description: 服务留痕照片的直传凭证（ADR-0020 的预签名直传；`biz_type` 只收 `care`）
+    description: 图片直传凭证（ADR-0020 的预签名直传；`biz_type` 收 `care`（服务留痕）与 `qualification`（资质材料））
   - name: coupon
     description: 券池：选券并承诺可核销额度、看贡献与核销统计（切片 #110，决策见 ADR-0037 / ADR-0044）
   - name: assessment
@@ -55,6 +55,15 @@ tags:
       月度考核：我的月度分（列表 + 明细）。每月 1 日算上月，落月度分表、保留历史（跨月可对比）。
       算法与缺项口径见 ADR-0039 第三节 / ADR-0050 第四节，本切片的实现决策见
       ADR-0052；**规则配置与单项分覆盖在运营后台**（`admin.yaml`，只归超级管理员）。
+  - name: invite
+    description: |
+      门店推广码（营销中心里的「推广码与店内物料」）：一店一码，扫它注册的用户**归因到门店**。
+
+      它是考核「拉新」那一项的取数来源（交付文档 F022 的店内二维码），
+      闭合了 ADR-0052「需要协调」第 1 条——在那之前服务者侧没有任何拉新入口，
+      考核的拉新项取不到数，只能按「不参与、重算权重、明细注明」处理。
+
+      **只有门店管理员能取码**（技师不行，与券贡献同一道门禁）；取码幂等，重复调用返回同一个码。
 
 security:
   - bearerAuth: []
@@ -1041,19 +1050,22 @@ paths:
   /files/presign:
     post:
       tags: [file]
-      summary: 申请上传凭证（服务留痕照片）
+      summary: 申请上传凭证（服务留痕照片 / 资质材料图）
       description: |
-        三道照片墙（ADR-0040 第四节）的照片由**门店**拍、门店传：一次最多 9 张，返回每个文件的
-        直传地址（含签名与有效期），浏览器把字节直接 PUT 到那里（`/api/v1/open/files/{id}/content`），
-        **不经业务接口**。上传完成后用返回的 `file_id` 挂到订单的照片槽位上
-        （`PUT /orders/{order_id}/photo-slots/{slot}`）。
+        服务者侧传图的第一步：一次最多 9 张，返回每个文件的直传地址（含签名与有效期），
+        浏览器把字节直接 PUT 到那里（`/api/v1/open/files/{id}/content`），**不经业务接口**。
+        上传完成后用返回的 `file_id` 挂到业务上——两种用途各挂一处：
 
-        与 C 端的区别只有一处：这里的 `biz_type` **只收 `care`**（服务留痕）。
+        - `care`（服务留痕）：挂到订单的照片槽位（`PUT /orders/{order_id}/photo-slots/{slot}`）；
+        - `qualification`（资质材料）：挂到资质材料上（入驻申请 / `PUT /profile/qualifications`）。
+
+        与 C 端的区别只有一处：这里的 `biz_type` **只收 `care` 与 `qualification`**。
         打卡 / 防疫 / 档案照片 / 咨询图都是用户自己的照片，不该由门店的手上传；
-        契约收窄，服务端照此拒绝（非 `care` → 40001）。
+        契约收窄，服务端照此拒绝（其余用途 → 40001）。
 
-        `pet_id` 传订单里的宠物 id：照片墙要求「照片是这只宠物的」，而文件域自己判不了这件事
-        （宠物不是文件模块的表）——它由订单侧在挂载时校验（ADR-0040 / ADR-0048）。
+        `pet_id` 只有 `care` 要传（照片墙要求「照片是这只宠物的」，而文件域自己判不了这件事
+        ——宠物不是文件模块的表，所以由订单侧在挂载时校验，ADR-0040 / ADR-0048）；
+        `qualification` 不关联宠物，留空。
         声明的 `mime` 与 `size_bytes` 只用于提前拦截；落库以魔数判定与实际字节数为准（ADR-0020）。
       requestBody:
         required: true
@@ -1394,6 +1406,54 @@ paths:
         "404":
           description: 该账期没有考核记录，或不属于当前服务者（40400）
 
+  /invite-code:
+    get:
+      tags: [invite]
+      summary: 我的门店推广码与拉新战况
+      description: |
+        **还没生成过时 `code` 为 null**（不是 404）——那是正常状态，前端据此显示「生成推广码」。
+        GET **不写库**：一个会写库的 GET 是最容易被误触的接口形态（预取、重试、浏览器预读都会命中）。
+
+        三个计数是**累计**的：`effective_invites`（有效，考核取数的同一口径）、
+        `pending_invites`（还在 24 小时观察窗里）、`invalid_invites`（观察窗内无行为被判掉）。
+        三者之和 = 扫过这个码注册的人数。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ProviderInviteCodeView" }
+        "401":
+          $ref: "./common.yaml#/components/responses/Unauthorized"
+    post:
+      tags: [invite]
+      summary: 生成门店推广码（幂等）
+      description: |
+        第一次调用生成码，之后每次调用都返回**同一个码**（一店一码由唯一键兜底，并发取码也只有一个赢家）。
+
+        **只有门店管理员能取**：它是门店的对外物料，技师不能替门店承诺拉新（与券贡献同一道门禁）。
+        当前账号还没有绑定门店时 40400。
+      responses:
+        "200":
+          description: 成功（新建或取回已有的码）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ProviderInviteCodeView" }
+        "401":
+          $ref: "./common.yaml#/components/responses/Unauthorized"
+        "404":
+          description: 当前账号还没有绑定的门店，或不是该门店的管理员（40400）
+
 components:
   parameters:
     ApplicationId:
@@ -1479,6 +1539,17 @@ components:
         status: { type: integer, description: 1 启用 / 0 停用 }
         updated_at: { type: string, description: "yyyy-MM-dd HH:mm:ss" }
 
+    ProviderInviteCodeView:
+      type: object
+      description: 门店推广码与拉新战况；`code` 为 null 表示还没生成过（不是错误）
+      properties:
+        code: { type: string, nullable: true, description: "形如 PVXXXXXXXX（前缀 PV + 8 位，与用户邀请码的 8 位不同长）" }
+        status: { type: integer, nullable: true, description: 1 启用 / 0 停用；没有码时为 null }
+        created_at: { type: string, nullable: true }
+        effective_invites: { type: integer, format: int64, description: 有效邀请数（完成建档 + 观察期内有行为），**累计**；考核的拉新项取的就是这个口径 }
+        pending_invites: { type: integer, format: int64, description: 还在 24 小时观察窗里的条数 }
+        invalid_invites: { type: integer, format: int64, description: 被判无效（观察窗内无行为）的条数 }
+
     ProviderProfileView:
       type: object
       description: 服务者（门店）信息；`phone` 是脱敏值（ADR-0013）
@@ -1486,7 +1557,8 @@ components:
         id: { type: integer, format: int64 }
         name: { type: string }
         type: { type: integer, description: 1 医院 / 2 洗护 / 3 训犬 / 4 寄养上门 / 5 食品用品 / 6 间接服务 }
-        category: { type: integer, description: 1 直接同业 / 2 直接异业 / 3 间接异业 }
+        category: { type: integer, description: 联盟分类维度取值（`provider_alliance_category.id`）。种子三档是 1 直接同业 / 2 直接异业 / 3 间接异业，但**值域由运营维护**，不要在前端写死这三档 }
+        category_name: { type: string, nullable: true, description: 联盟分类名。**维度查不到时为 null**——前端不要用本地标签表兜底，那会让「运营改了维度名」在页面上看不见 }
         logo: { type: string, nullable: true }
         intro: { type: string, nullable: true }
         address: { type: string }
@@ -1498,7 +1570,8 @@ components:
           items: { $ref: "#/components/schemas/BusinessHour" }
         status: { type: integer, description: 0 待审核 / 1 正常 / 2 驳回 / 3 冻结 }
         level: { type: integer, description: 1 基础 / 2 优选 / 3 战略合作。**月度考核（F022）算完会写回这里**（最近一期的等级）；还没算过则是 1 }
-        region_code: { type: string, nullable: true, description: 区域编码（**区域保护规则留白待定**，见 ADR-0039 第三节与 ADR-0052 的待澄清，现恒为空） }
+        recommend_priority: { type: integer, description: 1 最高 / 2 较高 / 3 普通。**V45 起由考核按等级档位写回**（档位映射在运营后台可改），C 端找店按它排序；还没算过考核则是 3（普通，与 level 默认的「基础」同档） }
+        region_code: { type: string, nullable: true, description: "区域编码（运营维护，见 admin.yaml 的 `/providers/{provider_id}/region`）。**它现在是「可筛选」，不是「已被保护」**：排他性的区域保护规则（谁在哪个区独占、独占多久、冲突怎么判）仍未定" }
         monthly_score: { type: string, description: 月度考核分（最近一期的总分，两位小数字符串）；还没算过则是 "0.00" }
         rating: { type: string, description: 评分（门店所有评价的**平均分**，一位小数）。评价由 C 端用户在订单完成后提交（C 端的「评价晒单」接口），**没有评价的店是数据库默认值 5.0**——它不代表「满分好评」，服务者后台展示时要与评价条数一起看（评价条数在 C 端的「某门店的评价列表」接口里） }
         approved_at: { type: string, nullable: true }
@@ -1537,13 +1610,18 @@ components:
 
     ProviderQualificationView:
       type: object
-      description: 资质材料（`cert_no` 是脱敏值）
+      description: |
+        资质材料（`cert_no` 是脱敏值）。
+        **图片是「存 id、读时签发」**：库里只有 `file_id`，`file_url` 是后端当场签发的短时读地址
+        （ADR-0020 / ADR-0053）——所以它每次请求都可能不同，**不要缓存它**，也不要把它回传给
+        `ProviderQualificationRequest`（那边要的是 `file_id`）。
       properties:
         id: { type: integer, format: int64 }
         type: { type: integer, description: 1 营业执照 / 2 执业许可证 / 3 法人身份证 / 4 训犬师认证 / 5 健康证 / 6 其他 }
         name: { type: string }
         cert_no: { type: string, nullable: true, description: 证件号（脱敏，如 9133**********1234） }
-        file_url: { type: string, nullable: true, description: 材料图片 URL（走 ph-file 上传，ADR-0020） }
+        file_id: { type: integer, format: int64, nullable: true, description: 材料图片的文件 id；「整体替换」时要原样带回来才能保住这张图 }
+        file_url: { type: string, nullable: true, description: 材料图片的**签名读地址**（服务端当场签发，有有效期）；为空表示这份材料没传图 }
         valid_from: { type: string, nullable: true, description: yyyy-MM-dd }
         valid_until: { type: string, nullable: true, description: 到期日；为空表示长期有效 }
         status: { type: integer, description: 0 待审 / 1 通过 / 2 驳回 }
@@ -1551,12 +1629,21 @@ components:
 
     ProviderQualificationRequest:
       type: object
-      required: [type]
+      description: |
+        一份资质材料。**`file_id` 必填**（ADR-0053）：材料的图是审核的依据，没有图审核员无从判断，
+        所以不带图直接 40001。
+
+        `file_id` 由 `POST /api/v1/provider/files/presign`（`biz_type=qualification`）换出来，
+        上传完成后把 ID 填进来；**字节不经业务接口**（ADR-0020）。
+      required: [type, file_id]
       properties:
         type: { type: integer, description: 1 营业执照 / 2 执业许可证 / 3 法人身份证 / 4 训犬师认证 / 5 健康证 / 6 其他 }
         name: { type: string, maxLength: 128, description: 材料名称，如「动物诊疗许可证」 }
         cert_no: { type: string, maxLength: 64, nullable: true, description: 证件号明文（服务端加密存密文 + HMAC 查找列） }
-        file_url: { type: string, maxLength: 512, nullable: true }
+        file_id:
+          type: integer
+          format: int64
+          description: 材料图片的文件 id（`biz_type=qualification` 上传所得）。**必填**——没有图不能提交
         valid_from: { type: string, nullable: true, description: yyyy-MM-dd }
         valid_until: { type: string, nullable: true, description: yyyy-MM-dd；为空表示长期有效 }
 
@@ -1577,7 +1664,7 @@ components:
       properties:
         name: { type: string, maxLength: 256 }
         type: { type: integer, minimum: 1, maximum: 6, description: 1 医院 / 2 洗护 / 3 训犬 / 4 寄养上门 / 5 食品用品 / 6 间接服务 }
-        category: { type: integer, minimum: 1, maximum: 3, description: 1 直接同业 / 2 直接异业 / 3 间接异业（默认 1） }
+        category: { type: integer, minimum: 1, description: "联盟分类维度取值（`provider_alliance_category.id`）。**必须是一档启用中的维度**，由服务端查表校验（不在此处限制范围，运营新增维度后无需改契约）；不传则归到顺序最小的启用维度" }
         logo: { type: string, maxLength: 512, nullable: true }
         intro: { type: string, maxLength: 1024, nullable: true }
         address: { type: string, maxLength: 512 }
@@ -1966,12 +2053,18 @@ components:
       properties:
         biz_type:
           type: string
-          description: 业务用途。服务者侧**只收 `care`**（服务留痕）——别的用途都是用户自己的照片
-          enum: [care]
+          description: |
+            业务用途。服务者侧收两种：
+            - `care`：订单服务留痕照片（三道照片墙，ADR-0040），要带 `pet_id`；
+            - `qualification`：门店资质材料图（营业执照 / 执业许可证等，ADR-0053），**不带 `pet_id`**。
+
+            其余的用途（打卡 / 防疫 / 档案照片 / 咨询图）都是用户自己的照片，不该由门店的手上传，
+            契约收窄、服务端照此拒绝（非上述两者 → 40001）。
+          enum: [care, qualification]
         pet_id:
           type: integer
           format: int64
-          description: 订单里的宠物 id（照片墙要求照片是这只宠物的，校验在订单侧）
+          description: 订单里的宠物 id。**只有 `care` 要传**（照片墙要求照片是这只宠物的，校验在订单侧）；`qualification` 留空
         items:
           type: array
           minItems: 1

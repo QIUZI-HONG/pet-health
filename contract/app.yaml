@@ -1560,12 +1560,13 @@ paths:
 
         关键词在**门店名称**上模糊匹配（服务项名称不参与：那是详情页里的事，
         在列表上匹配服务名会让「搜疫苗」把整条街的医院都列出来）。排序固定为
-        **考核等级优先（战略 > 优选 > 基础）→ 评分降序 → id 升序**：等级即交付文档 2.3 的
-        「等级决定 AI 推荐优先级」（考核算出 `provider.level`，见 ADR-0052 第三节）；
+        **推荐优先级升序（1 最高）→ 评分降序 → id 升序**（V45 起）：优先级由月度考核按等级档位
+        写回 `provider.recommend_priority`，而档位映射（哪个等级对应哪个优先级）**运营可改**，
+        改完当场影响这里的顺序——这正是交付文档 2.3「等级决定 AI 推荐优先级」那条口径的落点。
+        还没算过考核的新店是默认档 3（普通，与 `level` 默认的「基础」同档），
+        不会因为「没有数据」反而排到最前。
         `rating` 是**评价聚合出来的平均分**（口径见 `GET /providers/{provider_id}/reviews`），
         没有评价的店取数据库默认值——给一个确定的顺序，不把「数据库碰巧返回的顺序」当排序。
-        **没有月度成绩的新店** `level` 就是默认的「基础」（1）——等级只分三档，
-        新店不会被特殊对待（既不优待也不惩罚），要往上走只能靠考核结果。
 
         **本接口不需要身份**（`security: []`，ADR-0037 第一节）。响应里没有 `status` / `level` /
         `monthly_score` 这些内部字段：C 端看到的只有「能对外说的那一面」。
@@ -1583,11 +1584,20 @@ paths:
           in: query
           description: 门店名称关键词（模糊匹配），最长 32 字符；不传表示不过滤
           schema: { type: string, maxLength: 32 }
+        - name: region_code
+          in: query
+          description: |
+            区域编码（精确匹配，如 `SH-XH`）；不传表示不过滤。
+
+            **这是筛选，不是「区域保护」**：区域由运营维护（`admin.yaml` 的
+            `/providers/{provider_id}/region`），排他性的保护规则仍未定。没有区域编码的门店
+            （还是空的门店）在带这个参数时不会出现——这是筛选的应有之义。
+          schema: { type: string, maxLength: 32 }
         - $ref: "./common.yaml#/components/parameters/Page"
         - $ref: "./common.yaml#/components/parameters/PageSize"
       responses:
         "200":
-          description: 成功（评分降序，同分按 id 升序）
+          description: 成功（推荐优先级升序 → 评分降序 → id 升序）
           content:
             application/json:
               schema:

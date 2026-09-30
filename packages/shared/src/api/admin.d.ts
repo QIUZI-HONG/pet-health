@@ -1485,6 +1485,378 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/providers/{provider_id}/alliance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 指定服务者的联盟分类归属
+         * @description 一期验收标准的「服务者联盟分类：分类维度维护与归属」里**归属**那一半。
+         *
+         *     目标维度必须是**启用中**的（停用档不能再被指定）；改归属进审核流水
+         *     （`target_type = 4` 服务者、`action = 9` 改联盟归属），与冻结 / 解冻同一张 append-only 表——
+         *     联盟分类会进考核与流量分配的输入，属于「事后要能查是谁改的」那一类动作。
+         *
+         *     归属是平台侧的分类（交付文档 2.2 把经营主体分类划在平台侧），**服务者不能自己改**，
+         *     服务者后台只读展示。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    provider_id: components["parameters"]["ProviderId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProviderAllianceRequest"];
+                };
+            };
+            responses: {
+                /** @description 变更后的服务者信息 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderProfileView"];
+                        };
+                    };
+                };
+                /** @description 联盟分类不存在或已停用（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 服务者不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 该服务者已经归属这一档，无需变更（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/{provider_id}/region": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 指定服务者的区域编码
+         * @description 「区域保护」专项里**可写的那一半**：让 `provider.region_code` 从「永远为空」变成
+         *     「运营可维护、C 端可筛选」。
+         *
+         *     **它现在不是「已被保护」**：排他性的规则（谁在哪个区独占、独占多久、两个服务者同区怎么办）
+         *     仍未定，本接口不假装已经裁决。口径与 V45 的迁移注释一致。
+         *
+         *     `region_code` 传 null 或空串表示**清空**（把门店从一个片区摘下来）。格式限制为大写字母 /
+         *     数字 / 连字符（如 `SH-XH`）：区域编码是运营侧的分类而不是自由文本，放开格式会让同一个区
+         *     出现多份写法，筛选就废了。变更进审核流水（`action = 10`）。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    provider_id: components["parameters"]["ProviderId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProviderRegionRequest"];
+                };
+            };
+            responses: {
+                /** @description 变更后的服务者信息 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderProfileView"];
+                        };
+                    };
+                };
+                /** @description 区域编码格式不合法（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 服务者不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 区域没有变化（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alliance-categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 联盟分类维度列表
+         * @description **含停用档**：停用的维度仍然承载着既有归属（停用不移动归属），藏起来会让那些门店的分类列
+         *     显示成空白。`provider_count` 是当前归属到该档的门店数——停用之前先看这一列，就知道会影响谁。
+         *
+         *     不分页：维度是运营维护的短清单（种子三档，实际用起来也就十几档）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按 sort_order、id 升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AllianceCategoryView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 新增一档联盟分类维度
+         * @description `code` 与 `name` 都查重（两个唯一键）。`sort_order` 不传时排到既有档位之后。
+         *     新增的维度**立刻可指派**——服务端不再用注解限制取值范围，就是为此。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AllianceCategoryRequest"];
+                };
+            };
+            responses: {
+                /** @description 新建的维度 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AllianceCategoryView"];
+                        };
+                    };
+                };
+                /** @description 编码或名称已存在（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alliance-categories/{category_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改联盟分类维度
+         * @description 只改名称 / 说明 / 顺序。**编码不可改**：它是稳定标识（前端与报表引用它），
+         *     改了等于换了一档维度，而挂在它上面的门店不会跟着走。要改语义请停用旧档、新增新档。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 联盟分类维度 id（也就是 `provider.category` 里存的那个值） */
+                    category_id: components["parameters"]["AllianceCategoryId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AllianceCategoryRequest"];
+                };
+            };
+            responses: {
+                /** @description 修改后的维度 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AllianceCategoryView"];
+                        };
+                    };
+                };
+                /** @description 维度不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 名称已被别的档占用（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alliance-categories/{category_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 启用 / 停用联盟分类维度
+         * @description **停用不移动既有归属**：已在档上的门店照旧显示这个维度名，只是不能再被新指定
+         *     （指派接口会拒绝停用档，入驻申请提交也会拒绝）。
+         *
+         *     没有删除接口：维度被 `provider.category` 引用，删掉会让历史归属悬空。停用是唯一的收敛手段。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 联盟分类维度 id（也就是 `provider.category` 里存的那个值） */
+                    category_id: components["parameters"]["AllianceCategoryId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AllianceCategoryStatusRequest"];
+                };
+            };
+            responses: {
+                /** @description 变更后的维度 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AllianceCategoryView"];
+                        };
+                    };
+                };
+                /** @description 维度不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 已经是该状态（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/service-listings": {
         parameters: {
             query?: never;
@@ -5173,6 +5545,11 @@ export interface components {
             qualifications?: components["schemas"]["ProviderQualificationView"][];
             review_logs?: components["schemas"]["ReviewLogView"][];
         };
+        /**
+         * @description 资质材料（`cert_no` 是脱敏值）。
+         *     **`file_url` 是后端当场签发的短时读地址**（库里存的是 `file_id`，见 ADR-0053）——
+         *     审核员点它就能看到材料图；为空表示这份材料没传图（老数据或未补交的）。
+         */
         ProviderQualificationView: {
             /** Format: int64 */
             id?: number;
@@ -5181,7 +5558,12 @@ export interface components {
             name?: string;
             /** @description 证件号（脱敏） */
             cert_no?: string | null;
-            /** @description 材料图片 URL；审核时要打开它看材料 */
+            /**
+             * Format: int64
+             * @description 材料图片的文件 id
+             */
+            file_id?: number | null;
+            /** @description 材料图片的签名读地址（当场签发，有有效期）；审核时要打开它看材料 */
             file_url?: string | null;
             valid_from?: string | null;
             /** @description 到期日；为空表示长期有效 */
@@ -5197,8 +5579,10 @@ export interface components {
             name?: string;
             /** @description 1 医院 / 2 洗护 / 3 训犬 / 4 寄养上门 / 5 食品用品 / 6 间接服务 */
             type?: number;
-            /** @description 1 直接同业 / 2 直接异业 / 3 间接异业 */
+            /** @description 联盟分类维度取值（`provider_alliance_category.id`，运营可维护，见 `/alliance-categories`） */
             category?: number;
+            /** @description 联盟分类名。**维度查不到时为 null**（数据或代码有一处旧了，不静默顶替成「其它」） */
+            category_name?: string | null;
             logo?: string | null;
             intro?: string | null;
             address?: string;
@@ -5210,7 +5594,10 @@ export interface components {
             /** @description 0 待审核 / 1 正常 / 2 驳回 / 3 冻结 */
             status?: number;
             level?: number;
+            /** @description 区域编码（可空 = 未归属区域）。改它走 `/providers/{provider_id}/region` */
             region_code?: string | null;
+            /** @description 1 最高 / 2 较高 / 3 普通（V45 起由考核按等级档位写回；C 端找店按它排序） */
+            recommend_priority?: number;
             monthly_score?: string;
             rating?: string;
             approved_at?: string | null;
@@ -5230,6 +5617,45 @@ export interface components {
             status: number;
             /** @description 处置原因，进审核流水 */
             reason?: string | null;
+        };
+        ProviderAllianceRequest: {
+            /** @description 目标联盟分类维度 id（`provider_alliance_category.id`）。必须是**启用中**的维度；停用档返回 40001 */
+            category: number;
+        };
+        ProviderRegionRequest: {
+            /** @description 区域编码（大写字母 / 数字 / 连字符）。**为空表示清空**——门店可能从一个片区摘下来 */
+            region_code?: string | null;
+        };
+        /** @description 联盟分类维度；`id` 就是 `provider.category` 里存的值 */
+        AllianceCategoryView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 稳定标识（前端与报表引用它，不可改） */
+            code?: string;
+            name?: string;
+            description?: string | null;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用 */
+            enabled?: number;
+            /**
+             * Format: int64
+             * @description 当前归属到该档的门店数（未软删的全部门店，不过滤经营状态）
+             */
+            provider_count?: number;
+            created_at?: string;
+            updated_at?: string;
+        };
+        AllianceCategoryRequest: {
+            /** @description 维度编码。**修改路径上会被忽略**（编码不可改） */
+            code: string;
+            name: string;
+            description?: string | null;
+            /** @description 不传时新增排到末尾、修改保持原值 */
+            sort_order?: number | null;
+        };
+        AllianceCategoryStatusRequest: {
+            /** @description 1 启用 / 0 停用。停用不移动既有归属 */
+            enabled: number;
         };
         /** @description 服务者上架的服务项；名称与区间来自标准目录（现取，不是快照） */
         ProviderServiceView: {
@@ -6327,6 +6753,8 @@ export interface components {
     };
     parameters: {
         CategoryId: number;
+        /** @description 联盟分类维度 id（也就是 `provider.category` 里存的那个值） */
+        AllianceCategoryId: number;
         ItemId: number;
         /** @description 目录外服务提案 id */
         RequestId: number;
