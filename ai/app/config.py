@@ -3,14 +3,20 @@
 分层见 [ADR-0010](../../docs/adr/0010-ai-config-layering.md)：这里**只放技术参数**
 （谁能改 = 部署者，生效方式 = 重启）。
 
-业务可调项——提示词模板、硬红线词词典、风险分级规则、降级开关、灰度比例——
-在数据库里，由运营后台改、即时生效，**不进这里**（提示词目前还在代码里，见
-`prompts.py` 顶部的说明，等 #103 建表后搬走）。
+业务可调项——提示词模板、硬红线词词典、分级规则、护栏词表、降级开关、灰度比例——
+在数据库里（`knowledge_prompt_template` / `knowledge_red_flag` / `knowledge_grading_rule` /
+`knowledge_guard_term` / `knowledge_switch`），由运营后台改、即时生效，**不进这里**
+（读取与回落逻辑在 `ops.py` / `red_flags.py`，切片 #103 落地）。
+
+最后一条分界线：**代码常量**（引用校验逻辑、检索融合与排序、剂量正则）留在代码里，
+改它要发版——ADR-0033 把这三层各自的判据写清楚了。
 
 供应商与模型的选择见 [ADR-0017](../../docs/adr/0017-model-provider-deepseek.md)：
 当前接的是 DeepSeek，**文本与图片可用**（图片只有 flash 看得见，pro 看不见），
 没有语音转写、没有向量。下面几个 `ai_supports_*` 开关不是配置花样，
-是把「这家有/没有这个能力」写进代码——**请求路径也读它们**，不是只给健康检查看。
+是把「这家有/没有这个能力」写进代码：`ai_supports_image` 在**请求路径**上被读
+（选视觉模型、决定要不要降级），`embedding` 现在由知识检索的「不回落向量」直接体现
+（`knowledge.py` 不读 `knowledge_chunk`）。
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -58,13 +64,33 @@ class Settings(BaseSettings):
     ai_supports_embedding: bool = False
 
     # ---- 留痕 ----
-    # 提示词版本号随调用结果落库，用于事后归因分级漂移（提示词改了还是模型改了）。
-    # **唯一来源就是这里**：提示词入 DB（#103）之前，改提示词时必须手工把这里 +1。
+    # 提示词版本号**只在库里读不到时**用它（代码基线的编号）。切片 #103 之后，
+    # 正常路径的版本号来自 `knowledge_prompt_template.version`，随调用结果落库——
+    # 没有它，分级漂移无法归因（ADR-0010）。
     prompt_version: str = "p0-code"
 
     # 红线词表的缓存秒数（ADR-0021）：运营在后台改完，最多滞后这么久生效。
     # 调小 = 更及时但每次咨询都查库；0 表示每次都查。
     red_flag_cache_seconds: float = 60.0
+
+    # ---- 知识检索与运营可调项（切片 #100/#103）----
+    # 三个缓存都是同一取舍：运营改完最多滞后这么久生效，换来的是每次咨询不多几次查库。
+    # 要「改完立刻生效」就把它们调小（代价是每轮咨询多两三次小查询）。
+    ops_cache_seconds: float = 60.0
+    knowledge_cache_seconds: float = 60.0
+    # 进模型上下文的条目数上限。**不是越大越好**：噪音条目会稀释注意力，也会让「引用哪一条」
+    # 变得模糊。63 号调研的取值区间是 8–12 条，这里按当前语料规模（几十条）先取 5。
+    knowledge_top_k: int = 5
+    # 每次检索从 MySQL 取回的候选条数（排序在 Python 做，候选要够多才有得排）
+    knowledge_max_candidates: int = 20
+    # 从问题里取多少个检索词（词典命中 + 二字窗口）。太多会把词覆盖度稀释到没有区分度
+    knowledge_max_terms: int = 12
+    # 单条正文注入上下文的字符上限：检索是「取够用的那几段」，不是把整篇灌进 prompt
+    knowledge_body_chars: int = 400
+    # L1 结构化事实最多带几条（疫苗/驱虫/毒物这类，通常只命中一个类目）
+    knowledge_l1_top_k: int = 3
+    # 知识域查询的读超时。**刻意很短**：它在咨询的请求路径上，读不到就该尽快走降级
+    mysql_read_timeout_seconds: int = 3
 
     # 时区：与 Java 侧 AppTime 和数据库保持一致（docs/conventions.md）
     timezone: str = "Asia/Shanghai"
@@ -76,8 +102,8 @@ class Settings(BaseSettings):
     mysql_database: str = "pet_health"
     mysql_user: str = "root"
     mysql_password: str = "devroot"
-    redis_host: str = "127.0.0.1"
-    redis_port: int = 6379
+    # 没有 Redis：AI 服务只读知识域与模型调用，不缓存、不排队（ADR-0009 的边界）。
+    # 原先这里有两个 redis_* 配置项，从未被读过，已删。
 
     # ---- 内部鉴权：与后端 AI_SERVICE_TOKEN 一致 ----
     # **没有默认值**：与仓库里不放 JWT/AES 默认密钥同一个道理——漏配时不能静默放行。

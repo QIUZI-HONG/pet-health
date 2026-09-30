@@ -16,12 +16,12 @@ from typing import ClassVar
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main, model_client, prompts
+from app import knowledge, main, model_client, ops, prompts
 from app.config import settings
 from app.model_client import ModelOutputInvalid, ModelUnavailable, TriageResult
 from app.models import ConsultInput, ConsultRequest, PetContext
 
-from .conftest import TEST_INTERNAL_TOKEN
+from .conftest import TEST_INTERNAL_TOKEN, no_db
 
 client = TestClient(main.app)
 
@@ -183,7 +183,7 @@ def test_image_request_degrades_when_no_vision_model(monkeypatch):
         raise AssertionError("没有视觉模型时不应该调用模型")
 
     # 注意：这里要打到真正的 assess（它负责判断能不能看图），所以只桩掉底层 _chat
-    async def fake_chat(messages, model):  # pragma: no cover
+    async def fake_chat(messages, model, tool):  # pragma: no cover
         raise AssertionError("不该真的发请求")
 
     monkeypatch.setattr(model_client, "_chat", fake_chat)
@@ -261,8 +261,225 @@ def test_happy_path_returns_grading_with_traceability(monkeypatch):
     # 留痕三件套齐备，否则事后没法归因「分级漂移」
     assert body["model_name"] and body["model_version"] and body["prompt_version"]
     assert body["latency_ms"] == 1234
-    # 检索层没实现前，来源引用宁可空着也不编
+    # 这一轮检索读不到知识域（conftest 把所有查库接缝打到「没库」）：
+    # 宁可让 citations 空着，也不编造条目 ID；retrieval_check 如实上报（ADR-0033）
     assert body["citations"] == []
+    assert body["retrieval_check"] == "unavailable"
+
+
+# ---------------------------------------------------------------- 「没检索」的两种事实
+
+
+def _retrieval_switch_off() -> dict[str, bool]:
+    """开关表**读到了**，且运营把检索关着（`enabled=False` 是事实，不是 fail-closed 的兜底）。"""
+    return {ops.SWITCH_RETRIEVAL_ENABLED: False}
+
+
+@pytest.mark.parametrize(
+    ("read_switches", "expected", "alerts"),
+    [
+        # 开关读不到（库挂了、迁移没跑）：**故障** → unavailable，且得留下告警
+        (no_db, "unavailable", True),
+        # 开关读到了且为关：**人为动作** → disabled，不该告警
+        (_retrieval_switch_off, "disabled", False),
+    ],
+    ids=["config-unreadable", "switch-really-off"],
+)
+def test_retrieval_check_separates_a_config_failure_from_a_real_off_switch(
+    monkeypatch, caplog, read_switches, expected, alerts
+):
+    """ADR-0050 §三：`unavailable` 是故障、`disabled` 是人为关掉，两种「没检索」不能报成一个。
+
+    原先的实现只把「开关值」传下去，配置读不到时按 fail-closed 取 False——于是留痕里写着
+    「运营关了检索」，而真相是**知识库读不到**。运维看到 disabled 不会告警，AI 退化成
+    无来源建议的真实原因就永远查不出来（`retrieval_check` 存在的意义正是防这件事）。
+
+    反向也钉住：开关**确实为关**时若报 unavailable，会让人去查一个不存在的故障。
+    两条分支都要咨询照常成功——改的只是上报语义，fail-closed 没有放松（两种情况下
+    检索都不启用：`citations` 为空）。
+    """
+    monkeypatch.setattr(ops, "_query_switches", read_switches)
+
+    async def fake_assess(**_kwargs):
+        return TriageResult(risk_level=2, action_suggestion="观察 24 小时。", model_name="stub")
+
+    monkeypatch.setattr(main.model_client, "assess", fake_assess)
+
+    body = client.post("/internal/consult", json=make_request(), headers=TOKEN).json()
+
+    assert body["retrieval_check"] == expected
+    assert body["degraded"] is False
+    assert body["citations"] == []
+    if alerts:
+        # 是故障就要留下告警，且 detail 要能分辨是哪一种 unavailable（配置读不到 vs 知识域读不到）
+        assert "retrieval_unavailable" in caplog.text
+        assert "检索开关读不到" in caplog.text
+    else:
+        # 人为关掉的闸门不该惊动运维
+        assert "retrieval_unavailable" not in caplog.text
+
+
+# ------------------------------------------------ 运营配置与开关：读不到不许被读成人为动作（ADR-0050 §三）
+
+
+def _ops_config_readable(monkeypatch) -> None:
+    """四条来源都**读得到**（库里的内容可以是空的——那是运营没配，不是故障）。
+
+    与 conftest 的默认相反：那里把所有查库接缝打到「没库」，于是每个用例都会走到
+    `ops_config_check=unavailable`。要验 ok 的那一半必须显式换回来。
+    """
+    monkeypatch.setattr(ops, "_query_prompts", list)
+    monkeypatch.setattr(ops, "_query_grading_rules", list)
+    monkeypatch.setattr(ops, "_query_guard_terms", dict)
+    monkeypatch.setattr(ops, "_query_switches", dict)
+
+
+def _knowledge_readable_but_empty(monkeypatch) -> None:
+    """知识域**读得到**、但一条都召不回（`context.status == "empty"`）——严格口径的触发条件。"""
+    monkeypatch.setattr(knowledge, "_static", lambda: ([], ()))
+    for name in ("_query_entries", "_query_facts", "_query_relations", "_query_entries_by_codes"):
+        monkeypatch.setattr(knowledge, name, lambda *args, **kwargs: [])
+
+
+def _assess_returning(risk_level: int = 2, action: str = "观察 24 小时。"):
+    async def fake_assess(**_kwargs):
+        return TriageResult(risk_level=risk_level, action_suggestion=action, model_name="stub")
+
+    return fake_assess
+
+
+def test_ops_config_check_reports_a_read_failure(monkeypatch, caplog):
+    """① 运营配置**读不到**：响应报 `ops_config_check=unavailable` + 一条 WARN。
+
+    缺陷原状：`OpsConfig.available` / `detail` 只有 `ops.load()` 内部的一条 WARNING，
+    **没有任何出口**——调用方（Java 侧告警）与留痕都看不出「服务在跑，但这一轮用的是
+    代码基线」。红线有 `red_flag_check` 承载同一件事，配置加载没有对应字段（ADR-0050 §三）。
+
+    **它不是降级**：回落代码基线之后回答照常（`degraded` 仍为 false）——fail-closed 只影响
+    行为（开关按关闭算），而「配置读到了没有」是一个可观测的事实。
+    """
+    monkeypatch.setattr(main.model_client, "assess", _assess_returning())
+
+    body = client.post("/internal/consult", json=make_request(), headers=TOKEN).json()
+
+    assert body["ops_config_check"] == "unavailable"
+    assert body["degraded"] is False
+    assert body["risk_level"] == 2
+    # 是故障就要留下告警（含哪一项、为什么读不到），而不是只在 ops 内部记一条没人看的 WARNING
+    assert "ops_config_unavailable" in caplog.text
+
+
+def test_ops_config_check_is_ok_when_the_tables_are_reachable(monkeypatch, caplog):
+    """反方向：四条来源都读得到 → `ok`。
+
+    **「读到了但库里是空的」不算读不到**（与开关表同一条口径）：`available=False` 只在
+    **读取失败**时出现，运营没配内容是个事实，不是故障。这条把两种「空」钉开，
+    免得下一次改动把「库里没种子」也报成故障而淹没真正的故障。
+    """
+    _ops_config_readable(monkeypatch)
+    monkeypatch.setattr(main.model_client, "assess", _assess_returning())
+
+    body = client.post("/internal/consult", json=make_request(), headers=TOKEN).json()
+
+    assert body["ops_config_check"] == "ok"
+    assert "ops_config_unavailable" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("read_switches", "model_called", "expected_model_name", "expects_mark"),
+    [
+        # 电闸的值**读不到** → 运营的意图不可知：维持现状（照常调模型），但事实进留痕
+        (no_db, True, "stub", True),
+        # **确实关着**（读到了、值是 false）→ 正常路径，不留「读不到」的痕迹
+        (dict, True, "stub", False),
+        # **确实开着** → 走规则通道，一次模型都不调（运营的意图照旧被尊重）
+        (lambda: {ops.SWITCH_FORCE_RULE_ONLY: True}, False, "rule:switch", False),
+    ],
+    ids=["config-unreadable", "switch-really-off", "switch-really-on"],
+)
+def test_force_rule_only_is_never_inferred_from_a_config_failure(
+    monkeypatch, caplog, read_switches, model_called, expected_model_name, expects_mark
+):
+    """② 电闸读不到时**照常调模型**，但「读不到」要进留痕 + 日志（ADR-0050 §三）。
+
+    这是三处里方向最要紧的一处。`force_rule_only` 开着的含义是「撤掉模型、只走规则通道」，
+    所以把「读不到」读成「运营拉了闸」= **一次配置故障静默撤掉整条模型通道**：所有咨询都
+    变成一句固定话术（连「可能原因」都没有），而纯规则通道本身是一种合法工作模式，留痕
+    （`model_name=rule:switch`）与用户侧看起来都像正常运营动作——没人会去查。
+    反方向（多花一次本来就在基线里的调用）代价有界、且现在有 WARN + 标记可查，
+    所以按「运营的意图不可知」处理：维持现状 + 留痕。
+
+    后两个参数把人为动作钉住：读到了就照运营的选择走（开→规则通道、关→照常调模型），
+    方向判断不许把真实的人为动作也一起改掉。
+
+    （`ops_config_check` 在这一组里恒为 unavailable：conftest 把提示词/规则/护栏三条来源
+    都打到「没库」，只有开关那一层被本用例覆盖——**规则通道这条响应分支也要带这个字段**。）
+    """
+    monkeypatch.setattr(ops, "_query_switches", read_switches)
+    calls = []
+
+    async def fake_assess(**_kwargs):
+        calls.append(1)
+        return TriageResult(risk_level=2, action_suggestion="观察 24 小时。", model_name="stub")
+
+    monkeypatch.setattr(main.model_client, "assess", fake_assess)
+
+    body = client.post("/internal/consult", json=make_request(), headers=TOKEN).json()
+
+    assert bool(calls) is model_called
+    assert body["model_name"] == expected_model_name
+    assert body["ops_config_check"] == "unavailable"
+    if expects_mark:
+        assert "switch:force_rule_only:unreadable" in body["guard_hits"]
+        assert "switch_unreadable" in caplog.text
+        assert f"{ops.SWITCH_FORCE_RULE_ONLY} 读不到" in caplog.text
+    else:
+        # 「确实为关」与「读不到」看起来都是 False，但留痕必须分得开
+        assert not [hit for hit in body["guard_hits"] if "unreadable" in hit]
+        assert "switch_unreadable" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("read_switches", "expected_retrieval", "expects_degrade", "expects_mark"),
+    [
+        # 开关表整体**读不到** → 严格口径按关算（不生成），但「没读到」要留痕 + 告警。
+        # 检索那一层同时报 unavailable：两个开关共用一张表，故障是同一件事（各自的上报分开）
+        (no_db, "unavailable", False, True),
+        # **确实关着** → 行为相同，但不该留「读不到」的痕迹（默认值就是关，不是异常）
+        (lambda: {ops.SWITCH_RETRIEVAL_ENABLED: True}, "empty", False, False),
+        # **确实开着** + 召回为空 → 走严格口径（不生成）；此时也不该有「读不到」的痕迹
+        (lambda: {ops.SWITCH_RETRIEVAL_ENABLED: True, ops.SWITCH_RETRIEVAL_STRICT: True},
+         "empty", True, False),
+    ],
+    ids=["config-unreadable", "switch-really-off", "switch-really-on"],
+)
+def test_retrieval_strict_is_not_inferred_from_a_config_failure(
+    monkeypatch, caplog, read_switches, expected_retrieval, expects_degrade, expects_mark
+):
+    """② 严格口径读不到 → 按关算（**不**在故障时把它打开），但要以留痕 + WARN 说明。
+
+    方向与电闸那处相反、结论相同：值一律取关闭（保持现状），差别只在有没有「读不到」的痕迹。
+    故障时把严格口径打开 = 让每一次咨询都变成固定话术，那是 ADR-0033 明确不接受的全局降级，
+    所以这里不把 fail-closed 解释成「更保守的那一侧」。
+    """
+    monkeypatch.setattr(ops, "_query_switches", read_switches)
+    _knowledge_readable_but_empty(monkeypatch)
+    monkeypatch.setattr(main.model_client, "assess", _assess_returning())
+
+    body = client.post("/internal/consult", json=make_request(), headers=TOKEN).json()
+
+    assert body["degraded"] is expects_degrade
+    assert body["retrieval_check"] == expected_retrieval
+    if expects_degrade:
+        assert body["degrade_code"] == "knowledge_empty"
+        # 降级路径也要如实带配置状态：`_ConfigMarks` 每个分支都传，漏一处就等于静默报正常
+        assert body["ops_config_check"] == "unavailable"
+    if expects_mark:
+        assert "switch:retrieval_strict:unreadable" in body["guard_hits"]
+        assert "switch_unreadable" in caplog.text
+    else:
+        assert not [hit for hit in body["guard_hits"] if "unreadable" in hit]
+        assert "switch_unreadable" not in caplog.text
 
 
 # ---------------------------------------------------------------- 队列/重试
@@ -276,7 +493,7 @@ def test_repair_retry_happens_once_then_gives_up(monkeypatch):
     ]
     seen_prompts = []
 
-    async def fake_chat(messages, model):
+    async def fake_chat(messages, model, tool):
         seen_prompts.append(messages[-1]["content"])
         return responses.pop(0)
 
@@ -365,7 +582,7 @@ def test_chat_treats_non_json_body_as_unavailable(monkeypatch):
     monkeypatch.setattr(model_client.httpx, "AsyncClient", lambda **kwargs: FakeClient())
 
     with pytest.raises(ModelUnavailable):
-        asyncio.run(model_client._chat([{"role": "user", "content": "hi"}], "m"))
+        asyncio.run(model_client._chat([{"role": "user", "content": "hi"}], "m", prompts.REPORT_TOOL))
 
 
 def test_extract_tool_arguments_survives_malformed_shape():
@@ -479,7 +696,7 @@ def test_usage_survives_repair_retry_failure(monkeypatch):
     """
     calls = {"n": 0}
 
-    async def fake_chat(messages, model):
+    async def fake_chat(messages, model, tool):
         calls["n"] += 1
         if calls["n"] == 1:
             # 第一次：有用量，但没调工具（触发修复重试）
@@ -498,7 +715,7 @@ def test_usage_survives_repair_retry_failure(monkeypatch):
 
 def test_usage_survives_exhausted_repair_retries(monkeypatch):
     """两次都没调工具：累计用量要随 ModelOutputInvalid 带出去。"""
-    async def fake_chat(messages, model):
+    async def fake_chat(messages, model, tool):
         return {"choices": [{"message": {"content": "还是不说"}, "finish_reason": "stop"}],
                 "usage": {"prompt_tokens": 100, "completion_tokens": 50}, "model": "m"}
 

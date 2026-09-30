@@ -7,24 +7,13 @@
 （比如红色样本漏了 `must_not_miss`），跑出来的召回率就是假的，而且没人会发现。
 """
 
-from pathlib import Path
-
 import pytest
-import yaml
 
-EVAL_DIR = Path(__file__).parent / "eval_set"
+from tests.eval_cases import load_cases
 
 REQUIRED_FIELDS = {"id", "text", "species", "age_stage", "expected_level", "must_not_miss", "provisional"}
 LEVELS = {1, 2, 3}
 AGE_STAGES = {"puppy_kitten", "adult", "senior", "all"}
-
-
-def load_cases() -> list[dict]:
-    cases: list[dict] = []
-    for path in sorted(EVAL_DIR.glob("*.yaml")):
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        cases.extend(data.get("cases", []))
-    return cases
 
 
 def test_eval_set_is_not_empty():

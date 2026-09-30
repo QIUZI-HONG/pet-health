@@ -250,3 +250,67 @@ def test_non_empty_rule_table_reports_available(monkeypatch):
 
     assert len(result.rules) == 1
     assert result.available is True
+
+
+def _boom():
+    raise RuntimeError("连不上 MySQL")
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_wording", "absent_wording"),
+    [
+        # 读到、但一条规则都没有（表被清空 / 迁移没跑 / 运营把 enabled 全关）
+        (list, "为空", "加载失败"),
+        # 读不到（库故障）
+        (_boom, "加载失败", "为空"),
+    ],
+    ids=["empty-table", "unreadable"],
+)
+def test_a_blank_red_flag_layer_logs_which_kind_of_blank_it_is(
+    monkeypatch, caplog, query, expected_wording, absent_wording
+):
+    """③ 两种「这一层没生效」共用一个 `unavailable`，但**成因必须能从日志里分出来**。
+
+    D5 的取舍**维持**（见 `load_rules` 的注释）：这个字段回答「有没有生效」，不回答「谁导致的」；
+    空表在任何成因下都让「红色 100% 召回」落空，对它只有一个动作——查。拆成「故障 / 空表」两态
+    会让「空表」多出一个看起来正常的取值，将来某个消费方按 `unavailable` 判等告警时就会静默漏掉它。
+
+    这条用例钉的是原先真正的缺口：**空表那条路径连一条日志都不留**。于是事后只看到
+    `red_flag_check=unavailable`（Java 侧的告警也就这一句），分不出是库挂了还是词表被清空——
+    而这两种情况该找的人、该做的事完全不同。代价（调用方从一个值上分不出成因）就此落在实处的
+    排查路径上：看日志措辞。
+    """
+    monkeypatch.setattr(red_flags, "_query", query)
+
+    result = red_flags.load_rules(force=True)
+
+    assert result.available is False
+    assert result.rules == ()
+    assert expected_wording in caplog.text
+    assert absent_wording not in caplog.text
+    # detail 也分得开（给拿到 LoadResult 的人用；成因不只有日志一处）
+    assert ("为空" in result.detail) is (expected_wording == "为空")
+
+
+def test_red_flag_short_circuit_also_reports_the_ops_config_read(monkeypatch):
+    """红线短路这条响应分支也要带 `ops_config_check`。
+
+    单独钉一条，是因为这轮缺陷的形态就是「某一层读不到，没人上报」：这些状态字段只要有一条
+    响应分支漏传，那条分支就还是静默报「一切正常」——所以每条分支都要有用例。
+    （这条分支上开关一个都没被读过，所以不留 `switch:` 标记。）
+    """
+    monkeypatch.setattr(
+        main.red_flags, "load_rules",
+        lambda force=False: red_flags.LoadResult(
+            rules=(rule(code="RF-007", pattern="呕吐不止"),), available=True),
+    )
+
+    from fastapi.testclient import TestClient
+
+    body = TestClient(main.app).post(
+        "/internal/consult", json=make_request("从昨晚开始呕吐不止"), headers=TOKEN).json()
+
+    # conftest 把提示词/规则/护栏三条来源打到「没库」→ 这一批配置确实没读到
+    assert body["ops_config_check"] == "unavailable"
+    assert body["red_flag_check"] == "ok"
+    assert not [hit for hit in body["guard_hits"] if "unreadable" in hit]

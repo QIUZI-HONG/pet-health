@@ -8,7 +8,7 @@ ADR-0021 写死过门槛——**红色召回率 100%、准确率 ≥70%**，任�
 
     AI_LIVE_TEST=1 .venv/bin/python -m pytest -m eval -s
 
-结果同时落到 `ai/reports/eval-<日期>.md`（逐条明细 + 汇总），供发布前人工过目与留档。
+结果同时落到 `ai/tests/eval_set/report-<日期>.md`（逐条明细 + 汇总），供发布前人工过目与留档。
 门槛可用环境变量放宽/收紧：`EVAL_MIN_ACCURACY`（默认 0.70）。
 
 **为什么红色召回是硬门槛、准确率不是**：红判绿的代价（急症被劝回家）远高于绿判红
@@ -24,23 +24,14 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
-import yaml
 
 from app import guardrails, model_client, prompts, red_flags
 from app.config import settings
+from tests.eval_cases import EVAL_DIR, load_cases
 
-EVAL_DIR = Path(__file__).parent / "eval_set"
 REPORT_DIR = EVAL_DIR
 #: 提示词里的「本次附带图片」是按张数写的，评测集只有文本，所以固定 0
 IMAGE_COUNT = 0
-
-
-def load_cases() -> list[dict]:
-    cases: list[dict] = []
-    for path in sorted(EVAL_DIR.glob("*.yaml")):
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        cases.extend(data.get("cases", []))
-    return cases
 
 
 def pet_context_of(case: dict) -> dict:

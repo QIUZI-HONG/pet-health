@@ -28,15 +28,21 @@ curl -s -H "X-Internal-Token: $INTERNAL_TOKEN" localhost:8000/internal/health
 
 ## 当前进度
 
-**模型调用已打通（纯文本）**，供应商与实测能力见 [ADR-0017](../docs/adr/0017-model-provider-deepseek.md)：
+**链路已齐（切片 #100 / #101 / #103 之后）**，供应商与实测能力见 [ADR-0017](../docs/adr/0017-model-provider-deepseek.md)，
+知识库与引用口径见 [ADR-0033](../docs/adr/0033-knowledge-base-and-retrieval.md)：
 
 | 能力 | 状态 |
 | --- | --- |
 | 文本分级 | ✅ 真调用，工具调用出结构化结果，失败一律降级 |
-| 硬红线预检 | ✅ 判据在 `knowledge_red_flag`（ADR-0021），命中即判红且**不调模型**；词表的运营侧维护属 [#103](https://github.com/QIUZI-HONG/pet-health/issues/103) |
-| 知识检索（L1/L2/L3） | ⬜ 未实现，所以 `citations` 恒为空——不编造条目 ID |
+| 硬红线预检 | ✅ 判据在 `knowledge_red_flag`（ADR-0021），命中即判红且**不调模型**；运营增删走 `ph-ai` 的 `/api/v1/admin/ai/red-flags` |
+| 知识检索（L1/L2/L3） | ✅ `app/knowledge.py`：L1 结构化查询 + L2 关系层（召回补齐与安全门）+ L3 MySQL ngram 关键词检索；命中条目进上下文并做引用校验 |
+| 运营可调项 | ✅ 提示词（版本 + 灰度）、分级规则、护栏词表、降级开关入 DB（`app/ops.py`，带 TTL 直读）；读不到回落到代码基线 |
+| 引用 `citations` | ✅ 只含 **vetted（兽医复核过）** 的条目；未复核条目命中时回 `unvetted_hits`，由 Java 侧拼「尚未经兽医复核」。**种子里没有 vetted，所以当前 citations 为空**——复核流程属待澄清事项（ADR-0033） |
 | 图片 | ✅ 走 `ai_vision_model`（当前 flash；**pro 看不见图**）。没配视觉模型时明确降级并告知 |
-| 语音 / 向量 | ❌ 该供应商没有这两个端点 |
+| 语音 / 向量 | ❌ 该供应商没有这两个端点；向量层按 ADR-0022 挂起（`knowledge_chunk` 建了但不参与检索） |
+
+连库的检查（ngram 中文子串、三层检索、种子与引用口径）在 `tests/test_knowledge_db.py`：
+**需要 MySQL 且 V18/V19 已迁移**，连不上就跳过——它不会把「本地有库」变成跑测试的前提。
 
 **发布门槛**（`pytest -m eval`）：真打模型跑 `tests/eval_set/`，准确率 ≥70%、
 **红色召回率必须 100%**，逐条明细落 `tests/eval_set/report-<日期>.md`。缺 key 时它**失败而不是跳过**
