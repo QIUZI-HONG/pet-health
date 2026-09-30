@@ -1,12 +1,9 @@
 <script setup lang="ts">
-// 骨架占位页。业务页面尚未开始实现——先看 README 与地图 #52。
+// 根组件只放路由出口。外壳（左栏 + 顶栏 + 内容区）在 layouts/AppShell.vue，
+// 它挂在 `/b` 之下，所以将来不套外壳的页面（登录页）是它的兄弟路由。
+import { RouterView } from "vue-router";
 </script>
 
 <template>
-  <main style="padding: 48px; font-family: var(--ph-font-family)">
-    <h1 style="color: var(--ph-color-primary)">服务者后台 · 服务者使用</h1>
-    <p style="color: var(--ph-color-text-sub)">
-      骨架占位页。结构已就位，业务页面尚未实现。
-    </p>
-  </main>
+  <RouterView />
 </template>
