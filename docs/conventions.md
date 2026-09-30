@@ -33,6 +33,22 @@
 | Token 过期 | 静默用 Refresh Token 刷新；失败则跳登录 |
 | 重复提交 | 按钮点击后禁用 2 秒；接口侧幂等用 `Idempotency-Key` 头（已实现，口径见 [ADR-0028](adr/0028-security-baseline.md)）。可选：不带这个头的请求行为不变；只对写方法的 JSON 请求生效 |
 | 错误码 | 见 `contract/common.yaml` 的 `x-error-codes`。**AI 降级不用错误码**：一律 HTTP 200 + `degraded` + 一句中文（[ADR-0026](adr/0026-ai-degrade-codes-and-daily-budget.md) 废弃了交付文档的 60001/60002） |
+| 引用了一个不可用的资源时用哪个码 | 按**引用出现的位置**分三种，别按「资源在不在」一刀切：**请求体里的引用**（`template_id`、`coupon_id` 这类）指向不存在或已停用 → **40001 参数错误**（「你给的参数有问题」）；**路径上的资源**（`/templates/{id}`）不存在 → **40400**（与越权同码，见上一行）；资源存在但**不能用于这个用途**（存在但不是平台补贴券）→ **40900 冲突**。2026-09-30 统一时只有「存在但不是该用途」这一支是三处一致的，另外两支在 `ph-privilege` 里混用过 40001 / 40400 / 40900——它们统一的口径就是这三行，剩下的历史差异记在当轮验收报告里 |
+| 删除类接口的幂等口径 | **顶层资源**（消息、宠物、文件）不幂等：重复删除、删别人的，一律 **40400**——按「不存在与越权同码」处理，免得用 id 探测存在性。**宠物名下的子资源**（打卡分项、防疫记录）相反：先校验宠物归属（不是自己的 40400），子资源自身删除幂等（没有也返回成功）。契约里的 `summary` 要写明属于哪一种，别只写「幂等」 |
+
+## 命名（代码标识符）
+
+领域词以 [CONTEXT.md](../CONTEXT.md) 为准。以下几条是**同形不同名**的收口，别每处临时挑一个：
+
+| 对象 | 约定 |
+| --- | --- |
+| 模块 / 包 | 目录 `ph-<模块>`，Java 包 `com.pethealth.<模块>`，artifactId 与目录同名 |
+| 接口 DTO | 请求体一律 `*Request`；响应体用 `*View`（派生/计算出来的形状）或**领域名词**（返回的就是那个对象本身，例如 `ArchiveRecord`、`HealthReport`）。**类名与契约 `components/schemas` 里的名字保持一致**（改契约时两边一起改，`gen:api:check` 只守前端那半边）。不要出现 `*Response` / `*Dto` / `*Output` / `*Input` 这类后缀 |
+| 契约路径参数 | 一律 **snake_case**（`{pet_id}`、`{provider_id}`、`{application_id}`），与既有契约一致。Spring 侧写 `@PathVariable("provider_id")` 显式绑定，别依赖参数名推导 |
+| 服务层方法 | 查集合 `listXxx`、查单个 `getXxx`、查不到即 404 用 `requireXxx`、写入 `create` / `update` / `delete` / `undo`；算出来的值用领域动词（`evaluate` / `recalculate` / `exportOf`）。**不要用 `day` / `settings` 这类只有名词的名字**——读不出是查还是写 |
+| 工具类 | 只放静态方法、构造器私有；类名用领域名词或复数（`JsonFields` / `Text` / `TraceIds`）。同一形状的工具只留一份：字符串归一化进 `Text`、JSON 列进 `JsonFields`、时间进 `AppTime` |
+| 禁用词 | 代码目录（`server` / `ai` / `apps` / `packages`）里**禁用词零命中**：「商家 / 商户 / 店铺 / merchant」一律说服务者、`provider`。唯一例外：注释里**引用交付文档原文**说明改名的场合，必须在同句带上 `文档用词` 标记，这样审计时一条 grep 就能把「必要引用」与「真的写错了」分开（`grep -rn 商家 --include=*.ts --include=*.java | grep -v 文档用词`） |
+| 前端组件 | 视图 `*View.vue`、复用组件 `*Card.vue` / `*Uploader.vue` 等**按形态命名**；框架件（外壳、导航）放 `layouts/`，四态组件放 `components/states/` |
 
 ## 数据
 
@@ -81,6 +97,11 @@
 - **禁止硬编码**：配置走环境变量或配置表（分层见 [ADR-0010](adr/0010-ai-config-layering.md)）。
 - **禁止吞异常**：必须记录日志并返回明确错误。
 - **禁止跨层调用**：严格遵守分层架构（[ADR-0006](adr/0006-modular-monolith.md)）。
+- **定时任务与事务分居两个 bean**：`@Scheduled` 方法**不得**调用本类的 `@Transactional` 方法
+  ——自调用绕过 Spring 的代理，那层事务会静默消失，而测试注入 Bean 调用时是有事务的
+  （「测试全绿、生产少一层保护」）。触发写成单独的 `*Scheduler`，先例见 `ReminderScheduler`
+  / `HealthReportScheduler`。执行者是 `ScheduledTransactionBoundaryTest`（扫 `src/main`，
+  同类同时出现两类注解即红）。
 - **单元测试**：关键业务必须写，覆盖率 **≥ 60%**。
 - **密钥**：只进本地 `.env`（已 gitignore）——不提交、不贴进对话、不写进文档。
 

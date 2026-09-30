@@ -194,7 +194,7 @@
     另删掉消息页「提醒设置」卡里语义错位的重复「加载更多」按钮。
 
 验证：`pnpm -r test` 66 绿、`vue-tsc` 零错、三端构建与硬编码色值检查通过；
-浏览器复验脚本 `/tmp/ph-e2e/review-g-regression.mjs`（截图在 `gui-test-screenshots/`，已 gitignore）。
+浏览器复验脚本 `/tmp/ph-e2e/review-g-regression.mjs`（截图归档在 `docs/testing/screenshots-2026-09-28/`，已 gitignore）。
 
 ---
 
