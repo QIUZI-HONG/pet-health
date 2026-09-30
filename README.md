@@ -30,19 +30,24 @@
 - **知识库内容量**：类目与种子在库，靠运营边建边补（F025 的正文量）
 - **支付链路**：按 ADR-0002 钱到店付，平台不经手资金，**待甲方澄清后单开一票**
 
-开工前先读四样：
+开工前先读五样：
 
 1. **[CONTEXT.md](CONTEXT.md)** —— 领域术语表。**命名以它为准**；「商家」「商户」「店铺」「merchant」是禁用词，统一说「服务者」。
 2. **[docs/adr/](docs/adr/)** —— 已定的架构决策（当前 52 条）。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
-3. **[地图 #52](https://github.com/QIUZI-HONG/pet-health/issues/52)** —— 哪些决策已定、哪些还没定、下一步该做什么。
-4. **[docs/conventions.md](docs/conventions.md)** —— 实现级约定（分页 / 脱敏 / 加密 / 迁移 / 越权口径 / 命名 / 删除幂等），以及每条约定落在哪个 ADR。
+3. **[ARCHITECTURE.md](ARCHITECTURE.md)** —— 东西是怎么连起来的：运行时拓扑、后端模块边界、**三条核心数据流**（AI 咨询 / 交易 / 增长）、跨切面机制，以及「想改某处该看哪个文件」的索引。
+4. **[地图 #52](https://github.com/QIUZI-HONG/pet-health/issues/52)** —— 哪些决策已定、哪些还没定、下一步该做什么。
+5. **[docs/conventions.md](docs/conventions.md)** —— 实现级约定（分页 / 脱敏 / 加密 / 迁移 / 越权口径 / 命名 / 删除幂等），以及每条约定落在哪个 ADR。
+
+`docs/` 里其余东西哪些是规则、哪些是甲方输入、哪些只是归档，见 **[docs/README.md](docs/README.md)** 那张地图。
 
 ## 目录结构
 
 ```
 pet-health/
 ├── CONTEXT.md              领域术语表（命名以它为准）
+├── ARCHITECTURE.md         架构说明：拓扑 / 模块边界 / 三条数据流 / 关键文件索引
 ├── docs/
+│   ├── README.md           文档地图：哪个是规则、哪个是甲方输入、哪个只是归档
 │   ├── adr/                架构决策记录（当前 52 条）
 │   ├── agents/             工程技能配置（issue tracker / 领域文档规则 / triage 标签）
 │   ├── design/             AI 层的完整方案（ai-service.md）
@@ -86,14 +91,28 @@ pet-health/
 │   ├── provider-web/       服务者后台（11 个模块全部实现、全部可达；含登录页、选品定价与三道照片墙报工）
 │   └── admin-web/          运营后台（11 个模块全部实现、全部可达；含登录页、AI 运营与积分/邀请配置）
 ├── packages/               三端共享
-│   ├── shared/             请求层 / 字典 / 金额与日期格式化 / 契约生成的 TS 类型
+│   ├── shared/             请求层 / 字典 / 金额与日期格式化 / 契约生成的 TS 类型（自带 vitest）
 │   ├── ui/                 设计 token + 后台共用外壳与四态 + 交互 composable
-│   └── config/             tsconfig 基线（被三个应用 extends）
+│   └── config/             tsconfig 基线 + **三端共用的构建检查脚本**（色值、首屏体积预算）
 └── deploy/                 编排
     ├── docker-compose.dev.yml  本地中间件（MySQL 3307 / Redis）
     ├── prometheus/alerts.yml   告警规则
     └── data/                   容器数据卷（本地数据，不入库）
 ```
+
+## 技术栈
+
+| 层 | 选型 | 备注 |
+| --- | --- | --- |
+| 后端 | **Java 17 + Spring Boot 3.5.15**，模块化单体（13 个 Maven 模块） | 模块边界由测试强制，见 [ADR-0006](docs/adr/0006-modular-monolith.md) |
+| 持久层 | **MyBatis-Plus 3.5.17** + **Flyway** | Mapper 无 XML（注解 SQL）；迁移每条都配 `db/undo/` 回滚脚本 |
+| 数据库 / 缓存 | MySQL 8.4 + Redis 8 | 只这两样，不引消息队列与 ES（[ADR-0003](docs/adr/0003-lean-middleware.md)） |
+| 前端 | **Vue 3.5 + TypeScript 5.9 + Vite 7 + Pinia + vue-router** | 三端全是 Web（[ADR-0001](docs/adr/0001-all-web-clients.md)） |
+| 包管理 | **pnpm 12 workspace** | 注意 `allowBuilds` 写在 `pnpm-workspace.yaml`，不在 `package.json` |
+| 契约 | **OpenAPI YAML + openapi-typescript** | 契约是唯一真源，前端类型由它生成 |
+| 测试 | **JUnit 5 + Testcontainers**（后端真库）/ **Vitest 5 + jsdom**（前端）/**pytest + ruff**（AI） | 后端接口测试跑在真实 MySQL/Redis 上 |
+| AI 服务 | **Python 3.14 + FastAPI + httpx** | 模型调用的唯一边界（[ADR-0009](docs/adr/0009-ai-service-separate.md)） |
+| 部署 | Docker Compose + Nginx | `deploy/` 下有本地中间件与告警规则 |
 
 ## 本地怎么跑
 
@@ -194,9 +213,12 @@ docker compose -f deploy/docker-compose.dev.yml exec mysql \
   （`CatalogBrowseTest`：只给启用项、按项目找店、等级优先排序）与 **AI 找服务**
   （`ServiceRecommendationTest`：规则版闭环、降级、不落 AI 留痕）。
   （统计口径：先清 `target/surefire-reports/` 再跑，否则历史报告会把数字抬高。）
-- `pnpm -r test && pnpm -r build` —— **490 个前端测试**通过（54 个文件：C 端 313 + 服务者后台 96 + 运营后台 81）；
+- `pnpm -r test && pnpm -r build` —— **490 个前端测试**通过（54 个文件：`packages/shared` 16 +
+  C 端 297 + 服务者后台 96 + 运营后台 81）；
   三个 Web 端构建通过，构建会先跑硬编码色值检查、`vue-tsc` 类型检查与首屏体积预算（ADR-0015）。
-  **两个后台此前没有测试基建**，现在与 C 端同一套（jsdom + 真路由表 + 会话种法）
+  **两个后台此前没有测试基建**，现在与 C 端同一套（jsdom + 真路由表 + 会话种法）；
+  请求层的深测（令牌怎么带、40101 静默刷新、会话失效广播）**住在它被测的包 `packages/shared` 里**，
+  不再寄居在 C 端。两道构建检查的实现在 `packages/config/scripts/`，三端共用一份、各端只声明自己的预算
 - `cd ai && .venv/bin/ruff check . && .venv/bin/pytest` —— 静态检查通过；
   **201 通过 + 2 xfailed + 7 skipped**（xfail 是两个已标记的安全缺口，见测试报告 14.2；
   skipped 是需要真库的连库用例；另有 `live` / `eval` 各 1 条默认不跑）；
