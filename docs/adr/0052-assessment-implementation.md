@@ -17,6 +17,19 @@
 迁移 `V34` / `V35`（`db/undo/U34` / `U35`）+ 契约 `contract/provider.yaml` 与 `contract/admin.yaml`
 的 `/assessments/**` + 集成测试 `ph-boot` 的 `com.pethealth.boot.assessment`。
 
+> **2026-09-30 追记（本轮改动；本文里与它冲突的表述按追记为准）**
+>
+> 1. **「待澄清」的第 1、2 条已落地**（V44 / V45）：拉新与券两项取真数
+>    （`ProviderGrowthFactsService` 实现 `ProviderGrowthFactsApi`）；
+>    `provider.region_code` 由运营可写、C 端可按它筛选（排他规则的留白不变）。
+> 2. **`recommend_priority` 的写回补上了**：本文与 V45 注释都声称它由考核写回，而
+>    `writeBackToProvider` 当时只写 `level` 与 `monthly_score`——排序读着一列永不更新的值。
+>    现在等级、总分、优先级三列一起写回。
+> 3. **顺序口径按此理解**：优先级是**最近一期考核的快照**；运营改档位映射，**下一次算分**
+>    才把新值写回门店——不回头重写已有门店，所以不是「点一下立刻变」。
+> 4. 本文「推荐排序不在本切片 / 只存映射结果」这类表述对**当时的切片边界**成立，此后按上面三条理解。
+>    实现与验证细节见 `docs/testing/defect-remediation-plan-2026-09-30.md` 的 D-01 / D-07。
+
 ## 一、权重与分档的落点是「一张单行规则表 + 一张三行档位表」
 
 `assessment_rule`（**单行**，`id = 1`）存三项权重、三项达标线（拉新目标数 / 券目标值 / 接单响应分钟数）；

@@ -2170,7 +2170,7 @@ components:
         total_score: { type: string, description: 总分（0.00–100.00 的两位小数字符串）。**分数是字符串不是浮点**（ADR-0011 的精度纪律） }
         level: { type: integer, description: 1 基础 / 2 优选 / 3 战略合作（分档阈值在运营后台配置） }
         level_name: { type: string, description: 等级中文名（基础 / 优选 / 战略合作），由服务端给出 }
-        recommend_priority: { type: integer, description: "AI 推荐优先级：1 最高 / 2 较高 / 3 普通。**只存映射结果，不改推荐逻辑**（那属别的切片）" }
+        recommend_priority: { type: integer, description: "AI 推荐优先级：1 最高 / 2 较高 / 3 普通。由月度考核按等级档位映射写回，**C 端找店与按项目找店都按它排序**（下一次算分起生效）" }
         participated_weight: { type: integer, description: 参与计分的权重合计（100 = 三项全参与；缺项按 ADR-0050 第四节重算后会小于 100） }
         overridden: { type: boolean, description: 本期是否有单项分被超级管理员覆盖（留痕在明细的 `overrides` 里） }
         calculated_at: { type: string, description: 计算时间（yyyy-MM-dd HH:mm:ss，东八区） }

@@ -152,6 +152,10 @@ public class OnboardingService {
         provider.setPhoneHash(cipher.lookupHash(request.contactPhone().trim()));
         providerMapper.updateById(provider);
 
+        // 材料图先校验，再整批换材料：图不合法时这次重提整批不动。
+        // 同一次请求里事务回滚也能兜住，但把校验放在删除**之前**，「被拒的提交不该动到已有材料」
+        // 就不依赖回滚——与 ProviderProfileService#resubmitQualifications 同一顺序。
+        qualificationGuard.requireImages(userId, request.qualifications());
         // 旧材料整批换掉（逻辑删除，留着可追溯），新的一批回到待审
         qualificationMapper.delete(Wrappers.<ProviderQualification>lambdaQuery()
                 .eq(ProviderQualification::getProviderId, provider.getId()));

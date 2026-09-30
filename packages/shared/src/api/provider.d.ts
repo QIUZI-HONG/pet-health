@@ -3179,7 +3179,7 @@ export interface components {
             level?: number;
             /** @description 等级中文名（基础 / 优选 / 战略合作），由服务端给出 */
             level_name?: string;
-            /** @description AI 推荐优先级：1 最高 / 2 较高 / 3 普通。**只存映射结果，不改推荐逻辑**（那属别的切片） */
+            /** @description AI 推荐优先级：1 最高 / 2 较高 / 3 普通。由月度考核按等级档位映射写回，**C 端找店与按项目找店都按它排序**（下一次算分起生效） */
             recommend_priority?: number;
             /** @description 参与计分的权重合计（100 = 三项全参与；缺项按 ADR-0050 第四节重算后会小于 100） */
             participated_weight?: number;

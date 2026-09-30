@@ -106,7 +106,8 @@ class ProviderTrafficBalanceTest extends AssessmentTestSupport {
                 Map.of("region_code", "sh xh"), admin);
         assertThat(bad.code()).isEqualTo(40001);
 
-        // C 端筛选：只有这一个片区里有那一家，另一家（没有区域编码）不出现
+        // C 端筛选：先确认不带筛选时两家都在（下面筛掉的那家确实是因为没有区域编码，而不是别的条件）
+        assertThat(browseIds()).contains(hu.providerId(), other.providerId());
         ApiClient.ApiCall filtered = api.get("/api/v1/app/providers?region_code=SH-XH", null);
         assertCodeOk(filtered, "按区域筛选");
         assertThat(filtered.data().path("total").asLong()).isEqualTo(1);
@@ -117,7 +118,6 @@ class ProviderTrafficBalanceTest extends AssessmentTestSupport {
                 Map.of(), admin);
         assertCodeOk(cleared, "清空区域");
         assertThat(cleared.data().path("region_code").isNull()).isTrue();
-        assertThat(other.providerId()).isPositive();
     }
 
     /** 找店第一页的门店 id 顺序（列表按契约的排序返回）。 */

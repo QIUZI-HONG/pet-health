@@ -192,8 +192,12 @@ class CatalogBrowseTest extends ProviderApiTestSupport {
 
         // **只改 level 不改排序**（V45 起）：排序读的是 `recommend_priority`。绕过考核直接改 level
         // 本来就不该影响流量——这正是改造前那条断掉的链路（运营改档位映射、排序不动）的镜像。
+        // 两条列表都断言：按项目找店这一路曾经**自己**按 level 排，只钉 /providers 会漏掉它。
         jdbc.update("UPDATE `provider` SET `level` = 3 WHERE `id` = ?", top.providerId());
         assertThat(api.get("/api/v1/app/providers", null).data().path("list").findValuesAsText("id"))
+                .containsExactly(String.valueOf(basic.providerId()), String.valueOf(top.providerId()));
+        assertThat(api.get(ITEMS + "/HE-004/providers", null).data().path("list")
+                .findValuesAsText("provider_id"))
                 .containsExactly(String.valueOf(basic.providerId()), String.valueOf(top.providerId()));
 
         // 这里直接改库**只是为了构造「优先级已经不同」这个状态**（改的是读路径的输入，不是被验的行为）：

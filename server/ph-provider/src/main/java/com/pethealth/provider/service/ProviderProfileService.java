@@ -150,7 +150,8 @@ public class ProviderProfileService {
                 allianceCategories.nameOf(provider.getCategory()));
     }
 
-    private static List<BusinessHour> validateHours(List<BusinessHour> hours) {        Set<Integer> seen = new HashSet<>();
+    private static List<BusinessHour> validateHours(List<BusinessHour> hours) {
+        Set<Integer> seen = new HashSet<>();
         List<BusinessHour> sorted = new ArrayList<>(hours);
         sorted.sort(Comparator.comparingInt(BusinessHour::dayOfWeek));
         for (BusinessHour hour : sorted) {

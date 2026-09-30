@@ -6515,7 +6515,7 @@ export interface components {
             level?: number;
             /** @description 等级中文名（基础 / 优选 / 战略合作），由服务端给出 */
             level_name?: string;
-            /** @description AI 推荐优先级：1 最高 / 2 较高 / 3 普通。**只存映射结果，不改推荐逻辑**（那属别的切片） */
+            /** @description AI 推荐优先级：1 最高 / 2 较高 / 3 普通。由月度考核按等级档位映射写回，**C 端找店与按项目找店都按它排序**（下一次算分起生效） */
             recommend_priority?: number;
             /** @description 参与计分的权重合计（100 = 三项全参与；缺项按 ADR-0050 第四节重算后会小于 100） */
             participated_weight?: number;
@@ -6609,7 +6609,7 @@ export interface components {
             level_name?: string;
             /** @description 进入这一档的最低总分（两位小数字符串，闭区间） */
             min_score?: string;
-            /** @description AI 推荐优先级：1 最高 / 2 较高 / 3 普通。**只有映射结果会被写进考核记录与 `provider.level`，推荐逻辑本身不在本切片** */
+            /** @description AI 推荐优先级：1 最高 / 2 较高 / 3 普通。映射结果进考核记录，并由月度批算写回 `provider.recommend_priority`（C 端两条找店列表都按它排序） */
             recommend_priority?: number;
             updated_at?: string;
         };
