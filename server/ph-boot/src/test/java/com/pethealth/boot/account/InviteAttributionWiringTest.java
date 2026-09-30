@@ -73,6 +73,7 @@ class InviteAttributionWiringTest extends IntegrationTestBase {
         jdbc.execute("DELETE FROM `invite_ladder_achievement`");
         jdbc.execute("DELETE FROM `invite_relation`");
         jdbc.execute("DELETE FROM `invite_code`");
+        jdbc.execute("DELETE FROM `provider_invite_code`");
         jdbc.execute("DELETE FROM `point_record`");
         jdbc.execute("DELETE FROM `user_point`");
         jdbc.execute("UPDATE `point_behavior` SET `status` = 1, `points` = 3 WHERE `code` = 'CHECK_IN'");

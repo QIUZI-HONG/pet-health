@@ -10,8 +10,12 @@ import java.math.BigDecimal;
  * （基础 / 优选 / 战略合作，CONTEXT.md 与 {@code provider.level} 的取值），
  * 可改的是「进入这一档的最低总分」与「对应的 AI 推荐优先级」。
  *
- * <p>{@code recommendPriority} 越小越优先（1 最高）。本切片只**存**这个映射
- * （写进考核记录与 {@code provider.level}），推荐排序本身不在本切片——见 ADR-0052 的待澄清。
+ * <p>{@code recommendPriority} 越小越优先（1 最高）。这个映射的**唯一消费点**是月度考核：
+ * 算分时按等级取到它、快照进分表（{@code assessment_monthly_score.recommend_priority}），
+ * 再由 {@code AssessmentService#writeBackToProvider} 写回 {@code provider.recommend_priority}，
+ * C 端找店与按项目找店都按那一列排序。运营改这里的映射，**下一次算分起生效**。
+ *
+ * <p>（改造前它只存不用：写回少了一行，排序读的是 {@code level}。）
  */
 @TableName("assessment_level_rule")
 public class AssessmentLevelRule extends BaseEntity {

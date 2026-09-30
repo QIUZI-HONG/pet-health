@@ -19,8 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>区间价不是门店报价</b>：按项目找店时要给出**这家店的定价**与下单用的 {@code service_id}；
  *   <li><b>可见性口径与 `/providers` 完全一致</b>：未过审 / 已冻结 / 资质过期的门店不出现在
  *       「谁在卖这个项目」里——两条链路各写一遍就会分叉，所以这里刻意各钉一遍；
- *   <li><b>等级即 AI 推荐优先级</b>（交付文档 2.3 / ADR-0052 第三节）：两条列表都按等级优先排序，
- *       同级再按评分与 id——`rating` 未落地时，等级是唯一有意义的区分度。
+ *   <li><b>等级决定 AI 推荐优先级</b>（交付文档 2.3 / ADR-0052 第三节）：两条列表**同一套排序**——
+ *       推荐优先级（1 最高）→ 评分 → id。优先级由月度考核按档位映射写回门店；
+ *       {@code rating} 未落地时，同级内实际是 id 升序（确定顺序，分页稳定）。
  * </ol>
  *
  * <p>测试数据用 {@code TEST*} 前缀（分类与项目）与基座的清理策略对齐；**迁移种下的目录不动**。
@@ -175,29 +176,36 @@ class CatalogBrowseTest extends ProviderApiTestSupport {
         assertThat(api.get(ITEMS + "/TQ-100/providers", null).code()).isEqualTo(40400);
     }
 
-    // ---------------------------------------------------------------- 等级即 AI 推荐优先级
+    // ---------------------------------------------------------------- 推荐优先级决定排序
 
     @Test
-    @DisplayName("等级优先排序：战略合作（3）排在基础（1）之前，两条列表口径一致")
-    void levelDecidesRecommendationPriority() {
+    @DisplayName("推荐优先级排序：1（最高）排在 3（普通）之前，两条列表口径一致；只改 level 不影响排序")
+    void recommendPriorityDecidesOrder() {
         ApprovedProvider basic = createApprovedProvider("LIC-LV-BASIC");
         listAndApprove(basic, "HE-004", "150.00");
-        ApprovedProvider strategic = createApprovedProvider("LIC-LV-STRATEGIC");
-        listAndApprove(strategic, "HE-004", "150.00");
+        ApprovedProvider top = createApprovedProvider("LIC-LV-STRATEGIC");
+        listAndApprove(top, "HE-004", "150.00");
 
-        // 先确认默认都是基础级，且按 id 升序（rating 相同的确定性顺序）
+        // 先确认默认都是 3（普通），且按 id 升序（rating 相同的确定性顺序）
         assertThat(api.get("/api/v1/app/providers", null).data().path("list").findValuesAsText("id"))
-                .containsExactly(String.valueOf(basic.providerId()), String.valueOf(strategic.providerId()));
+                .containsExactly(String.valueOf(basic.providerId()), String.valueOf(top.providerId()));
 
-        // 考核把后开的那家算成战略合作
-        jdbc.update("UPDATE `provider` SET `level` = 3 WHERE `id` = ?", strategic.providerId());
-
-        // 按分类找店与按项目找店，两条列表都该把战略级排到前面
+        // **只改 level 不改排序**（V45 起）：排序读的是 `recommend_priority`。绕过考核直接改 level
+        // 本来就不该影响流量——这正是改造前那条断掉的链路（运营改档位映射、排序不动）的镜像。
+        jdbc.update("UPDATE `provider` SET `level` = 3 WHERE `id` = ?", top.providerId());
         assertThat(api.get("/api/v1/app/providers", null).data().path("list").findValuesAsText("id"))
-                .containsExactly(String.valueOf(strategic.providerId()), String.valueOf(basic.providerId()));
+                .containsExactly(String.valueOf(basic.providerId()), String.valueOf(top.providerId()));
+
+        // 这里直接改库**只是为了构造「优先级已经不同」这个状态**（改的是读路径的输入，不是被验的行为）：
+        // 本用例的主体是「两条列表同口径、且都读优先级」。那次写回本身（考核 → 门店）走真实路径验在
+        // ProviderTrafficBalanceTest#browseOrdersByRecommendPriority——上一版这里用直接改库冒充写回，
+        // 而它断言的值恰好等于列默认值，于是「写回没实现」也全绿。
+        jdbc.update("UPDATE `provider` SET `recommend_priority` = 1 WHERE `id` = ?", top.providerId());
+        assertThat(api.get("/api/v1/app/providers", null).data().path("list").findValuesAsText("id"))
+                .containsExactly(String.valueOf(top.providerId()), String.valueOf(basic.providerId()));
         assertThat(api.get(ITEMS + "/HE-004/providers", null).data().path("list")
                 .findValuesAsText("provider_id"))
-                .containsExactly(String.valueOf(strategic.providerId()), String.valueOf(basic.providerId()));
+                .containsExactly(String.valueOf(top.providerId()), String.valueOf(basic.providerId()));
     }
 
     // ---------------------------------------------------------------- 辅助

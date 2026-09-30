@@ -44,6 +44,11 @@ class AssessmentScoringTest extends AssessmentStubSupport {
         seedOrder(provider.providerId(), 3, null, 20, day(5));
         seedOrder(provider.providerId(), 2, null, 20, day(6));
 
+        // 把**基础档**的映射从种子值 3 改成 2：这一版之前这里留着 3，而 3 恰好是
+        // `provider.recommend_priority` 的列默认值，于是「写回没实现」也能全绿（假绿）。
+        // 改成一个不等于默认值的映射，这条断言才真的在验写回。
+        jdbc.update("UPDATE `assessment_level_rule` SET `recommend_priority` = 2 WHERE `level` = 1");
+
         assertThat(assessmentService.calculate(provider.providerId(), PERIOD.toString())).isTrue();
 
         JsonNode detail = detail(provider.token(), PERIOD.toString());
@@ -56,7 +61,7 @@ class AssessmentScoringTest extends AssessmentStubSupport {
         assertThat(detail.path("participated_weight").asInt()).isEqualTo(100);
         assertThat(detail.path("level").asInt()).isEqualTo(1);
         assertThat(detail.path("level_name").asText()).isEqualTo("基础");
-        assertThat(detail.path("recommend_priority").asInt()).isEqualTo(3);
+        assertThat(detail.path("recommend_priority").asInt()).isEqualTo(2);   // 基础档的映射（上面改过）
 
         // 明细：每项都带「是否参与 / 得分 / 数据来源」，过程子项挂在 PROCESS 下
         assertThat(item(detail, "PROCESS_REDEEM_RATE").path("score").asText()).isEqualTo("100.00");
@@ -75,9 +80,14 @@ class AssessmentScoringTest extends AssessmentStubSupport {
                 provider.providerId())).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT `monthly_score` FROM `provider` WHERE `id` = ?",
                 java.math.BigDecimal.class, provider.providerId())).isEqualByComparingTo("64.35");
+        // 推荐优先级也一起写回（V45 + 写回接线）：它是**档位表的快照**，不是 level 的本地换算——
+        // C 端找店的排序读的就是这一列。2 不是列默认值 3，所以这条断言不可能靠「没人写」蒙过去
+        assertThat(jdbc.queryForObject("SELECT `recommend_priority` FROM `provider` WHERE `id` = ?",
+                Integer.class, provider.providerId())).isEqualTo(2);
         // 门店信息接口里也能读到（契约的 ProviderProfileView.monthly_score）
         ApiClient.ApiCall profile = api.get("/api/v1/provider/profile", provider.token());
         assertThat(profile.data().path("monthly_score").asText()).isEqualTo("64.35");
+        assertThat(profile.data().path("recommend_priority").asInt()).isEqualTo(2);
     }
 
     @Test
@@ -137,9 +147,12 @@ class AssessmentScoringTest extends AssessmentStubSupport {
         // 过程 = (100 接单响应 + 100 核销率 + 100 报工完整率 + 100 取消率) / 4 = 100
         assertThat(item(detail, "PROCESS").path("score").asText()).isEqualTo("100.00");
         assertThat(detail.path("total_score").asText()).isEqualTo("100.00");
-        // 100 分 → 战略合作（阈值 90）
+        // 100 分 → 战略合作（阈值 90），并按档位映射拿到最高优先级
         assertThat(detail.path("level").asInt()).isEqualTo(3);
         assertThat(detail.path("recommend_priority").asInt()).isEqualTo(1);
+        // 优先级写回门店：1 ≠ 列默认值 3，这条断言本身就是写回是否发生的证据
+        assertThat(jdbc.queryForObject("SELECT `recommend_priority` FROM `provider` WHERE `id` = ?",
+                Integer.class, provider.providerId())).isEqualTo(1);
     }
 
     @Test

@@ -34,8 +34,10 @@ public record OnboardingApplicationRequest(
         @Max(value = 6, message = "服务者类型只能是 1–6")
         Integer type,
 
-        @Min(value = 1, message = "经营主体分类只能是 1（直接同业）2（直接异业）3（间接异业）")
-        @Max(value = 3, message = "经营主体分类只能是 1（直接同业）2（直接异业）3（间接异业）")
+        // 联盟分类的取值范围**不在这里**：值域是 provider_alliance_category 表（V43 起可维护），
+        // 由服务层查表校验「存在且启用中」。写死 @Min/@Max 会让「运营新增一档维度」需要发版，
+        // 那正是这次改造要拆掉的东西。这里只挡掉明显不是 id 的值。
+        @Min(value = 1, message = "联盟分类必须是有效的维度取值")
         Integer category,
 
         @Size(max = 512, message = "Logo 地址最长 512 个字符")

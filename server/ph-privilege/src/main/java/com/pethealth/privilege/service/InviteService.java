@@ -62,6 +62,7 @@ public class InviteService implements InviteAttributionApi {
     private final InviteLadderAchievementMapper achievementMapper;
     private final PointRecordMapper pointRecordMapper;
     private final InviteRiskGuard riskGuard;
+    private final ProviderInviteCodeService providerCodes;
     private final PointsApi pointsApi;
     private final CouponApi couponApi;
     private final RightsApi rightsApi;
@@ -71,6 +72,7 @@ public class InviteService implements InviteAttributionApi {
                          InviteLadderTierMapper tierMapper,
                          InviteLadderAchievementMapper achievementMapper,
                          PointRecordMapper pointRecordMapper, InviteRiskGuard riskGuard,
+                         ProviderInviteCodeService providerCodes,
                          PointsApi pointsApi, CouponApi couponApi, RightsApi rightsApi,
                          BusinessMessageApi businessMessages) {
         this.codeMapper = codeMapper;
@@ -79,6 +81,7 @@ public class InviteService implements InviteAttributionApi {
         this.achievementMapper = achievementMapper;
         this.pointRecordMapper = pointRecordMapper;
         this.riskGuard = riskGuard;
+        this.providerCodes = providerCodes;
         this.pointsApi = pointsApi;
         this.couponApi = couponApi;
         this.rightsApi = rightsApi;
@@ -132,7 +135,9 @@ public class InviteService implements InviteAttributionApi {
         InviteCode inviteCode = codeMapper.selectOne(Wrappers.<InviteCode>lambdaQuery()
                 .eq(InviteCode::getCode, raw));
         if (inviteCode == null) {
-            return Attribution.rejected("CODE_NOT_FOUND");
+            // 不是用户邀请码，看看是不是门店推广码（V44）。两张码表**长度不同**
+            // （用户码 8 位、门店码 10 位），所以先查哪张表都不影响结果，也不会互撞。
+            return attributeToProvider(raw, command);
         }
         InviteRelation existing = relationMapper.selectOne(Wrappers.<InviteRelation>lambdaQuery()
                 .eq(InviteRelation::getInviteeUserId, command.inviteeUserId()));
@@ -151,6 +156,49 @@ public class InviteService implements InviteAttributionApi {
         relation.setInviterUserId(inviteCode.getUserId());
         relation.setInviteeUserId(command.inviteeUserId());
         relation.setInviteCode(inviteCode.getCode());
+        relation.setChannel(command.channel() == null ? InviteRelation.CHANNEL_LINK : command.channel());
+        relation.setStatus(InviteRelation.STATUS_PENDING);
+        relation.setAttributedAt(command.registeredAt() == null ? AppTime.now() : command.registeredAt());
+        try {
+            relationMapper.insert(relation);
+        } catch (DuplicateKeyException e) {
+            return Attribution.rejected("ALREADY_ATTRIBUTED");
+        }
+        return Attribution.ok(relation.getId());
+    }
+
+    /**
+     * 门店推广码的归因（V44）：用户扫店里的码注册 → 关系落到**门店**而不是某个账号上。
+     *
+     * <p>三条与用户邀请码不同的地方，都是刻意的：
+     *
+     * <ul>
+     *   <li><b>不跑 {@link InviteRiskGuard} 的三条判据</b>：那三条（自邀自 / 同设备 / 同 IP 同号段）
+     *       比的是「码主人的设备与号段」与「被邀请人的」，而门店码背后**没有主人账号**
+     *       （V44 的注释写了为什么不让它落到门店管理员头上）。**这是一处已知的宽松**：
+     *       门店侧刷号的拦法是 24 小时观察窗与「完成建档 + 有行为」这条有效判据，
+     *       没有设备指纹那一层。要收紧得先给门店码补一套店内设备/网段白名单，口径未定；
+     *   <li><b>停用的码照样能归因</b>：码停用意味着「不再鼓励扫码」，但已经印出去的二维码
+     *       贴在店里，用户扫了照样是他的真实来源。拒绝归因等于把这段关系丢掉而奖励照发（观察窗走完），
+     *       那比接受它更难解释；
+     *   <li><b>没生成过码的门店永远归因不上</b>：所以门店必须先取码（见
+     *       {@link ProviderInviteCodeService}），这也是考核判「平台有没有给拉新入口」的依据。
+     * </ul>
+     */
+    private Attribution attributeToProvider(String raw, AttributionCommand command) {
+        Optional<com.pethealth.privilege.domain.ProviderInviteCode> hit = providerCodes.findByCode(raw);
+        if (hit.isEmpty()) {
+            return Attribution.rejected("CODE_NOT_FOUND");
+        }
+        InviteRelation existing = relationMapper.selectOne(Wrappers.<InviteRelation>lambdaQuery()
+                .eq(InviteRelation::getInviteeUserId, command.inviteeUserId()));
+        if (existing != null) {
+            return Attribution.rejected("ALREADY_ATTRIBUTED");
+        }
+        InviteRelation relation = new InviteRelation();
+        relation.setInviterProviderId(hit.get().getProviderId());
+        relation.setInviteeUserId(command.inviteeUserId());
+        relation.setInviteCode(hit.get().getCode());
         relation.setChannel(command.channel() == null ? InviteRelation.CHANNEL_LINK : command.channel());
         relation.setStatus(InviteRelation.STATUS_PENDING);
         relation.setAttributedAt(command.registeredAt() == null ? AppTime.now() : command.registeredAt());
@@ -207,7 +255,11 @@ public class InviteService implements InviteAttributionApi {
                 relation.setRejectReason(InviteRelation.REJECT_NO_ACTIVITY);
                 relation.setSettledAt(now);
                 relationMapper.updateById(relation);
-                riskGuard.recordNoActivity(relation.getInviterUserId(), relation.getInviteeUserId());
+                // 门店推广码的归因没有邀请人账号（V44），反作弊记录要记的是「邀请人」
+                // ——没有邀请人就不记这条；服务者侧看得到的无效数由关系本身的状态给出
+                if (relation.getInviterUserId() != null) {
+                    riskGuard.recordNoActivity(relation.getInviterUserId(), relation.getInviteeUserId());
+                }
                 invalid++;
                 continue;
             }
@@ -242,6 +294,15 @@ public class InviteService implements InviteAttributionApi {
      * 发分失败不影响邀请人那一份：两笔账各自幂等（`sourceRef` 分别是 `invite:` 与 `invitee:`）。
      */
     private void afterEffective(InviteRelation relation) {
+        if (relation.getInviterProviderId() != null) {
+            // 门店推广码（V44）：这条关系没有邀请人账号，所以**只发被邀请人那一份**，
+            // 不查阶梯、不通知「邀请人」，也不给门店发积分——门店的收获是这一条关系本身
+            // （考核的拉新项按它计数，见 ProviderGrowthFactsService）。
+            // 用同一套幂等引用（invitee:{关系 id}），与用户邀请码那条路径不会重复发。
+            pointsApi.award(new PointsApi.AwardCommand(relation.getInviteeUserId(), PointBehavior.INVITE_INVITEE,
+                    "invitee:" + relation.getId(), "被邀请注册（门店推广码）"));
+            return;
+        }
         pointsApi.award(new PointsApi.AwardCommand(relation.getInviterUserId(), PointBehavior.INVITE,
                 "invite:" + relation.getId(), "有效邀请：" + relation.getInviteeUserId()));
         pointsApi.award(new PointsApi.AwardCommand(relation.getInviteeUserId(), PointBehavior.INVITE_INVITEE,

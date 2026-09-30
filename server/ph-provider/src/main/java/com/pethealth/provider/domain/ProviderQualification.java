@@ -74,8 +74,14 @@ public class ProviderQualification extends BaseEntity {
     private String certNoEnc;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String certNoHash;
+    /**
+     * 材料图片的**文件 id**（ph-file，`biz_type=qualification`），不是 URL。
+     *
+     * <p>读用的签名地址由后端当场签发、**不落库**（ADR-0053）——存 URL 会存成死链，
+     * 因为签名地址默认 10 分钟就过期（ADR-0020）。
+     */
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
-    private String fileUrl;
+    private Long fileId;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private LocalDate validFrom;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
@@ -150,12 +156,12 @@ public class ProviderQualification extends BaseEntity {
         this.certNoHash = certNoHash;
     }
 
-    public String getFileUrl() {
-        return fileUrl;
+    public Long getFileId() {
+        return fileId;
     }
 
-    public void setFileUrl(String fileUrl) {
-        this.fileUrl = fileUrl;
+    public void setFileId(Long fileId) {
+        this.fileId = fileId;
     }
 
     public LocalDate getValidFrom() {

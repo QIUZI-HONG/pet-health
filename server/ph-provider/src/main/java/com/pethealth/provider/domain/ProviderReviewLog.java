@@ -32,6 +32,20 @@ public class ProviderReviewLog extends BaseEntity {
     public static final int ACTION_FREEZE = 7;
     /** 解冻。 */
     public static final int ACTION_UNFREEZE = 8;
+    /**
+     * 改联盟分类归属（V43 起由运营执行）。
+     *
+     * <p>它不是「审核」动作，但仍然写在这张 append-only 表里：归属会进考核与流量分配的输入，
+     * 与冻结一样属于「事后要能查是谁改的」那一类。靠 {@code targetType = TARGET_PROVIDER}
+     * 与实际审核流水区分开，读法不变。
+     */
+    public static final int ACTION_ASSIGN_ALLIANCE = 9;
+    /**
+     * 改区域编码（V45 起由运营执行）。
+     *
+     * <p>与联盟分类同一条理由：它决定「C 端按区域筛选时谁能被看到」，属于要看得到是谁改的那类动作。
+     */
+    public static final int ACTION_ASSIGN_REGION = 10;
 
     private Integer targetType;
     private Long targetId;

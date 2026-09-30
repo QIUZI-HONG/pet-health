@@ -103,27 +103,37 @@ public class ProviderBrowseService {
     }
 
     /**
-     * 找店：分类 / 关键词 / 分页。
+     * 找店：分类 / 关键词 / 区域 / 分页。
      *
      * <p>关键词只在**门店名称**上匹配：服务项名称不参与——那会让「搜疫苗」把整条街的医院都列出来，
      * 而「哪家有这个项目」是详情页与号源页的事。
      *
-     * <p>排序固定**评分降序 + id 升序**：评价体系未落地前 {@code rating} 恒为默认值，
-     * 于是实际是稳定按 id 升序——给一个确定的顺序，不把「数据库碰巧返回的顺序」当排序
-     * （那种顺序在分页下会让同一条记录忽而出现忽而消失）。
+     * <p>排序：**推荐优先级升序（1 最高）→ 评分降序 → id 升序**（V45 起）。
+     * 优先级来自最近一期考核（运营可改等级档位映射，改完当场影响这里的顺序），
+     * 不再是「按 level 三档排」——那条链路里，档位映射改了排序不会变。
+     * 还没算过考核的门店是默认档 3（普通），与 {@code level} 默认 1 同档，不会因为「没有数据」
+     * 反而排到最前（列是非空的，见 V45）。
+     *
+     * <p>{@code regionCode} 是**筛选**（按运营维护的区域编码取某一片的门店），
+     * **不是「区域保护」**：谁在哪个区独占、独占多久、冲突怎么判仍是留白（见 V45 的注释）。
+     *
+     * <p>评价体系未落地时 {@code rating} 恒为默认值，所以同级内实际是按 id 升序——给一个确定的顺序，
+     * 不把「数据库碰巧返回的顺序」当排序（那种顺序在分页下会让同一条记录忽而出现忽而消失）。
      */
     @Transactional(readOnly = true)
-    public PageResult<ProviderSummaryView> browse(Integer type, String keyword, long page, long pageSize) {
+    public PageResult<ProviderSummaryView> browse(Integer type, String keyword, String regionCode,
+                                                 long page, long pageSize) {
         String nameKeyword = Text.trimToNull(keyword);
+        String region = Text.trimToNull(regionCode);
         Page<Provider> result = providerMapper.selectPage(new Page<>(page, pageSize),
                 Wrappers.<Provider>lambdaQuery()
                         .eq(Provider::getStatus, Provider.STATUS_APPROVED)
                         .eq(type != null, Provider::getType, type)
+                        .eq(region != null, Provider::getRegionCode, region)
                         .like(nameKeyword != null, Provider::getName, nameKeyword)
                         .exists(QUALIFIED_EXISTS, AppTime.today())
-                        // 等级优先：交付文档 2.3 的「等级决定 AI 推荐优先级」（考核算出 provider.level）。
-                        // 评价体系未落地时 rating 恒为同一个值，所以同级内实际是按 id 升序——确定且稳定
-                        .orderByDesc(Provider::getLevel)
+                        // 优先级升序（1 最高）→ 评分降序 → id 升序。三条都是确定值，分页稳定
+                        .orderByAsc(Provider::getRecommendPriority)
                         .orderByDesc(Provider::getRating)
                         .orderByAsc(Provider::getId));
         return PageResult.from(result, provider -> ProviderViews.toAppSummary(provider, cipher));
@@ -136,8 +146,12 @@ public class ProviderBrowseService {
      * （与 {@link #browse} 同一套条件）、该店对这个项目要有**在架**服务项。
      *
      * <p>分页与排序都在库里算：条件写成外层 {@code provider} 上的两个 EXISTS 子查询，
-     * 排序按等级 → 评分 → id。**不在内存里过滤**——先取一页再筛会得到「这一页 7 条」
-     * 而不是「符合条件的第 1 页」（同 {@link #browse} 的注释）。
+     * 排序与 {@link #browse} **同口径**（推荐优先级 → 评分 → id）。**不在内存里过滤**——
+     * 先取一页再筛会得到「这一页 7 条」而不是「符合条件的第 1 页」（同 {@link #browse} 的注释）。
+     *
+     * <p>曾经这里排的是 {@code level}（改造前两条链路都是），结果与 {@link #browse} 分叉：
+     * 找店已经按推荐优先级排了，按项目找店还按等级——同一批门店在两个列表里顺序不一致，
+     * 而且等级那一路改档位映射不生效。两条列表共用一套排序是**口径**，不是实现细节。
      *
      * <p>页码上的门店拿到之后，再**一次**取回它们对这个项目的在架服务项（定价与 service_id）：
      * 一页最多 100 条，逐行查就是典型的 N+1。
@@ -156,7 +170,8 @@ public class ProviderBrowseService {
                         .eq(Provider::getStatus, Provider.STATUS_APPROVED)
                         .exists(QUALIFIED_EXISTS, AppTime.today())
                         .exists(LISTED_ITEM_EXISTS, item.code())
-                        .orderByDesc(Provider::getLevel)
+                        // 与 browse 同一口径：优先级升序（1 最高）→ 评分降序 → id 升序
+                        .orderByAsc(Provider::getRecommendPriority)
                         .orderByDesc(Provider::getRating)
                         .orderByAsc(Provider::getId));
 

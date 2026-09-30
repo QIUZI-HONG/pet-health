@@ -46,5 +46,18 @@
       <artifactId>ph-order</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!--
+      依赖 ph-file 的理由：资质材料的图片读地址要由后端当场签发（ADR-0053），
+      取元数据的口子是 `com.pethealth.file.api.FileQueryApi`（按 id 取、不按上传者过滤，
+      调用方负责自己的归属校验——审核员不是上传者，用按归属过滤的 FileUrlApi 会拿到空地址）。
+      这条依赖原先只是经 ph-order **传递**进来（ph-order 依赖 ph-file），这里是把隐性依赖写明：
+      本模块现在直接 import 它的 api 包，不写清楚的话，哪天 ph-order 去掉了 ph-file，
+      编译才会在很远的地方报错。方向单向：ph-file 不依赖任何业务模块（ADR-0006），不会成环。
+    -->
+    <dependency>
+      <groupId>com.pethealth</groupId>
+      <artifactId>ph-file</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 </project>

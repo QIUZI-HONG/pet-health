@@ -27,16 +27,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PortWiringTest {
 
     /**
-     * 已知的未接线端口：**只有这一条**，且是有 ADR 依据的接线点，不是漏做。
+     * 已知的未接线端口：**现在是空的**。
      *
-     * <p>{@code ProviderGrowthFactsApi}（考核的拉新与券两项）：ADR-0052 的「需要协调」第 1 条写明，
-     * 拉新那一半要先把「服务者的拉新入口」落下来（交付文档 F022 的店内二维码把用户绑到门店），
-     * 而现在的邀请关系只有用户对用户——**这条口径本身也还没定**（ADR-0052 待澄清第 1 条）。
-     * 所以它不能靠「实现出四个方法」清偿：{@code effectiveInvites} 的返回值要么是编的，
-     * 要么得先有一个不存在的业务定义。未接线期间考核按「不参与、重算权重、明细里注明」处理
-     * （ADR-0050 第四节），这条降级是**被声明的行为**，不是静默失败。
+     * <p>最后一条（{@code ProviderGrowthFactsApi}，考核的拉新与券两项）在 2026-09-30 清偿：
+     * 拉新那一半先落下了「服务者的拉新入口」——门店推广码 {@code provider_invite_code}（V44）
+     * 把用户归因到门店，口径写进 ADR 与迁移注释；券那一半读现成的贡献与核销表。
+     * 实现是 {@code ph-privilege} 的 {@code ProviderGrowthFactsService}。
+     *
+     * <p>这个常量**留在这里不删**：它是「新出现的未接线端口要在 CI 红掉」这条规则的一部分，
+     * 将来再出现有 ADR 依据的接线点，把它的名字填回来，并在这里写清依据。
      */
-    private static final String PENDING_WIRING = "ProviderGrowthFactsApi";
+    private static final String PENDING_WIRING = "";
 
     @Test
     @DisplayName("真实代码树：除声明的例外外，每个 *Api 都有 src/main 里的实现")
@@ -54,13 +55,12 @@ class PortWiringTest {
                 .as("扫到的 *Api 端口数")
                 .isGreaterThanOrEqualTo(20);
 
-        // 例外之外必须零缺失。报错时把「谁、在哪个文件」列出来，而不是只给一个数字
-        assertThat(scan.missing())
-                .as("声明了但没有任何生产实现的端口（测试桩不算）")
-                .allSatisfy(port -> assertThat(port.name())
-                        .as("未接线端口 %s 不在 PENDING_WIRING 里：要么补实现，要么在常量上写明 ADR 依据",
-                                port)
-                        .isEqualTo(PENDING_WIRING));
+        // 例外之外必须零缺失。报错时把「谁、在哪个文件」列出来，而不是只给一个数字。
+        // 例外名单现在是空的 → 这条断言等价于「缺失必须是空集」；
+        // 保留过滤形式是为了让「登记一条有 ADR 依据的留白」仍然只改一个常量就能走通。
+        assertThat(scan.missing().stream().filter(port -> !port.name().equals(PENDING_WIRING)).toList())
+                .as("声明了但没有任何生产实现的端口（测试桩不算）；有 ADR 依据的留白请登记在 PENDING_WIRING")
+                .isEmpty();
     }
 
     @Test

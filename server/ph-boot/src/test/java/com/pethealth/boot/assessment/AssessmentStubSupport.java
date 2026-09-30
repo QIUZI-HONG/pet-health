@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -13,12 +14,13 @@ import java.time.LocalDate;
 /**
  * 带**增长侧事实源**的考核测试基座：给算分用例一个可控的「有效邀请数 / 券池 / 核销数」。
  *
- * <p>{@link ProviderGrowthFactsApi} 是 ph-api 里的跨模块只读接口，按契约应由 ph-privilege 提供实现
- * （**本轮未接线**，见 ADR-0052 的「需要协调」）。这里的 stub 就是那个实现的等价物——
- * 它数的是同一批事实，所以被这些用例验过的算分链路，在真实现落地后仍然成立。
+ * <p>{@link ProviderGrowthFactsApi} 的**真实实现已经落地**（{@code ph-privilege} 的
+ * {@code ProviderGrowthFactsService}，2026-09-30）。这里的 stub 仍然保留，因为它能精确摆出
+ * 「有入口但 0 条」「有券可出但一张没核销」这些**算分用例要逐条对着看的组合**——
+ * 用真实现造那些组合要动邀请与券的表，算分用例会因此变成邀请用例的附庸。
  *
- * <p>{@link AssessmentGrowthUnwiredTest} **刻意继承不带 stub 的基类**，
- * 用来验证「数据源未接线 → 该维度不参与」这条降级口径。
+ * <p>因为真实现也在容器里，stub 必须标 {@code @Primary}（见下面那段说明）。
+ * 真实实现本身的口径在 {@code AssessmentGrowthWiringTest} 与 {@code ProviderGrowthFactsTest} 里验。
  */
 @Import(AssessmentStubSupport.StubGrowthFactsConfig.class)
 public abstract class AssessmentStubSupport extends AssessmentTestSupport {
@@ -95,11 +97,24 @@ public abstract class AssessmentStubSupport extends AssessmentTestSupport {
         }
     }
 
-    /** 把 stub 注册成一个 Bean（与 {@code PrivilegeTestSupport.StubProviderAccess} 同一写法）。 */
+    /**
+     * 把 stub 注册成一个 Bean。
+     *
+     * <p><b>`@Primary` 是必需的</b>（2026-09-30 起）：真实实现已经落地
+     * （{@code ph-privilege} 的 {@code ProviderGrowthFactsService}），于是容器里同时存在两个
+     * {@code ProviderGrowthFactsApi}。{@code AssessmentFactSource} 用
+     * {@code ObjectProvider.getIfAvailable()} 取实现——**它遇到多个候选会抛
+     * NoUniqueBeanDefinitionException**，而不是随便挑一个。所以这里必须标 `@Primary`，
+     * 让「算分用例要一个可控的增长侧」这件事仍然成立。
+     *
+     * <p>不标 `@Primary` 也不会静默走错：会因为多个候选直接炸掉。这正是
+     * {@code getIfAvailable()} 与「随便挑一个」的区别——**宁可炸，也不要拿一个不知道是谁的实现算分**。
+     */
     @TestConfiguration
     static class StubGrowthFactsConfig {
 
         @Bean
+        @Primary
         ProviderGrowthFactsApi providerGrowthFactsApi() {
             return new StubGrowthFacts();
         }

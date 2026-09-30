@@ -5,6 +5,7 @@ import com.pethealth.api.provider.ProviderQualificationRequest;
 import com.pethealth.common.crypto.FieldCipher;
 import com.pethealth.common.error.BusinessException;
 import com.pethealth.common.util.Text;
+import com.pethealth.file.api.FileQueryApi;
 import com.pethealth.provider.domain.Provider;
 import com.pethealth.provider.domain.ProviderQualification;
 import com.pethealth.provider.mapper.ProviderMapper;
@@ -33,15 +34,20 @@ import java.util.List;
 @Component
 public class QualificationGuard {
 
+    /** 资质材料图的用途标记（与 {@code ProviderFileController} 的入口白名单、文件域的取值表同名同值）。 */
+    private static final String BIZ_TYPE_QUALIFICATION = "qualification";
+
     private final ProviderQualificationMapper qualificationMapper;
     private final ProviderMapper providerMapper;
     private final FieldCipher cipher;
+    private final FileQueryApi fileQueryApi;
 
     public QualificationGuard(ProviderQualificationMapper qualificationMapper, ProviderMapper providerMapper,
-                              FieldCipher cipher) {
+                              FieldCipher cipher, FileQueryApi fileQueryApi) {
         this.qualificationMapper = qualificationMapper;
         this.providerMapper = providerMapper;
         this.cipher = cipher;
+        this.fileQueryApi = fileQueryApi;
     }
 
     /**
@@ -85,5 +91,39 @@ public class QualificationGuard {
     private static boolean blocksUniqueness(Provider provider) {
         int status = provider.getStatus() == null ? -1 : provider.getStatus();
         return status == Provider.STATUS_PENDING || status == Provider.STATUS_APPROVED;
+    }
+
+    /**
+     * 每一份材料都必须带图（ADR-0053），而且**图得是提交人自己为这个用途传的**。
+     *
+     * <p>接口层已经用 {@code @NotNull} 拦了一道，这里是**领域里的最后一道**——
+     * 与订单评分的处理同一个道理：方法是不是只被 Controller 调用，从签名上看不出来，
+     * 领域约束就不该建立在「调用方一定传对」之上。
+     *
+     * <p>归属与用途由文件域判定（{@link FileQueryApi#requireOwned}，ADR-0053 第二节）：
+     * 只校「非空」时，一个 file_id 就能把**别人的**证件照挂到自己的材料上，
+     * 而审核员看到的是「一张与材料无关的图」——他会当成材料不合格驳回，服务者则完全不知道为什么。
+     *
+     * <p>报错文案带上材料名（有名称用名称，没有就用类型名），否则一次提交十份材料时，
+     * 服务者只知道「有一份没传图」，得自己一份份找。
+     */
+    public void requireImages(long userId, List<ProviderQualificationRequest> requests) {
+        for (ProviderQualificationRequest request : requests) {
+            if (request.fileId() == null) {
+                throw BusinessException.paramInvalid("请先上传「" + describe(request) + "」的材料图片");
+            }
+        }
+        fileQueryApi.requireOwned(userId,
+                requests.stream().map(ProviderQualificationRequest::fileId).toList(),
+                BIZ_TYPE_QUALIFICATION);
+    }
+
+    private static String describe(ProviderQualificationRequest request) {
+        String name = Text.trimToNull(request.name());
+        if (name != null) {
+            return name;
+        }
+        String typeName = ProviderQualification.typeName(request.type());
+        return typeName == null ? "资质材料" : typeName;
     }
 }

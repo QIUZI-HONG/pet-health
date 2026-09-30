@@ -79,6 +79,19 @@ public class Provider extends BaseEntity {
     private String businessHours;
     private Integer status;
     private Integer level;
+    /**
+     * AI 推荐优先级（1 最高 / 2 较高 / 3 普通），V45 起由月度考核按等级档位写回
+     * （{@code assessment_level_rule.recommend_priority}，运营可改档位映射）。
+     *
+     * <p>为什么在 {@code provider} 上再存一份、而不是读考核分表：排序在浏览查询的 ORDER BY 里，
+     * 每个请求 join 一张按月增长的宽表不划算；而这一列与 {@code level} / {@code monthlyScore}
+     * 是同一批写回、同一套「不回退到更旧账期」的规则，多存一列的代价很小。
+     *
+     * <p>**非空、默认 3（普通）**：与 {@code level} 默认 1（基础档）同档。不用 NULL 表示
+     * 「还没算过考核」——那一列的 NULL 在 MySQL 的升序里排最前，会把新店顶到最前面，
+     * 而「没有数据」不该长得像「数据很好」。
+     */
+    private Integer recommendPriority;
     private String regionCode;
     private BigDecimal monthlyScore;
     private BigDecimal rating;
@@ -190,6 +203,14 @@ public class Provider extends BaseEntity {
 
     public void setLevel(Integer level) {
         this.level = level;
+    }
+
+    public Integer getRecommendPriority() {
+        return recommendPriority;
+    }
+
+    public void setRecommendPriority(Integer recommendPriority) {
+        this.recommendPriority = recommendPriority;
     }
 
     public String getRegionCode() {

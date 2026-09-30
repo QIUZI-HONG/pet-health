@@ -469,11 +469,16 @@ public class AssessmentService {
     }
 
     /**
-     * 把最近一期的等级与总分写回 {@code provider}（推荐侧与 C 端读的是这两列）。
+     * 把最近一期的等级、总分与推荐优先级写回 {@code provider}（推荐侧与 C 端读的是这三列）。
      *
      * <p>**只写「不比库里更新的那一期更旧」的账期**：手动补算一个历史账期时，不该把门店的等级
      * 退回几个月前——那是看得见的错。判定用的是分表里的最大账期（同一个服务者），
-     * 所以补算历史不会改这两个列。
+     * 所以补算历史不会改这几列。
+     *
+     * <p><b>推荐优先级必须一起写回</b>：C 端找店排序读的就是 {@code provider.recommend_priority}，
+     * 而它的唯一来源是这里。少了这一行，那一列只会在 V45 的回填里被写一次，之后再也不会变——
+     * 「等级决定 AI 推荐优先级」（交付文档 F022）就是断的，而且比改造前更难查
+     * （改造前读的至少是会随考核变的 {@code level}）。
      */
     private void writeBackToProvider(long providerId, String period, AssessmentMonthlyScore score) {
         String latest = scoreMapper.selectOne(Wrappers.<AssessmentMonthlyScore>lambdaQuery()
@@ -490,6 +495,10 @@ public class AssessmentService {
         }
         provider.setLevel(score.getLevel());
         provider.setMonthlyScore(score.getTotalScore());
+        // 档位表的快照（applyLevel 已按映射算进分表）——列非空，所以空值时不覆盖，别把 NPE 写成一次约束冲突
+        if (score.getRecommendPriority() != null) {
+            provider.setRecommendPriority(score.getRecommendPriority());
+        }
         providerMapper.updateById(provider);
     }
 

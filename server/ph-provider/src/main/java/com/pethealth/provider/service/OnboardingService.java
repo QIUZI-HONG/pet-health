@@ -14,6 +14,7 @@ import com.pethealth.common.error.BusinessException;
 import com.pethealth.common.security.CurrentUser;
 import com.pethealth.common.time.AppTime;
 import com.pethealth.common.util.Text;
+import com.pethealth.file.api.FileQueryApi;
 import com.pethealth.provider.domain.Coordinate;
 import com.pethealth.provider.domain.OnboardingApplication;
 import com.pethealth.provider.domain.Provider;
@@ -28,6 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 服务者入驻与资质审核（BPM-4 的起点，切片 #104），决策见 ADR-0035。
@@ -61,7 +65,9 @@ public class OnboardingService {
     private final ReviewLogRecorder reviewLog;
     private final ProviderAccess access;
     private final QualificationGuard qualificationGuard;
+    private final AllianceCategoryService allianceCategories;
     private final FieldCipher cipher;
+    private final FileQueryApi fileQueryApi;
 
     public OnboardingService(ProviderMapper providerMapper,
                             ProviderQualificationMapper qualificationMapper,
@@ -70,7 +76,9 @@ public class OnboardingService {
                             ReviewLogRecorder reviewLog,
                             ProviderAccess access,
                             QualificationGuard qualificationGuard,
-                            FieldCipher cipher) {
+                            AllianceCategoryService allianceCategories,
+                            FieldCipher cipher,
+                            FileQueryApi fileQueryApi) {
         this.providerMapper = providerMapper;
         this.qualificationMapper = qualificationMapper;
         this.applicationMapper = applicationMapper;
@@ -78,7 +86,9 @@ public class OnboardingService {
         this.reviewLog = reviewLog;
         this.access = access;
         this.qualificationGuard = qualificationGuard;
+        this.allianceCategories = allianceCategories;
         this.cipher = cipher;
+        this.fileQueryApi = fileQueryApi;
     }
 
     // ---------------------------------------------------------------- 服务者侧
@@ -100,7 +110,7 @@ public class OnboardingService {
         saveContactPhone(provider, request);
         providerMapper.insert(provider);
 
-        replaceQualifications(provider.getId(), request.qualifications(), ProviderQualification.STATUS_PENDING);
+        replaceQualifications(userId, provider.getId(), request.qualifications(), ProviderQualification.STATUS_PENDING);
 
         OnboardingApplication application = new OnboardingApplication();
         application.setProviderId(provider.getId());
@@ -145,7 +155,7 @@ public class OnboardingService {
         // 旧材料整批换掉（逻辑删除，留着可追溯），新的一批回到待审
         qualificationMapper.delete(Wrappers.<ProviderQualification>lambdaQuery()
                 .eq(ProviderQualification::getProviderId, provider.getId()));
-        replaceQualifications(provider.getId(), request.qualifications(), ProviderQualification.STATUS_PENDING);
+        replaceQualifications(userId, provider.getId(), request.qualifications(), ProviderQualification.STATUS_PENDING);
 
         application.setApplicantName(request.applicantName().trim());
         application.setContactPhoneEnc(cipher.encrypt(request.contactPhone().trim()));
@@ -278,7 +288,12 @@ public class OnboardingService {
     private void applyProfile(Provider provider, OnboardingApplicationRequest request) {
         provider.setName(request.name().trim());
         provider.setType(request.type());
-        provider.setCategory(request.category() == null ? 1 : request.category());
+        // 联盟分类：值域在 provider_alliance_category 表里（V43 起可维护），所以校验是查表
+        // 而不是注解上的 @Min/@Max——运营新增一档之后立刻可指派，不需要发版。
+        // 申请单没填（老客户端）时归到顺序最小的启用维度。
+        provider.setCategory(request.category() == null
+                ? allianceCategories.defaultCategoryId()
+                : allianceCategories.requireEnabled(request.category()).getId().intValue());
         provider.setLogo(Text.trimToNull(request.logo()));
         provider.setIntro(Text.trimToNull(request.intro()));
         provider.setAddress(request.address().trim());
@@ -294,8 +309,13 @@ public class OnboardingService {
     }
 
     /** 一批材料**整批插入**，不是逐条 upsert：重提时调用方先把旧批逻辑删掉再调它（见 {@code resubmit}），
-     *  所以这里只管写新行。{@code status} 由调用方给（提交与重提都是待审）。 */
-    private void replaceQualifications(long providerId, List<ProviderQualificationRequest> requests, int status) {
+     *  所以这里只管写新行。{@code status} 由调用方给（提交与重提都是待审）。
+     *
+     *  <p>{@code userId} 是提交人：材料图必须是他自己为这个用途传的（ADR-0053 / 见
+     *  {@code QualificationGuard#requireImages}），所以这里要把它一路带到校验那一步。 */
+    private void replaceQualifications(long userId, long providerId,
+                                       List<ProviderQualificationRequest> requests, int status) {
+        qualificationGuard.requireImages(userId, requests);
         for (ProviderQualificationRequest request : requests) {
             ProviderQualification qualification = new ProviderQualification();
             qualification.setProviderId(providerId);
@@ -306,7 +326,8 @@ public class OnboardingService {
             String certNo = Text.trimToNull(request.certNo());
             qualification.setCertNoEnc(certNo == null ? null : cipher.encrypt(certNo));
             qualification.setCertNoHash(certNo == null ? null : cipher.lookupHash(certNo));
-            qualification.setFileUrl(Text.trimToNull(request.fileUrl()));
+            // 存的是文件 id，不是地址（ADR-0053）：地址是短时签名链接，存库就是死链
+            qualification.setFileId(request.fileId());
             qualification.setValidFrom(request.validFrom());
             qualification.setValidUntil(request.validUntil());
             qualification.setStatus(status);
@@ -376,7 +397,40 @@ public class OnboardingService {
                 .eq(ProviderReviewLog::getTargetType, ProviderReviewLog.TARGET_ONBOARDING)
                 .eq(ProviderReviewLog::getTargetId, application.getId())
                 .orderByAsc(ProviderReviewLog::getId));
-        return ProviderViews.toDetail(application, provider, access.qualificationsOf(provider.getId()), logs, cipher);
+        List<ProviderQualification> qualifications = access.qualificationsOf(provider.getId());
+        return ProviderViews.toDetail(application, provider, qualifications, logs, cipher,
+                qualificationImageUrls(qualifications),
+                allianceCategories.nameOf(provider.getCategory()));
+    }
+
+    /**
+     * 批量把材料图的 **id 换成签名读地址**（ADR-0053）。
+     *
+     * <p><b>为什么用 {@link FileQueryApi} 而不是 {@code FileUrlApi}</b>：后者按**上传者**过滤，
+     * 而这里的两条读路径（服务者看自己的申请、运营审核看申请）里，审核员根本不是上传者，
+     * 走那条会拿到空地址。本接口按 id 取、不按上传者过滤，前提是**调用方已经做完自己的归属校验**——
+     * 这里两条路径都做了：服务者侧由 {@link ProviderAccess} 校验「这是我的申请」，
+     * 运营侧走 admin 登录域且申请单本来就是给审核员看的。
+     * 这与订单照片墙是**同一套信任模型**（ADR-0040 第四节），不是新开的口子。
+     *
+     * <p>地址是**当场签发**的短时链接（默认 10 分钟，ADR-0020），所以只出现在响应里、不落库。
+     * 一次查完整份申请的材料 id 集合，避免逐条查（N+1）。
+     *
+     * <p><b>查不动时不吞异常</b>：本方法只是一次本地库查询，失败说明文件域真的有问题，
+     * 那就该让这次请求失败（50000），而不是把图这一格降级成空——审核员看到空图会理解成
+     * 「服务者没传材料」，据此驳回就是一次误判。宁可让页面报错，也不要给一个会被误解的答案。
+     */
+    private Map<Long, String> qualificationImageUrls(List<ProviderQualification> qualifications) {
+        List<Long> fileIds = qualifications.stream()
+                .map(ProviderQualification::getFileId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (fileIds.isEmpty()) {
+            return Map.of();
+        }
+        return fileQueryApi.files(fileIds).entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().url()));
     }
 
     /**

@@ -104,7 +104,7 @@ class QualificationExpiryTest extends ProviderApiTestSupport {
                 Map.of("qualifications", List.of(Map.of(
                         "type", 1,
                         "name", "营业执照（续期）",
-                        "cert_no", "LIC-EXPIRY-002-NEW",
+                        "cert_no", "LIC-EXPIRY-002-NEW", "file_id", uploadQualificationImage(provider.token()),
                         "valid_from", LocalDate.now().toString(),
                         "valid_until", LocalDate.now().plusYears(1).toString()))), provider.token());
         assertCodeOk(resubmitted, "补交材料");
@@ -130,9 +130,9 @@ class QualificationExpiryTest extends ProviderApiTestSupport {
         // 再加一份长期有效的材料（到期日为空 = 长期有效），然后把第一份改成过期
         assertCodeOk(api.put("/api/v1/provider/profile/qualifications",
                 Map.of("qualifications", List.of(
-                        Map.of("type", 1, "name", "营业执照", "cert_no", "LIC-EXPIRY-003-A",
+                        Map.of("type", 1, "name", "营业执照", "cert_no", "LIC-EXPIRY-003-A", "file_id", uploadQualificationImage(provider.token()),
                                 "valid_until", LocalDate.now().minusDays(1).toString()),
-                        Map.of("type", 2, "name", "执业许可证", "cert_no", "LIC-EXPIRY-003-B"))),
+                        Map.of("type", 2, "name", "执业许可证", "cert_no", "LIC-EXPIRY-003-B", "file_id", uploadQualificationImage(provider.token())))),
                 provider.token()), "补交材料");
 
         QualificationExpiryJob.SweepResult result = expiryJob.sweep();

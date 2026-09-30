@@ -60,9 +60,14 @@ public class FileService implements FileUrlApi, FileQueryApi {
 
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
 
-    /** 允许的业务场景。收窄取值是为了让「照片到底挂在哪」可查，而不是让任何模块随手写个字符串进来。 */
+    /**
+     * 允许的业务场景。收窄取值是为了让「照片到底挂在哪」可查，而不是让任何模块随手写个字符串进来。
+     *
+     * <p>`qualification` 是门店资质材料图（ADR-0053）；注意服务者侧还有一层入口白名单
+     * （{@code ProviderFileController}），那个才是「门店的手能传什么」的判定，这里是文件域的合法取值表。
+     */
     private static final Set<String> ALLOWED_BIZ_TYPES =
-            Set.of("checkin", "epidemic", "profile", "ai_consult", "care");
+            Set.of("checkin", "epidemic", "profile", "ai_consult", "care", "qualification");
 
     private static final Set<String> ALLOWED_ROLES =
             Set.of(FileObject.ROLE_ORIGINAL, FileObject.ROLE_CLOSEUP);
@@ -351,6 +356,32 @@ public class FileService implements FileUrlApi, FileQueryApi {
             views.put(row.getId(), toView(row, thumbnails.get(row.getId())));
         }
         return views;
+    }
+
+    /**
+     * 「这些 id 都得是本人上传、用途对得上的已落定原图」——判定归属所需的事实在这里，
+     * 责任在调用方（ADR-0053 第二节）。
+     *
+     * <p>用一条 count 判等而不是逐条查：数量对上就等价于每条都满足（条件都在同一次查询里）。
+     * 四种不满足（不存在 / 别人的 / 用途不对 / 还没传完）合成一句报错——分开说等于告诉提交人
+     * 「这个 id 存在，只是不是你的」。
+     */
+    @Override
+    public void requireOwned(long userId, Collection<Long> fileIds, String bizType) {
+        List<Long> distinct = fileIds == null ? List.of()
+                : fileIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if (distinct.isEmpty()) {
+            throw BusinessException.paramInvalid("请先上传图片");
+        }
+        Long mine = fileMapper.selectCount(Wrappers.<FileObject>lambdaQuery()
+                .in(FileObject::getId, distinct)
+                .eq(FileObject::getOwnerUserId, userId)
+                .eq(FileObject::getBizType, bizType)
+                .eq(FileObject::getStatus, FileObject.STATUS_STORED)
+                .ne(FileObject::getRole, FileObject.ROLE_THUMB));
+        if (mine == null || mine != distinct.size()) {
+            throw BusinessException.paramInvalid("图片无效：只能用本人上传、且用途相符的图片，请重新上传");
+        }
     }
 
     // ---------------------------------------------------------------- 删

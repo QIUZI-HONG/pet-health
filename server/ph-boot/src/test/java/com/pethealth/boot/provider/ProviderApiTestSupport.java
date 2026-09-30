@@ -7,6 +7,7 @@ import com.pethealth.api.provider.OnboardingApplicationRequest;
 import com.pethealth.api.provider.ProviderQualificationRequest;
 import com.pethealth.boot.support.ApiClient;
 import com.pethealth.boot.support.IntegrationTestBase;
+import com.pethealth.boot.support.TestUploads;
 import com.pethealth.common.security.LoginDomain;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -101,14 +102,27 @@ public abstract class ProviderApiTestSupport extends IntegrationTestBase {
     // ---------------------------------------------------------------- 造数据
 
     /**
+     * 上传一张资质材料图（`biz_type=qualification`），返回 `file_id`。
+     *
+     * <p>材料**必带图**（ADR-0053），所以「造一份材料」现在必须先真的传一张图：
+     * 只给证件号的请求在接口层就会被 40001 拒（那是刻意的，反面用例见
+     * {@code QualificationImageTest}）。实现见 {@link TestUploads}——本方法是本切片里的顺手入口。
+     */
+    protected long uploadQualificationImage(String providerToken) {
+        return TestUploads.qualificationImage(api, providerToken);
+    }
+
+    /**
      * 最小可用的入驻申请请求体。
      *
      * <p>{@code validUntil} 传 null 表示「长期有效」——上架门禁只认「有没有一份没过期的材料」，
      * 所以绝大多数用例用 null 才不会无意间踩到资质过期这条规则。
+     *
+     * <p><b>要令牌是因为材料必须带图</b>（ADR-0053）：这个方法会先真传一张资质图再组装请求体。
      */
-    protected OnboardingApplicationRequest application(String name, String contactPhone, String licenseNo,
-                                                      java.time.LocalDate validUntil) {
-        return application(name, contactPhone, licenseNo, validUntil, 1);
+    protected OnboardingApplicationRequest application(String providerToken, String name, String contactPhone,
+                                                      String licenseNo, java.time.LocalDate validUntil) {
+        return application(providerToken, name, contactPhone, licenseNo, validUntil, 1);
     }
 
     /**
@@ -117,19 +131,20 @@ public abstract class ProviderApiTestSupport extends IntegrationTestBase {
      * <p>C 端浏览要按分类筛选，用例需要两个不同分类的门店——分类是 `provider.type`，
      * 只在入驻申请里能写，所以参数加在这一层。
      */
-    protected OnboardingApplicationRequest application(String name, String contactPhone, String licenseNo,
-                                                      java.time.LocalDate validUntil, int type) {
+    protected OnboardingApplicationRequest application(String providerToken, String name, String contactPhone,
+                                                      String licenseNo, java.time.LocalDate validUntil, int type) {
         return new OnboardingApplicationRequest(
                 name, type, 1, null, "测试门店", "上海市徐汇区测试路 1 号", "121.4", "31.2",
                 contactPhone, "张三",
-                List.of(new ProviderQualificationRequest(1, "营业执照", licenseNo, null, null, validUntil)));
+                List.of(new ProviderQualificationRequest(1, "营业执照", licenseNo,
+                        uploadQualificationImage(providerToken), null, validUntil)));
     }
 
     /** 提交入驻申请（用调用方的令牌）。返回响应，由用例自己断言。 */
     protected ApiClient.ApiCall submitApplication(String providerToken, String name, String contactPhone,
                                                   String licenseNo, java.time.LocalDate validUntil) {
         return api.post("/api/v1/provider/onboarding/applications",
-                application(name, contactPhone, licenseNo, validUntil), providerToken);
+                application(providerToken, name, contactPhone, licenseNo, validUntil), providerToken);
     }
 
     /**

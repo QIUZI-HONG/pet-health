@@ -13,8 +13,9 @@ import java.time.LocalDate;
  * 响应里一律给脱敏值（与手机号同一处理）。所以这个字段只出现在请求体里，
  * 响应体用的是 {@link ProviderQualificationView}，两者不是同一个类。
  *
- * <p>{@code fileUrl} 指向 ph-file 的上传结果（ADR-0020，字节不走业务接口）；
- * 本期不校验「URL 必须存在」，但**审核通过前必须有人看过材料**是流程要求（见 ADR-0035）。
+ * <p><b>{@code fileId} 必填</b>（ADR-0053）：材料的图是审核的依据，没有图审核员无从判断。
+ * 它是 {@code biz_type=qualification} 上传所得（ADR-0020，字节不走业务接口）——
+ * <b>请求里给的是 id，不是地址</b>：地址是签名 URL、会过期，存进库就是死链。
  */
 public record ProviderQualificationRequest(
 
@@ -27,8 +28,8 @@ public record ProviderQualificationRequest(
         @Pattern(regexp = "^[\\x20-\\x7E]{0,64}$", message = "证件号只能用可见字符，最长 64 位")
         String certNo,
 
-        @Size(max = 512, message = "材料图片地址最长 512 个字符")
-        String fileUrl,
+        @NotNull(message = "请先上传材料图片")
+        Long fileId,
 
         LocalDate validFrom,
 

@@ -5,12 +5,15 @@ import com.pethealth.api.admin.ReviewApproveRequest;
 import com.pethealth.api.admin.ReviewRejectRequest;
 import com.pethealth.api.provider.OnboardingApplicationSummary;
 import com.pethealth.api.provider.OnboardingApplicationView;
+import com.pethealth.api.provider.ProviderAllianceRequest;
 import com.pethealth.api.provider.ProviderProfileView;
+import com.pethealth.api.provider.ProviderRegionRequest;
 import com.pethealth.common.api.ApiResponse;
 import com.pethealth.common.api.PageResult;
 import com.pethealth.common.security.CurrentUser;
 import com.pethealth.common.security.LoginDomain;
 import com.pethealth.provider.domain.OnboardingApplication;
+import com.pethealth.provider.service.AllianceCategoryService;
 import com.pethealth.provider.service.OnboardingService;
 import com.pethealth.provider.service.ProviderAdminService;
 import jakarta.validation.Valid;
@@ -47,11 +50,14 @@ public class AdminProviderReviewController {
 
     private final OnboardingService onboardingService;
     private final ProviderAdminService providerAdminService;
+    private final AllianceCategoryService allianceCategories;
 
     public AdminProviderReviewController(OnboardingService onboardingService,
-                                         ProviderAdminService providerAdminService) {
+                                         ProviderAdminService providerAdminService,
+                                         AllianceCategoryService allianceCategories) {
         this.onboardingService = onboardingService;
         this.providerAdminService = providerAdminService;
+        this.allianceCategories = allianceCategories;
     }
 
     /** 待办队列：不传 status 时**只给待审核**（队列的默认含义就是待办）。 */
@@ -124,6 +130,34 @@ public class AdminProviderReviewController {
                                                                 @Valid @RequestBody ProviderStatusRequest request) {
         CurrentUser.requireDomain(LoginDomain.ADMIN);
         return ApiResponse.ok(providerAdminService.changeStatus(providerId, request));
+    }
+
+    /**
+     * 指定联盟分类归属（一期验收标准的「分类维度维护与归属」的归属那一半）。
+     *
+     * <p>放在 {@code /providers/{provider_id}} 下而不是分类维度下：改的是服务者，
+     * 而维度那张表只是它的值域。维度自身的增改与启停在 {@link AdminAllianceCategoryController}。
+     */
+    @PutMapping("/providers/{provider_id}/alliance")
+    public ApiResponse<ProviderProfileView> changeProviderAlliance(
+            @PathVariable("provider_id") long providerId,
+            @Valid @RequestBody ProviderAllianceRequest request) {
+        CurrentUser.requireDomain(LoginDomain.ADMIN);
+        return ApiResponse.ok(allianceCategories.assign(providerId, request));
+    }
+
+    /**
+     * 指定区域编码（「区域保护」专项里可写的那一半）。
+     *
+     * <p>**排他性的保护规则仍未定**（谁在哪个区独占、独占多久、冲突怎么判）：本接口只让这个字段
+     * 从「永远为空」变成「运营可维护」，C 端按它筛选。别把它当成「已经保护起来了」。
+     */
+    @PutMapping("/providers/{provider_id}/region")
+    public ApiResponse<ProviderProfileView> changeProviderRegion(
+            @PathVariable("provider_id") long providerId,
+            @Valid @RequestBody ProviderRegionRequest request) {
+        CurrentUser.requireDomain(LoginDomain.ADMIN);
+        return ApiResponse.ok(providerAdminService.changeRegion(providerId, request));
     }
 
     /** 实体常量在这里引一次，防止有人把 0/1/2 写成魔法数字。 */

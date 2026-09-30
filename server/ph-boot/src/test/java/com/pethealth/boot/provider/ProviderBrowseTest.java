@@ -104,7 +104,7 @@ class ProviderBrowseTest extends ProviderApiTestSupport {
         // 已提交但没审核：status=0
         String pendingToken = providerToken();
         ApiClient.ApiCall pending = api.post("/api/v1/provider/onboarding/applications",
-                application("待审门店", "13800002222", "LIC-BROWSE-PENDING", null, 1), pendingToken);
+                application(pendingToken, "待审门店", "13800002222", "LIC-BROWSE-PENDING", null, 1), pendingToken);
         assertCodeOk(pending, "提交待审申请");
         long pendingProviderId = pending.data().path("provider").path("id").asLong();
 
@@ -156,7 +156,7 @@ class ProviderBrowseTest extends ProviderApiTestSupport {
         // 另一类（洗护）的门店：分类筛选要能把它包含进来、把医院排除出去
         String groomerToken = providerToken();
         ApiClient.ApiCall groomerCall = api.post("/api/v1/provider/onboarding/applications",
-                application("萌宠洗护中心", "13800003333", "LIC-BROWSE-G1", null, 2), groomerToken);
+                application(groomerToken, "萌宠洗护中心", "13800003333", "LIC-BROWSE-G1", null, 2), groomerToken);
         assertCodeOk(groomerCall, "提交洗护门店");
         long groomerId = groomerCall.data().path("provider").path("id").asLong();
         assertCodeOk(api.post("/api/v1/admin/provider-applications/"

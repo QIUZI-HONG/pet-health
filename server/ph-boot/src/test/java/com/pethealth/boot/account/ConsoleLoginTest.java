@@ -4,6 +4,7 @@ import com.pethealth.api.app.LoginRequest;
 import com.pethealth.api.app.RefreshRequest;
 import com.pethealth.boot.support.ApiClient;
 import com.pethealth.boot.support.IntegrationTestBase;
+import com.pethealth.boot.support.TestUploads;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,22 +55,8 @@ class ConsoleLoginTest extends IntegrationTestBase {
         String appToken = user.data().path("access_token").asText();
         long userId = user.data().path("user").path("id").asLong();
 
-        // 字段照 OnboardingApplicationRequest 的必填项给（漏了必填会被 40001 拦下——
-        // 第一版就漏了 applicant_name / contact_phone，这条用例当场变红）
-        Map<String, Object> application = Map.of(
-                "name", "登录测试门店", "type", 1, "category", 1,
-                "address", "上海市测试路 1 号", "contact_phone", "13800139200",
-                "applicant_name", "张三",
-                // 类型 1（医院）按 ADR-0035 必须提交执业许可——缺材料也是 40001
-                "qualifications", List.of(Map.of(
-                        "type", 1, "name", "营业执照", "cert_no", "LIC-CONSOLE-001",
-                        "valid_until", "2030-12-31")));
-
-        // C 端令牌提交入驻拿不到——那条路径属于 provider 域。这正是原先的死结：
-        // 「要求先有绑定才能登录」的话，第一份申请永远提交不了
-        assertThat(api.post("/api/v1/provider/onboarding/applications", application, appToken).code())
-                .as("C 端令牌不能调服务者后台的接口（独立登录域）").isEqualTo(40100);
-
+        // 先登录拿 provider 域的令牌：材料**必带图**（ADR-0053），而传图那条接口认的是 provider 域
+        // ——C 端令牌连上传凭证都申请不到。登录本身不需要先绑定，这正是本用例要验的那件事。
         ApiClient.ApiCall login = api.post("/api/v1/provider/auth/login",
                 new LoginRequest("13800139200", ApiClient.DEFAULT_PASSWORD));
         assertThat(login.code()).as("服务者后台登录：%s", login.body()).isZero();
@@ -78,6 +65,25 @@ class ConsoleLoginTest extends IntegrationTestBase {
                 .as("后台账号就是 C 端账号（ADR-0035 决定 4）").isEqualTo(userId);
         // 域写在令牌里：C 端接口不认它
         assertThat(api.get("/api/v1/app/users/me", providerToken).code()).isEqualTo(40100);
+
+        long imageId = TestUploads.qualificationImage(api, providerToken);
+
+        // 字段照 OnboardingApplicationRequest 的必填项给（漏了必填会被 40001 拦下——
+        // 第一版就漏了 applicant_name / contact_phone，这条用例当场变红）
+        Map<String, Object> application = Map.of(
+                "name", "登录测试门店", "type", 1, "category", 1,
+                "address", "上海市测试路 1 号", "contact_phone", "13800139200",
+                "applicant_name", "张三",
+                // 类型 1（医院）按 ADR-0035 必须提交执业许可——缺材料也是 40001；
+                // 材料图同样是必填（ADR-0053），所以 file_id 也要给
+                "qualifications", List.of(Map.of(
+                        "type", 1, "name", "营业执照", "cert_no", "LIC-CONSOLE-001",
+                        "file_id", imageId, "valid_until", "2030-12-31")));
+
+        // C 端令牌提交入驻拿不到——那条路径属于 provider 域。这就是原先的死结：
+        // 「要求先有绑定才能登录」的话，第一份申请永远提交不了
+        assertThat(api.post("/api/v1/provider/onboarding/applications", application, appToken).code())
+                .as("C 端令牌不能调服务者后台的接口（独立登录域）").isEqualTo(40100);
 
         assertThat(api.post("/api/v1/provider/onboarding/applications", application, providerToken).code())
                 .as("拿到 provider 令牌后就能提交入驻了（BPM-4 的第一步）").isZero();

@@ -27,6 +27,7 @@ import com.pethealth.provider.domain.ProviderReviewLog;
 import com.pethealth.provider.domain.ProviderServiceListing;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 实体 → 契约视图的映射。**只在这一个类里做**，理由有三条：
@@ -58,12 +59,20 @@ final class ProviderViews {
         return value.substring(0, 4) + "*".repeat(value.length() - 8) + value.substring(value.length() - 4);
     }
 
-    static ProviderProfileView toProfileView(Provider provider, FieldCipher cipher) {
+    /**
+     * 服务者信息 → 视图。
+     *
+     * @param categoryName 联盟分类维度名，**由调用方查好传进来**（本类是无状态静态映射，
+     *                     不持有 mapper；列表页要一次取回、逐行查会变成 N+1）。
+     *                     查不到维度时传 {@code null}，视图里就是「这个值认不出来」。
+     */
+    static ProviderProfileView toProfileView(Provider provider, FieldCipher cipher, String categoryName) {
         return new ProviderProfileView(
                 provider.getId(),
                 provider.getName(),
                 provider.getType(),
                 provider.getCategory(),
+                categoryName,
                 provider.getLogo(),
                 provider.getIntro(),
                 provider.getAddress(),
@@ -73,6 +82,7 @@ final class ProviderViews {
                 BusinessHours.decode(provider.getBusinessHours()),
                 provider.getStatus(),
                 provider.getLevel(),
+                provider.getRecommendPriority(),
                 provider.getRegionCode(),
                 Price.format(provider.getMonthlyScore()),
                 Price.format(provider.getRating()),
@@ -81,7 +91,15 @@ final class ProviderViews {
                 provider.getUpdatedAt());
     }
 
-    static ProviderQualificationView toQualificationView(ProviderQualification qualification, FieldCipher cipher) {
+    /**
+     * 资质材料 → 视图。{@code fileUrl} 是**调用方已经签发好的读地址**，这里只负责放进去。
+     *
+     * <p>为什么地址由外面传进来而不是在这里签：本类是**无状态静态映射**（见类注释），
+     * 而签发要拿到文件模块的能力、还要按响应**批量**解析（逐条查会变成 N+1）。
+     * 所以分工是「调用方解析、本类映射」——映射仍然只有一处。
+     */
+    static ProviderQualificationView toQualificationView(ProviderQualification qualification, FieldCipher cipher,
+                                                        String fileUrl) {
         String certNo = qualification.getCertNoEnc() == null
                 ? null
                 : maskCertNo(cipher.decrypt(qualification.getCertNoEnc()));
@@ -90,7 +108,8 @@ final class ProviderViews {
                 qualification.getType(),
                 qualification.getName(),
                 certNo,
-                qualification.getFileUrl(),
+                qualification.getFileId(),
+                fileUrl,
                 qualification.getValidFrom(),
                 qualification.getValidUntil(),
                 qualification.getStatus(),
@@ -129,9 +148,19 @@ final class ProviderViews {
                 application.getReviewedAt());
     }
 
+    /**
+     * 申请详情（服务者看自己 / 运营审核看它，两条路径共用）。
+     *
+     * @param qualificationImageUrls 材料图 id → 已签发的读地址；由调用方**批量**解析后传进来
+     *                               （见 {@link #toQualificationView}）。缺的 id 给 null，
+     *                               视图里就是「这份材料没传图」。
+     * @param categoryName           联盟分类维度名，见 {@link #toProfileView}
+     */
     static OnboardingApplicationView toDetail(OnboardingApplication application, Provider provider,
                                               List<ProviderQualification> qualifications,
-                                              List<ProviderReviewLog> logs, FieldCipher cipher) {
+                                              List<ProviderReviewLog> logs, FieldCipher cipher,
+                                              Map<Long, String> qualificationImageUrls,
+                                              String categoryName) {
         return new OnboardingApplicationView(
                 application.getId(),
                 application.getStatus(),
@@ -144,8 +173,13 @@ final class ProviderViews {
                 application.getApplicantUserId(),
                 application.getApplicantName(),
                 Masking.phone(cipher.decrypt(application.getContactPhoneEnc())),
-                toProfileView(provider, cipher),
-                qualifications.stream().map(qualification -> toQualificationView(qualification, cipher)).toList(),
+                toProfileView(provider, cipher, categoryName),
+                qualifications.stream()
+                        .map(qualification -> toQualificationView(qualification, cipher,
+                                qualification.getFileId() == null
+                                        ? null
+                                        : qualificationImageUrls.get(qualification.getFileId())))
+                        .toList(),
                 logs.stream().map(ProviderViews::toLogView).toList());
     }
 

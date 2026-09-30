@@ -62,6 +62,17 @@ public abstract class AssessmentTestSupport extends ProviderApiTestSupport {
         jdbc.execute("DELETE FROM `assessment_override_log`");
         jdbc.execute("DELETE FROM `assessment_item_score`");
         jdbc.execute("DELETE FROM `assessment_monthly_score`");
+        // 增长侧接线用例（AssessmentGrowthFactsTest）造的行：券与门店推广码会改变
+        // 「券池里有没有可贡献的券」与「平台有没有给这家店拉新入口」这两个判据，
+        // 留到下个用例就会把「不参与」判成「参与」——那是查不出来的一类假通过。
+        jdbc.execute("DELETE FROM `coupon`");
+        jdbc.execute("DELETE FROM `coupon_contribution`");
+        // **全部**模板一起清，与 PrivilegeTestSupport 同一口径：判断「券池里有没有可贡献的券」
+        // 只看有没有 cost_bearer=1 且启用的行，别的切片留下的任何一张都会把「不参与」判成「参与」。
+        // 两张种子券（CP-101/CP-102）是平台补贴券，本切片不依赖它们。
+        jdbc.execute("DELETE FROM `coupon_template`");
+        jdbc.execute("DELETE FROM `provider_invite_code`");
+        jdbc.execute("DELETE FROM `invite_relation`");
         // 规则与档位是种子数据：复位，测试改过的要还回去
         jdbc.execute("UPDATE `assessment_rule` SET `invite_weight` = 40, `coupon_weight` = 40, "
                 + "`process_weight` = 20, `invite_target` = 0, `coupon_target` = 0.00, "

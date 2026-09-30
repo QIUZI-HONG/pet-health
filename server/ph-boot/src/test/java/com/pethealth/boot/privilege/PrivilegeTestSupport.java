@@ -50,6 +50,8 @@ public abstract class PrivilegeTestSupport extends ProviderApiTestSupport {
         jdbc.execute("DELETE FROM `invite_ladder_achievement`");
         jdbc.execute("DELETE FROM `invite_relation`");
         jdbc.execute("DELETE FROM `invite_code`");
+        // 门店推广码（V44）：它挂在 provider 上，而 provider 由父类清；这里先清码本身
+        jdbc.execute("DELETE FROM `provider_invite_code`");
         // 五档阶梯是种子：奖励物复位成「未配置」（测试里配过的要还回去）
         jdbc.execute("UPDATE `invite_ladder_tier` SET `reward_type` = NULL, `coupon_template_id` = NULL, "
                 + "`rights_code` = NULL, `reward_count` = 1, `status` = 1");

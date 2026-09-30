@@ -44,6 +44,12 @@ public class InviteRelation extends BaseEntity {
     public static final int OBSERVE_HOURS = 24;
 
     private Long inviterUserId;
+    /**
+     * 拉新归属门店（V44 起）。**与 {@link #inviterUserId} 互斥**：一条关系要么来自用户邀请码、
+     * 要么来自门店推广码，两者不会同时有值——原因写在 V44 的注释里（门店码背后没有人，
+     * 把它算成某个人的战绩会同时污染两边的数）。
+     */
+    private Long inviterProviderId;
     private Long inviteeUserId;
     private String inviteCode;
     private Integer channel;
@@ -60,6 +66,14 @@ public class InviteRelation extends BaseEntity {
 
     public void setInviterUserId(Long inviterUserId) {
         this.inviterUserId = inviterUserId;
+    }
+
+    public Long getInviterProviderId() {
+        return inviterProviderId;
+    }
+
+    public void setInviterProviderId(Long inviterProviderId) {
+        this.inviterProviderId = inviterProviderId;
     }
 
     public Long getInviteeUserId() {

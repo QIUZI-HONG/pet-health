@@ -48,17 +48,20 @@ public class ProviderProfileService {
     private final ProviderQualificationMapper qualificationMapper;
     private final ProviderAccess access;
     private final QualificationGuard qualificationGuard;
+    private final AllianceCategoryService allianceCategories;
     private final FieldCipher cipher;
 
     public ProviderProfileService(ProviderMapper providerMapper,
                                   ProviderQualificationMapper qualificationMapper,
                                   ProviderAccess access,
                                   QualificationGuard qualificationGuard,
+                                  AllianceCategoryService allianceCategories,
                                   FieldCipher cipher) {
         this.providerMapper = providerMapper;
         this.qualificationMapper = qualificationMapper;
         this.access = access;
         this.qualificationGuard = qualificationGuard;
+        this.allianceCategories = allianceCategories;
         this.cipher = cipher;
     }
 
@@ -66,7 +69,7 @@ public class ProviderProfileService {
     @Transactional(readOnly = true)
     public ProviderProfileView get() {
         long userId = access.currentUserId();
-        return ProviderViews.toProfileView(access.requireBound(userId), cipher);
+        return profile(access.requireBound(userId));
     }
 
     @Transactional
@@ -82,7 +85,7 @@ public class ProviderProfileService {
         provider.setPhoneEnc(cipher.encrypt(request.phone().trim()));
         provider.setPhoneHash(cipher.lookupHash(request.phone().trim()));
         providerMapper.updateById(provider);
-        return ProviderViews.toProfileView(provider, cipher);
+        return profile(provider);
     }
 
     /**
@@ -98,7 +101,7 @@ public class ProviderProfileService {
         List<BusinessHour> hours = request.hours() == null ? List.of() : validateHours(request.hours());
         provider.setBusinessHours(BusinessHours.encode(hours));
         providerMapper.updateById(provider);
-        return ProviderViews.toProfileView(provider, cipher);
+        return profile(provider);
     }
 
     /**
@@ -116,6 +119,8 @@ public class ProviderProfileService {
         }
         qualificationGuard.requireUniqueCertificates(requests, provider.getId());
 
+        // 先校验再删旧批：图不合法时整次提交不动，别把「旧材料已删、新材料没写」留在库里
+        qualificationGuard.requireImages(userId, requests);
         qualificationMapper.delete(Wrappers.<ProviderQualification>lambdaQuery()
                 .eq(ProviderQualification::getProviderId, provider.getId()));
         for (ProviderQualificationRequest request : requests) {
@@ -128,17 +133,24 @@ public class ProviderProfileService {
             String certNo = Text.trimToNull(request.certNo());
             qualification.setCertNoEnc(certNo == null ? null : cipher.encrypt(certNo));
             qualification.setCertNoHash(certNo == null ? null : cipher.lookupHash(certNo));
-            qualification.setFileUrl(Text.trimToNull(request.fileUrl()));
+            // 存的是文件 id，不是地址（ADR-0053）：地址是短时签名链接，存库就是死链
+            qualification.setFileId(request.fileId());
             qualification.setValidFrom(request.validFrom());
             qualification.setValidUntil(request.validUntil());
             qualification.setStatus(ProviderQualification.STATUS_PENDING);
             qualificationMapper.insert(qualification);
         }
-        return ProviderViews.toProfileView(provider, cipher);
+        return profile(provider);
     }
 
-    private static List<BusinessHour> validateHours(List<BusinessHour> hours) {
-        Set<Integer> seen = new HashSet<>();
+    /** 门店视图的组装：联盟分类名要查一次维度表（值域在 V43 起是可维护的），
+     *  收在这里，免得五个出口各拼一次、漏掉一处就少一个字段。 */
+    private ProviderProfileView profile(Provider provider) {
+        return ProviderViews.toProfileView(provider, cipher,
+                allianceCategories.nameOf(provider.getCategory()));
+    }
+
+    private static List<BusinessHour> validateHours(List<BusinessHour> hours) {        Set<Integer> seen = new HashSet<>();
         List<BusinessHour> sorted = new ArrayList<>(hours);
         sorted.sort(Comparator.comparingInt(BusinessHour::dayOfWeek));
         for (BusinessHour hour : sorted) {

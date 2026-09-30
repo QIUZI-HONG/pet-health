@@ -37,7 +37,7 @@ public class AppProviderController {
         this.browseService = browseService;
     }
 
-    /** 找店：分类 / 关键词 / 分页。只列**可下单**的店（口径见 service）。 */
+    /** 找店：分类 / 关键词 / 区域 / 分页。只列**可下单**的店（口径见 service）。 */
     @GetMapping
     public ApiResponse<PageResult<ProviderSummaryView>> list(
             @RequestParam(required = false)
@@ -45,12 +45,14 @@ public class AppProviderController {
             @Max(value = 6, message = "服务者分类只能是 1（医院）–6（间接服务）") Integer type,
             @RequestParam(required = false)
             @Size(max = 32, message = "关键词最长 32 个字符") String keyword,
+            @RequestParam(name = "region_code", required = false)
+            @Size(max = 32, message = "区域编码最长 32 个字符") String regionCode,
             @RequestParam(defaultValue = "1") @Min(value = 1, message = "页码从 1 开始") long page,
             @RequestParam(name = "page_size", defaultValue = "20")
             @Min(value = 1, message = "每页至少 1 条")
             @Max(value = PageResult.MAX_PAGE_SIZE, message = "每页最多 " + PageResult.MAX_PAGE_SIZE + " 条")
             long pageSize) {
-        return ApiResponse.ok(browseService.browse(type, keyword, page, pageSize));
+        return ApiResponse.ok(browseService.browse(type, keyword, regionCode, page, pageSize));
     }
 
     /** 看店：资质摘要 + 营业时间 + **在架服务项与价格**。不可浏览一律 40400。 */

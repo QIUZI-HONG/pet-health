@@ -90,7 +90,7 @@ class ProviderOnboardingTest extends ProviderApiTestSupport {
 
         // 修改重提：**同一份申请单**（POST 新提一份会被拒，见下）
         ApiClient.ApiCall resubmit = api.put("/api/v1/provider/onboarding/applications/" + applicationId,
-                application("康宠动物医院（重提）", "13800001111", "LIC-RESUBMIT-001", null), actor.token());
+                application(actor.token(), "康宠动物医院（重提）", "13800001111", "LIC-RESUBMIT-001", null), actor.token());
         assertThat(resubmit.code()).isZero();
         assertThat(resubmit.data().path("id").asLong()).isEqualTo(applicationId);
         assertThat(resubmit.data().path("provider").path("id").asLong()).isEqualTo(providerId);
@@ -186,7 +186,7 @@ class ProviderOnboardingTest extends ProviderApiTestSupport {
         assertThat(api.get("/api/v1/provider/onboarding/applications/" + applicationId, second.token()).code())
                 .isEqualTo(40400);
         assertThat(api.put("/api/v1/provider/onboarding/applications/" + applicationId,
-                application("别人改的", "13800001111", "LIC-OTHER-002", null), second.token()).code())
+                application(second.token(), "别人改的", "13800001111", "LIC-OTHER-002", null), second.token()).code())
                 .isEqualTo(40400);
     }
 

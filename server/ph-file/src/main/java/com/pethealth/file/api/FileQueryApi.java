@@ -40,4 +40,21 @@ public interface FileQueryApi {
      * @return id → 文件元数据
      */
     Map<Long, FileView> files(Collection<Long> fileIds);
+
+    /**
+     * 校验这批 id **都是该用户上传、用途为 {@code bizType}、且已落定**的原图；有一条不满足就 40001。
+     *
+     * <p>它服务的是「表单里带上来的 file_id 得是提交人自己的、且用途对得上」这类校验
+     * （ADR-0053 第二节：归属校验的责任在调用方，但**判定归属所需的事实**由文件域给，
+     * 调用方不该去推断）。典型场景是资质材料：图只能来自提交人自己那次
+     * {@code biz_type=qualification} 的上传——否则一个 ID 就能把别人的证件照挂到自己的材料上，
+     * 而审核员看到的是「一张与材料无关的图」。
+     *
+     * <p>报错**不区分**「不存在」「是别人的」「用途不对」「还没传完」：四种对调用方都是同一件事
+     * （这个 id 不能用），分开说等于告诉提交人「这个 id 存在，只是不是你的」。
+     *
+     * @param fileIds 待校验的 id；重复值只算一次，{@code null} 会被跳过
+     * @throws com.pethealth.common.error.BusinessException 40001
+     */
+    void requireOwned(long userId, Collection<Long> fileIds, String bizType);
 }
