@@ -3,12 +3,6375 @@
  * Do not make direct changes to the file.
  */
 
-export type paths = Record<string, never>;
+export interface paths {
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 运营后台登录
+         * @description 手机号 + 密码，与 C 端同一批账号。**准入另判**：账号必须在运营账号名单里
+         *     （`app.console.admin-user-ids`，**fail-closed**——名单为空则谁都进不去），否则 40300。
+         *     名单为空时谁都进不去，而不是谁都能进：运营后台看得到全平台数据，
+         *     默认开放等于把门禁的钥匙挂在门上（与考核超管名单 ADR-0052 同一条取舍）。
+         *
+         *     40300 而不是 40100 是刻意的：回 40100 会让用户以为密码错了反复重试，
+         *     而登录限流会因此把账号锁住。40300 只发生在**口令校验通过之后**，不泄露未认证信息。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LoginRequest"];
+                };
+            };
+            responses: {
+                /** @description 登录成功；`data` 里的令牌登录域是 admin */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["TokenPair"];
+                        };
+                    };
+                };
+                /** @description 手机号或口令不正确（40100） */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 账号被禁用、或该账号不是运营后台账号（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 尝试过于频繁（42900） */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 换发令牌（admin 域）
+         * @description 与 C 端同一条规则：Refresh 一次性使用，旧的在换发时作废（ADR-0012）。
+         *     **旧 Refresh 的登录域必须也是 admin**——拿 C 端或服务者后台的 Refresh 打这里换不到
+         *     admin 域令牌，否则「三个登录域互不通用」就只剩一句话。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RefreshRequest"];
+                };
+            };
+            responses: {
+                /** @description 新的一对令牌 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["TokenPair"];
+                        };
+                    };
+                };
+                /** @description Refresh 过期、已作废、或登录域不匹配（40101 / 40100） */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 退出（吊销 Refresh）
+         * @description 已签发的 Access 在剩余有效期（≤2 小时）内仍有效，这是不引黑名单的必然代价（ADR-0012）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LogoutRequest"];
+                };
+            };
+            responses: {
+                /** @description 已退出（重复调用同样返回成功） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 分类列表
+         * @description 运营要能看见自己停用过的分类，所以**默认连停用的一起给**。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 是否包含停用分类，默认 true */
+                    include_disabled?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按 sort_order 升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ServiceCategoryView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 新建分类
+         * @description `item_code_prefix` 是该项目编码的前两位（HE / GR / TR / BD / SP / IN）：
+         *     项目编码一旦发布不可改、不可复用，所以前缀与分类绑定，建分类时一次给对。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ServiceCategoryRequest"];
+                };
+            };
+            responses: {
+                /** @description 建好的分类 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ServiceCategoryView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 分类编码或编码前缀已被占用（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/categories/{category_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改分类（改名 / 排序 / 说明）
+         * @description 分类编码与编码前缀**不可变更**（已有项目与将来的券适用范围都引用它们），
+         *     传了别的值一律 40001——不是静默忽略。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    category_id: components["parameters"]["CategoryId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ServiceCategoryRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的分类 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ServiceCategoryView"];
+                        };
+                    };
+                };
+                /** @description 试图改编码或前缀（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 分类不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 目录项分页（含停用项） */
+        get: {
+            parameters: {
+                query?: {
+                    category_code?: string;
+                    /** @description 按项目名称模糊匹配，最长 64 字符 */
+                    keyword?: string;
+                    /** @description 1 启用 / 0 停用；不传表示全部 */
+                    status?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按 sort_order 升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["ServiceItemView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 新建目录项（含价格区间）
+         * @description 区间是服务平台侧的数据：**非负、最多两位小数、下限 ≤ 上限**，写反了在入口就被拦住
+         *     （否则会在某个服务者定价时以「越界」的形式暴露，那时已分不清是区间错还是价格错）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ServiceItemRequest"];
+                };
+            };
+            responses: {
+                /** @description 建好的目录项 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ServiceItemView"];
+                        };
+                    };
+                };
+                /** @description 区间非法 / 分类不存在或已停用（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 目录项编码已存在（40900，编码不可复用） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改目录项
+         * @description 编码与所属分类**不可变更**（编码的前两位就是分类前缀，换分类必然要换码，而编码不可改）。
+         *
+         *     **收窄区间不会自动下架**服务者已上架的服务项——自动下架会打断已预约的订单，
+         *     而本项目没有推送通道去通知用户；存量服务项会在下一次改价或重审时按新区间收敛
+         *     （ADR-0034 的代价一节）。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    item_id: components["parameters"]["ItemId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ServiceItemRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的目录项 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ServiceItemView"];
+                        };
+                    };
+                };
+                /** @description 试图改编码或分类 / 区间非法（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 目录项不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/items/{item_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 启用 / 停用目录项
+         * @description 停用（0）**只挡住新的选品**：已上架的服务项保持原状、照常对外，不自动下架（理由同上）。
+         *     目录项不做物理删除——编码不可复用，删行会让历史订单项失去定义。
+         *
+         *     ADR-0037 把「目录项删除」划给超级管理员；本接口是状态变更（下架语义），
+         *     角色细分待后台账号体系落地（见 ADR-0035「需要协调」）。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    item_id: components["parameters"]["ItemId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ServiceItemStatusRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的目录项 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ServiceItemView"];
+                        };
+                    };
+                };
+                /** @description 目录项不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/human-consults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 转人工工单队列（待处理优先，同状态按提交时间升序）
+         * @description 运营的待办：谁在等回复、等了多久。`status` 不传表示全部；默认按 `status` 升序
+         *     （0 待处理在前）再按提交时间升序——**先到先处理**，免得早提交的用户一直排在后面。
+         *
+         *     `user_id` / `pet_id` 给的是 id，不含手机号等身份信息：需要联系用户时按 id 到用户管理里查
+         *     （那一条链路有它自己的脱敏与审计口径，不在这一页复制一份）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 0 待处理 / 1 已回复 / 2 已关闭；不传表示全部 */
+                    status?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["HumanConsultAdminView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/human-consults/{ticket_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 处置一条工单（回复 / 关闭）
+         * @description `status=1`（已回复）时 `reply_note` **必填**：那句话会作为一条站内消息发给用户
+         *     （工单本身不存回复正文——同一条回复有两个副本迟早会不一致）。
+         *     回复后用户收到「人工回复」消息，文案就是 `reply_note`。
+         *
+         *     `status=2`（已关闭）用于「问清了、不需要回复」的情形（例如用户已到店），不必写回复。
+         *
+         *     已经是终态（1 或 2）的工单不能再改：处理结果是一次性的，重开要新建。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    ticket_id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["HumanConsultStatusRequest"];
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["HumanConsultAdminView"];
+                        };
+                    };
+                };
+                /** @description 状态非法，或已回复时未填回复内容（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 工单不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 已处置过（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/symptom-rules": {
+        parameters: {
+            query?: {
+                page?: components["parameters"]["Page"];
+                page_size?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 症状映射列表（F011 规则版的推荐依据）
+         * @description 「症状 → 推荐目录项」的映射（`catalog_symptom_rule`）：C 端 F011 的推荐就用它。
+         *     **症状词必须是知识侧的规范名**（呕吐 / 腹泻 / 食欲下降 / …）——用户口语（「拉稀」）
+         *     由 AI 侧的受控词典先归一再到这里，所以这一层不认口语词，也不维护第二份口语表。
+         *
+         *     列表按症状名与 `sort_order` 升序：同一症状下 `sort_order` 越小越先展示（首条是主推）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                    /** @description 按症状规范名精确筛选；不传表示全部 */
+                    symptom_keyword?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["SymptomRuleView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 新增一条症状映射
+         * @description `symptom_keyword` 用**规范名**（与 `knowledge_node.name` 同一套词），`item_code` 必须是
+         *     存在且启用中的目录项——指向不存在/停用的项目会在推荐时被跳过（日志里能看到），
+         *     所以这里直接拒绝比让它躺着更有用。
+         *
+         *     同一（症状，项目）只允许一条（唯一键），重复提交回 40900。
+         */
+        post: {
+            parameters: {
+                query?: {
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SymptomRuleRequest"];
+                };
+            };
+            responses: {
+                /** @description 创建成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["SymptomRuleView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001）：症状名为空、项目编码不存在或已停用 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 该（症状，项目）的映射已存在（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/symptom-rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 改一条症状映射（顺序 / 项目 / 启停）
+         * @description 改的是**映射本身**，不动知识侧的词表：症状名要与知识库一致，改名等于换一个症状。
+         *     想停止推荐用 `enabled=0`（停用），不要删——删了就看不出「这条以前配过」。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    rule_id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SymptomRuleRequest"];
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["SymptomRuleView"];
+                        };
+                    };
+                };
+                /** @description 映射不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/item-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 目录外服务提案队列（默认只给待审核） */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 0 待审核 / 1 通过 / 2 驳回，默认 0 */
+                    status?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（先到先审） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["CatalogItemProposalSummary"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/item-requests/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 提案详情（含审核流水） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 目录外服务提案 id */
+                    request_id: components["parameters"]["RequestId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CatalogItemProposalView"];
+                        };
+                    };
+                };
+                /** @description 提案不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/item-requests/{request_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 通过提案（平台上新项目）
+         * @description **最终区间必填**，不默认采纳服务者的建议值：区间是平台的规则（F010），
+         *     让申请方定义规则等于让区间校验自己批自己。运营可以把建议值抄过来，
+         *     但那是他的显式动作。
+         *
+         *     `code` 可以不传（按分类前缀排下一个序号，如 `HE-014`）；传了就必须与分类前缀一致
+         *     且未被占用——编码不可复用，重号只能报错。
+         *
+         *     通过后平台上多了一个正式目录项，服务者随后就能在自己店里勾选并定价。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 目录外服务提案 id */
+                    request_id: components["parameters"]["RequestId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CatalogItemProposalApproveRequest"];
+                };
+            };
+            responses: {
+                /** @description 提案状态与生成的编码 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CatalogItemProposalView"];
+                        };
+                    };
+                };
+                /** @description 最终区间非法 / 编码与分类前缀不符（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 提案不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 提案不在待审核状态 / 编码已被占用（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/item-requests/{request_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 驳回提案
+         * @description 驳回原因必填，原样展示给服务者。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 目录外服务提案 id */
+                    request_id: components["parameters"]["RequestId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReviewRejectRequest"];
+                };
+            };
+            responses: {
+                /** @description 提案状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CatalogItemProposalView"];
+                        };
+                    };
+                };
+                /** @description 提案不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 提案不在待审核状态（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/provider-applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 入驻审核队列（默认只给待审核）
+         * @description 先到先审（按提交时间升序）。**单人审核**——本切片不做初审 + 复审双人流程。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 0 待审核 / 1 通过 / 2 驳回，默认 0 */
+                    status?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["OnboardingApplicationSummary"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/provider-applications/{application_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 申请详情（含资质材料与审核流水） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 入驻申请 id */
+                    application_id: components["parameters"]["ApplicationId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["OnboardingApplicationView"];
+                        };
+                    };
+                };
+                /** @description 申请不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/provider-applications/{application_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 审核通过
+         * @description 通过时一并做三件事：服务者转为「正常」、资质材料转为「通过」、
+         *     **申请人绑定为该服务者的管理员**（技师是管理员的权限子集，兼任时共用一条绑定记录）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 入驻申请 id */
+                    application_id: components["parameters"]["ApplicationId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ReviewApproveRequest"];
+                };
+            };
+            responses: {
+                /** @description 申请状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["OnboardingApplicationView"];
+                        };
+                    };
+                };
+                /** @description 申请不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 申请不在待审核状态（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/provider-applications/{application_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 审核驳回
+         * @description 原因必填，会原样展示给服务者（用户故事 62：他要能「知道卡在哪」）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 入驻申请 id */
+                    application_id: components["parameters"]["ApplicationId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReviewRejectRequest"];
+                };
+            };
+            responses: {
+                /** @description 申请状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["OnboardingApplicationView"];
+                        };
+                    };
+                };
+                /** @description 申请不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 申请不在待审核状态（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 服务者列表
+         * @description **关键字只搜名称**：联系电话是密文（ADR-0013），模糊搜索在字段级加密下做不到，
+         *     要按电话找人得先有服务者 id。这不是偷懒，是密文没有保序性的必然结果。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 0 待审核 / 1 正常 / 2 驳回 / 3 冻结 */
+                    status?: number;
+                    /** @description 1 医院 / 2 洗护 / 3 训犬 / 4 寄养上门 / 5 食品用品 / 6 间接服务 */
+                    type?: number;
+                    keyword?: string;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按创建时间倒序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["ProviderProfileView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/{provider_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 服务者详情 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    provider_id: components["parameters"]["ProviderId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderProfileView"];
+                        };
+                    };
+                };
+                /** @description 服务者不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/{provider_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 冻结 / 解冻服务者
+         * @description **冻结就是清退的落点**：清退 = 冻结接单（禁止新订单与新上架）+ 保留历史订单与档案
+         *     + 已预约订单转「取消」（不是退款——平台不经手资金，ADR-0036 已定，退款退化为线下动作）。
+         *
+         *     本接口只覆盖「禁止新上架」这一半：已上架的服务项不自动下架（冻结与下架是两个动作，
+         *     焊死会让解冻时也恢复不了原状），C 端浏览与下单必须按服务者状态过滤——那属于订单侧，
+         *     接口留白见 ADR-0035。「已预约订单转取消」也归订单模块（#77）。
+         *
+         *     被驳回（2）的服务者**不能从这里恢复为正常**：那条路必须重新提交申请并审核通过，
+         *     否则一次驳回就等于白拒（「被驳回的记录不占唯一性名额」这条规则也建立在它之上）。
+         *
+         *     权限口径：ADR-0037 把清退划给超级管理员，而角色尚未落地，见 ADR-0035「需要协调」。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    provider_id: components["parameters"]["ProviderId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProviderStatusRequest"];
+                };
+            };
+            responses: {
+                /** @description 服务者状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderProfileView"];
+                        };
+                    };
+                };
+                /** @description 状态不是 1 或 3（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 服务者不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 已冻结 / 不在冻结状态 / 被驳回的服务者不能这样恢复（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/service-listings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 服务上架审核队列（默认只给待审核）
+         * @description 每一行都带着**目录侧的名称与当前区间**（现取，不是快照）——
+         *     「这个价是不是还在区间内」不需要打开另一个页面去对。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 0 待审核 / 1 已上架 / 2 已下架 / 3 已驳回，默认 0 */
+                    status?: number;
+                    /** @description 只看某个服务者的（按服务者处置时用） */
+                    provider_id?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（先到先审） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["ProviderServiceView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/service-listings/{service_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 上架审核通过
+         * @description **通过即上架**：服务者提交审核的意图就是上架（交付文档 7.2 的 `merchant_service.status` 是文档用词，本项目叫 `provider_service.status`
+         *     默认值也是「上架」）。之后服务者可以自己下架、再上架（价格没变就不需要重审）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 服务者服务项 id */
+                    service_id: components["parameters"]["ServiceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ReviewApproveRequest"];
+                };
+            };
+            responses: {
+                /** @description 服务项状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderServiceView"];
+                        };
+                    };
+                };
+                /** @description 服务项不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 服务项不在待审核状态（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/service-listings/{service_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 上架审核驳回
+         * @description 原因必填，会展示给服务者；改价后可重新提交审核。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 服务者服务项 id */
+                    service_id: components["parameters"]["ServiceId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReviewRejectRequest"];
+                };
+            };
+            responses: {
+                /** @description 服务项状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderServiceView"];
+                        };
+                    };
+                };
+                /** @description 服务项不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 服务项不在待审核状态（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coupon-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 券模板分页（含停用）
+         * @description 运营要能看见自己停用过的模板，所以**默认连停用的一起给**。
+         *     `cost_bearer = 2`（平台补贴）的模板就是「平台补贴券」的定义——它的配置少了
+         *     服务者贡献那一段额度账，但多了发放上限（`issue_limit`）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 1 启用 / 0 停用；不传表示全部 */
+                    status?: number;
+                    /** @description 1 服务者成本 / 2 平台补贴；不传表示全部 */
+                    cost_bearer?: number;
+                    /** @description 按券名模糊匹配，最长 64 字符 */
+                    keyword?: string;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按更新时间倒序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["CouponTemplateView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 新建券模板
+         * @description **券模板只能由平台创建**（ADR-0037 第三节）：统一券池是这个机制的核心卖点，
+         *     放开自建等于没有券池。服务者侧只能「选券并承诺额度」。
+         *
+         *     三条写入口就拦住的事：
+         *     - `scope_type = 1 / 2` 时 `scope_codes` 必须能在**标准目录**里找到（分类编码或目录项编码），
+         *       找不到 → 40001。券的适用范围与标准目录编码挂钩，写错了要到核销时才会暴露；
+         *     - `scope_type = 0` 时不允许带 `scope_codes`；
+         *     - `issue_limit` 只对平台补贴券有意义，服务者成本券传了会被忽略（**不报错**：
+         *       额度由服务者的贡献决定，两套额度混在一起会让「还能发多少」有两个答案）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CouponTemplateRequest"];
+                };
+            };
+            responses: {
+                /** @description 建好的模板 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CouponTemplateView"];
+                        };
+                    };
+                };
+                /** @description 参数错误 / 适用范围在标准目录里不存在（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 模板编码已存在（40900，编码不可复用） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coupon-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改券模板
+         * @description 编码与成本归属**不可变更**：编码挂在已有的券实例与适用范围上；成本归属一旦有人
+         *     按它贡献过额度，改了就改了考核的归属（直接 40001，不静默忽略）。
+         *
+         *     改面额 / 门槛 / 有效期**只影响之后新发的券**：已经发到用户手里的券是平台对用户的
+         *     承诺，模板改动不能改写它（券实例存的是发放时的快照）。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 券模板 id */
+                    template_id: components["parameters"]["TemplateId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CouponTemplateRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的模板 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CouponTemplateView"];
+                        };
+                    };
+                };
+                /** @description 试图改编码或成本归属 / 适用范围不合法（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 模板不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coupon-templates/{template_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 上架 / 下架券模板
+         * @description 停用（0）**只挡住新的发放与新的贡献**：已发出的券照常可核销（用户手上的券不是
+         *     运营可撤销的承诺），服务者已承诺的额度账也留着——存量清干净了再停，是运营的事。
+         *
+         *     模板不做物理删除：券实例引用着它，删行会让历史券失去定义。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 券模板 id */
+                    template_id: components["parameters"]["TemplateId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CouponTemplateStatusRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的模板 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CouponTemplateView"];
+                        };
+                    };
+                };
+                /** @description 模板不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coupon-pool/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 券池总览（含对账口径）
+         * @description 券池的一句话账：模板几个、服务者承诺了多少额度、发出去多少张、核销了多少、还剩多少在
+         *     用户手里、多少已过期作废。
+         *
+         *     `reconciliation` 是 ADR-0037 第三节的对账口径：
+         *     **实例数 = 已发放 = 已核销 + 未过期未核销 + 已过期未核销**，`balanced` 为 false 即不平。
+         *     本项目没有资金可对（ADR-0036），这张表就是「券的对账」。
+         *
+         *     `by_source` 按券的来源（邀请 / 打卡 / 积分兑换 / 平台补贴 / 月度阶梯）拆开——
+         *     「补贴花了多少」与「任务发出去多少」是两笔不同的账。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CouponPoolOverviewView"];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coupons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 券实例分页（运营查询与排查） */
+        get: {
+            parameters: {
+                query?: {
+                    template_id?: number;
+                    /** @description 1 邀请 / 2 打卡任务 / 3 积分兑换 / 4 平台补贴 / 5 月度阶梯 */
+                    source?: number;
+                    /** @description 1 待使用 / 2 已锁定 / 3 已核销 / 4 已过期 */
+                    status?: number;
+                    user_id?: number;
+                    /** @description 只看某个服务者的贡献券 */
+                    provider_id?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按发放时间倒序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["CouponView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 定向发放平台补贴券
+         * @description **只发平台补贴券**（`cost_bearer = 2`）：服务者成本的券走的是服务者的贡献额度，
+         *     平台不能替服务者放券（那样等于平台替服务者承诺）。传了服务者成本券 → 40900。
+         *
+         *     这是「平台补贴」这一来源的真实产出路径（另有积分兑换、邀请、打卡任务三条，
+         *     它们由各自的动作触发）。**不做抢券**：发放全部定向（ADR-0037 第三节）。
+         *
+         *     模板停用、平台补贴券的发放在 `issue_limit` 之上、模板有效期为空等情况一律拒绝；
+         *     同一用户对同一模板是否限领一张**尚未定**（见 ADR-0044 的待澄清），本期不限领——
+         *     重复发放是运营看得见的动作，不做隐式去重。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["IssueCouponRequest"];
+                };
+            };
+            responses: {
+                /** @description 已发放 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CouponView"];
+                        };
+                    };
+                };
+                /** @description 模板不存在或已停用（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /**
+                 * @description 不是平台补贴券 / 已超过发放上限 / 缺少发放额度（40900）。
+                 *     服务者成本券的额度耗尽也走这个码，message 里说明还剩多少
+                 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rights/codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 权益码表（含停用）
+         * @description 交付文档里权益是「无限 AI 问答 / 完整报告 / 社区发帖 / 额外额度」四项，
+         *     ADR-0038 把它们的载体定成**权益码**（`ai.unlimited` / `report.full` /
+         *     `community.post` / `quota.ai.bonus`），运营可以加码。
+         *
+         *     **`care.mode` 不是权益码**：专项照护模式按医学事实自动开启（ADR-0032），
+         *     挂成权益会出现「够条件但权益不足，于是看不到专项入口」的自相矛盾（ADR-0038 第三节）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按 sort_order 升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["RightsCodeView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 新增权益码（运营可扩）
+         * @description 新码只定义「有这么一项能力」，**判定逻辑仍要在代码里实现**：
+         *     码表能扩，能力不能凭空长出来——所以新增的码在判定侧默认不生效，
+         *     直到有模块按它写判定。这条落在 ADR-0045 的决定里，别指望加一行数据就多一项能力。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RightsCodeRequest"];
+                };
+            };
+            responses: {
+                /** @description 建好的权益码 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["RightsCodeView"];
+                        };
+                    };
+                };
+                /** @description 编码格式不对（小写字母、点、数字，如 ai.unlimited）（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 该权益码已存在（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rights/codes/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改权益码（改名 / 说明 / 排序 / 启停）
+         * @description 编码本身不可改（授予记录与各模块的判定都引用它）。停用只是不再允许**新授予**， 已有的授予记录照常生效——停用一个码不该让用户手里的权益消失。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 权益码（如 ai.unlimited） */
+                    code: components["parameters"]["RightsCode"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RightsCodeRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的权益码 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["RightsCodeView"];
+                        };
+                    };
+                };
+                /** @description 权益码不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rights/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 授予记录分页 */
+        get: {
+            parameters: {
+                query?: {
+                    user_id?: number;
+                    code?: string;
+                    /** @description 1 生效 / 2 已回收（过期回收到此状态） */
+                    status?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按授予时间倒序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["RightsGrantView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 手动授予一条权益
+         * @description **每条来源各写一条授予**（ADR-0038 第三节）：一个用户同时有「邀请得的永久」与
+         *     「订阅得的月度」时是两条记录，不合并、不覆盖——合并之后「订阅到期要不要回收」
+         *     就分不清是哪一条了。
+         *
+         *     来源（`source`）：1 订阅 / 2 邀请 / 3 打卡 / 4 运营补偿。手动授予的典型用途正是
+         *     **订阅**（ADR-0036 之后订阅没有支付载体，只能线下签约 + 后台标记）；
+         *     运营补偿是第四个口子，用于客诉处理，理由必填并进备注。
+         *
+         *     `expire_at` 为空表示**永久**（邀请得的权益就是这样）；打卡来源在授予时由系统按
+         *     「当月有效」算出到期日，手动授予时请显式给 `expire_at`。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RightsGrantRequest"];
+                };
+            };
+            responses: {
+                /** @description 已授予 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["RightsGrantView"];
+                        };
+                    };
+                };
+                /** @description 参数错误 / 到期时间早于当前（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 权益码不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 同一来源的同一引用已授予过（40900，幂等键是来源 + 来源引用 + 码） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rights/grants/{grant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * 回收一条授予
+         * @description **只回收这一条**：订阅到期不触碰邀请得的永久权益（ADR-0038 第三节）。
+         *     回收后该用户在这个码上回落到次高优先级的来源；一条都没有时该码即不生效。
+         *
+         *     顶层资源，**重复回收 / 删别人的一律 40400**（docs/conventions.md 的删除口径）——
+         *     这条记录不存在就是不存在，与「已经回收过了」对外是同一件事。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 权益授予记录 id */
+                    grant_id: components["parameters"]["GrantId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已回收 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["RightsGrantView"];
+                        };
+                    };
+                };
+                /** @description 授予记录不存在或已被回收（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rights/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 某用户的权益判定（每个码：是否生效 + 来源 + 到期）
+         * @description 这是权益引擎**唯一的口径出口**（ADR-0038 第三节）：`rights(userId) → {码: {生效, 来源, 到期}}`。
+         *     C 端展示、AI 额度判定、社区发帖判定都读这一份，不各自查表拼规则。
+         *
+         *     判定是**实时**的（不缓存）：来源优先级 订阅 > 邀请永久 > 打卡当月，
+         *     取生效的授予里优先级最高的那一条；**不按到期时间比较**——
+         *     「邀请得永久 + 订阅得月度」这种情况下按到期比会把语义算错。
+         *
+         *     `effective = false` 的码也会列出来（带 `name`），
+         *     否则运营看到的是「这个用户什么都没有」，而真相是「有码但当前不生效」。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    user_id: components["parameters"]["UserId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["RightsEvaluationView"];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 邀请总览（含阶梯达成）
+         * @description **归因时点是注册那一刻**（ADR-0039 第一节）：链接带 `?invite=CODE` 只做预填，
+         *     以用户填的码为准，**不做事后补填**（补填是刷券的入口）。
+         *
+         *     `valid_rate` 是**有效邀请转化率**（有效 ÷ 注册），它替换了交付文档的「K 因子 > 1」——
+         *     三个端改成 Web 之后没有小程序的社交转发链，K 因子这个指标不成立（ADR-0039）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["InviteOverviewView"];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/relations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 邀请关系分页 */
+        get: {
+            parameters: {
+                query?: {
+                    inviter_user_id?: number;
+                    invitee_user_id?: number;
+                    /** @description 1 待生效 / 2 有效 / 3 无效 */
+                    status?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按注册时间倒序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["InviteRelationView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/ladder-tiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 邀请阶梯档位（1 / 3 / 5 / 10 / 15）
+         * @description 档位门槛是 ADR-0039 定的固定五档，运营能改的是**每档发什么**：
+         *     `reward_type = 1` 发券（指定券模板）、`= 2` 授予权益（指定权益码，永久）。
+         *     奖励物未配置的档位**照样记录达成**，只是不发东西——「谁在哪一档」是数据，
+         *     「发什么」是配置，两件事分开才不至于改配置时丢历史。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按门槛升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["InviteLadderTierView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/ladder-tiers/{threshold}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 配置某一档的奖励
+         * @description 门槛不可改（改门槛等于重新定义阶梯），只改奖励物与启停。
+         *     `reward_type = 1` 时必须给 `coupon_template_id`（券模板须启用）；`= 2` 时必须给
+         *     `rights_code`（权益码须存在）。奖励**只在达成时发一次**（达成记录唯一），
+         *     改配置不会补发历史档位——补发是一次显式的运营动作，不该藏在配置里。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 邀请阶梯门槛（有效邀请数：1 / 3 / 5 / 10 / 15） */
+                    threshold: components["parameters"]["Threshold"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InviteLadderTierRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的档位 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["InviteLadderTierView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（奖励物缺失 / 模板或权益码不可用）（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 该档位不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/risk-records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 反作弊拦截记录
+         * @description 三层判据（ADR-0039 第一节）命中即记一条，被拦下的邀请关系状态为「无效」且**不计数、不发奖**：
+         *     `SELF_INVITE`（自邀自）、`SAME_DEVICE`（同设备）、`SAME_IP_SEGMENT`（同 IP + 同号段）、
+         *     `NO_ACTIVITY_24H`（被邀请人 24 小时内无行为）。
+         *     前三条在归因与结算时判，最后一条由结算批算判——**判据是数据，不是日志**，
+         *     运营要能按判据查出「是哪一类刷量」。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description SELF_INVITE / SAME_DEVICE / SAME_IP_SEGMENT / NO_ACTIVITY_24H */
+                    rule?: string;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按记录时间倒序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["InviteRiskRecordView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/points/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 积分总览
+         * @description 积分是**另一套账**（与权益并列，ADR-0038 第四节）：这里只有分值与余额，
+         *     没有现金、不能提现、不能兑换钱（CONTEXT.md 的积分条目）。
+         *
+         *     `today_earned` / `today_awarded_users` 用来盯**每日上限 20 分**的实际命中情况——
+         *     上限是被刷的重点，运营要看得见今天发了多少。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointsOverviewView"];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/points/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 积分流水（含变动后余额）
+         * @description 每条流水都带 `balance_after`（变动后余额）：只记变动数的话，
+         *     事后永远无法从流水重建当时的余额，客诉时对不上账。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    user_id?: number;
+                    /** @description SIGN_IN / CHECK_IN / INVITE / REVIEW / PROFILE_COMPLETE / AI_ADVICE / SHARE */
+                    behavior_code?: string;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按时间倒序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["PointRecordView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/points/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 积分规则设置（每日获取上限） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointsSettingsView"];
+                        };
+                    };
+                };
+            };
+        };
+        /**
+         * 修改积分规则设置
+         * @description 每日获取上限（默认 20 分）是业务可调项，进库 + 运营后台（ADR-0010 的三层配置）。
+         *     **邀请与一次性项不占这个上限**（ADR-0038 第四节：否则 20 分的邀请奖励会被日上限吃掉），
+         *     它们由行为自身的 `counts_toward_daily_cap` 决定。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PointsSettingsRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointsSettingsView"];
+                        };
+                    };
+                };
+                /** @description 上限不在 1–1000 之间（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/points/behaviors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 行为分值表
+         * @description ADR-0038 第四节那张表：签到 1 / 打卡 3 / 邀请有效注册 20 / 评价晒单 5（每月上限 5 次）/
+         *     完善档案 10（一次性）。分值、频次上限、是否占日上限都可运营调整（ADR-0010）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按 sort_order 升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointBehaviorView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/points/behaviors/{behavior_code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改行为分值
+         * @description **只能改分值、频次与启停，不能新增行为**：行为码在代码里要有人发分、
+         *     要有人触发，加一行数据只会产生一个永远不会发生的动作（ADR-0046 的决定）。
+         *     新增行为是代码变更，不是配置变更。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 行为码（SIGN_IN / CHECK_IN / INVITE / REVIEW / PROFILE_COMPLETE / AI_ADVICE / SHARE） */
+                    behavior_code: components["parameters"]["BehaviorCode"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PointBehaviorRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的行为 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointBehaviorView"];
+                        };
+                    };
+                };
+                /** @description 行为码不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/points/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 任务清单（每日 + 每周两档）
+         * @description 任务清单**入库存配置**（ADR-0038 第四节）：每日任务（签到 / 打卡 / 查看 AI 建议 / 分享）
+         *     与每周任务（完成 5 次打卡 / 邀请 1 人）。
+         *
+         *     `points` 是该行为的分值（取自行为表），任务本身**不额外发分**——
+         *     同一行为发两次奖励正是 ADR-0038 点名要钉死的那条（权益与积分是两套账，
+         *     但奖励物不得重复）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（每日在前、按 sort_order 升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointTaskView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 新增任务
+         * @description 任务引用**已有的行为码**（不能凭空造一个行为）；同一行为在同一档里只能有一个任务。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PointTaskRequest"];
+                };
+            };
+            responses: {
+                /** @description 建好的任务 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointTaskView"];
+                        };
+                    };
+                };
+                /** @description 行为码不存在 / period 不是 1 或 2（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 同一档位已有该行为的任务（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/points/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改任务 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    task_id: components["parameters"]["TaskId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PointTaskRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的任务 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointTaskView"];
+                        };
+                    };
+                };
+                /** @description 试图改 code / 行为码不存在（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 任务不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/points/exchange-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 兑换档位
+         * @description **只兑平台补贴券**（ADR-0038 第四节）：兑换消耗的是平台的钱（成本归平台），
+         *     不消耗服务者的贡献额度——否则等于把兑换成本转嫁给服务者，直接抵消它的出券意愿。
+         *     所以这里的所有档位都必须指向 `cost_bearer = 2` 的券模板。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按 sort_order 升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointExchangeOptionView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 新增兑换档位 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PointExchangeOptionRequest"];
+                };
+            };
+            responses: {
+                /** @description 建好的档位 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointExchangeOptionView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001）——券模板不存在或已停用 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 指定的券模板不是平台补贴券（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/points/exchange-options/{option_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改兑换档位 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    option_id: components["parameters"]["OptionId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PointExchangeOptionRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的档位 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointExchangeOptionView"];
+                        };
+                    };
+                };
+                /** @description 档位不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 指定的券模板不是平台补贴券（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/points/ladder-tiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 月度阶梯档位（F018）
+         * @description **先落骨架**（ADR-0038 第四节）：每月 1 日的定时任务算上月累计积分 → 按档位发券。
+         *     **年度大奖留白**（没有规则依据，不编）。
+         *
+         *     种子里**一个档位都没有**：门槛值与奖励没有依据，不编造。档位为空时批算照跑、
+         *     不发任何券（骨架是通的），运营配好档位后即生效。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按门槛升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointLadderTierView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 新增月度阶梯档位 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PointLadderTierRequest"];
+                };
+            };
+            responses: {
+                /** @description 建好的档位 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointLadderTierView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 该门槛已有档位 / 券模板不是平台补贴券（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/points/ladder-tiers/{tier_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改月度阶梯档位 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    tier_id: components["parameters"]["TierId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PointLadderTierRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的档位 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PointLadderTierView"];
+                        };
+                    };
+                };
+                /** @description 档位不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 提示词版本列表（按版本号倒序）
+         * @description 正文一起给：运营要能看到自己改了什么。**改动要新增版本号，不要原地改**——
+         *     留痕是靠 `prompt_version` 归因分级漂移的，同号覆盖会让归因失去对照物（ADR-0010）。
+         *
+         *     `review_status` 是**人工复核**的产物（`pending_review` / `vetted`），
+         *     这一层读得到但改不了：代码里给它开个后门等于假造复核状态（ADR-0040 第二节）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 用途代码（如 triage）；省略则全部 */
+                    code?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PromptTemplateView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 新建一个提示词版本
+         * @description **新建而不是覆盖**：同 (code, version) 已存在时 40900。`gray_ratio` 就是灰度开关，
+         *     新版本先把比例设为 0 再逐步放量；出问题时改回 0 即是回滚，**不必发版**（ADR-0010）。
+         *
+         *     新建的版本一律 `pending_review`、`enabled=true`（启用与否之后由 PUT 调）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PromptTemplateRequest"];
+                };
+            };
+            responses: {
+                /** @description 建好的版本 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PromptTemplateView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 该 (code, version) 已存在（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/prompts/{prompt_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 调整灰度比例与启停（回滚动作）
+         * @description 只改 `gray_ratio` / `enabled` / `remark`：**正文不能在这里改**，正文改动必须换版本号，
+         *     理由同新建。这就是「一键回滚」的落点——把比例改回 0，不发版（ADR-0010）。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 提示词版本 id */
+                    prompt_id: components["parameters"]["PromptId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PromptTemplateUpdateRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的版本 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PromptTemplateView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 提示词版本不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/red-flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 红线词分页列表
+         * @description 硬红线是安全网，运营要能一眼看全（#103）。命中红线的咨询**不经过模型**（ADR-0021）。
+         *
+         *     `enabled` 与 `review_status` 是两件事：**「内容有没有被兽医复核」与「管线要不要用它」**
+         *     ——词表首版全部 `pending_review` 但 `enabled`（ADR-0021）。
+         *
+         *     分页口径：`total` 是**满足条件的总数**（不是这一页的条数），`has_more = page * page_size < total`。
+         *     翻过最后一页时给空 `list` + 真实的 `total`——分页器靠它算总页数。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 启用状态过滤（true 启用 / false 停用）；省略则全部 */
+                    enabled?: boolean;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按规则编号升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["RedFlagView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 新增一条红线
+         * @description 编号重复直接 40900——留痕引用编号，重复会让两次命中分不开。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RedFlagRequest"];
+                };
+            };
+            responses: {
+                /** @description 新增的红线 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["RedFlagView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 规则编号已存在（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/red-flags/{red_flag_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改一条红线 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 红线规则 id */
+                    red_flag_id: components["parameters"]["RedFlagId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RedFlagRequest"];
+                };
+            };
+            responses: {
+                /** @description 修改后的红线 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["RedFlagView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 红线规则不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        /**
+         * 停用（软删）一条红线
+         * @description **不是物理删除**：留痕里引用过它的咨询仍要能查到当时的规则。
+         *     删不存在的编号一律 40400（与「已经停用过了」对外是同一件事）。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 红线规则 id */
+                    red_flag_id: components["parameters"]["RedFlagId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已停用 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 红线规则不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/grading-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 分级规则列表
+         * @description 分级规则把「命中词 → 风险下限」抬档，**只抬不降**（ADR-0021）。
+         *     运营改完即时生效（Python 带 TTL 缓存直读，ADR-0010）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 启用状态过滤（true 启用 / false 停用）；省略则全部 */
+                    enabled?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按规则编号升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["GradingRuleView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 新增一条分级规则 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["GradingRuleRequest"];
+                };
+            };
+            responses: {
+                /** @description 新增的规则 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["GradingRuleView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 规则编号已存在（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/grading-rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改一条分级规则 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 分级规则 id */
+                    rule_id: components["parameters"]["RuleId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["GradingRuleRequest"];
+                };
+            };
+            responses: {
+                /** @description 修改后的规则 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["GradingRuleView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 分级规则不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/guard-terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 护栏词表列表
+         * @description 护栏词是**输出侧**的过滤依据：`kind=drug` 是药名（不许出现在给用户的文案里），
+         *     `kind=phrase` 是越界表述（诊断、剂量、处方）。运营加词即时生效。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description drug（药名）/ phrase（越界表述）；省略则全部 */
+                    kind?: "drug" | "phrase";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按类型与 id 升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["GuardTermView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 新增一个护栏词
+         * @description 同类同词重复直接 40900（唯一键也是这个口径）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["GuardTermRequest"];
+                };
+            };
+            responses: {
+                /** @description 新增的词条 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["GuardTermView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 同类同词已在表里（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/guard-terms/{term_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改一个护栏词 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 护栏词条 id */
+                    term_id: components["parameters"]["TermId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["GuardTermRequest"];
+                };
+            };
+            responses: {
+                /** @description 修改后的词条 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["GuardTermView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 护栏词条不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/switches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 运行时开关列表
+         * @description 开关的**语义在代码里**（ADR-0010 的判据），库里只存它的当前状态：
+         *     `force_rule_only` 打开后全量走规则通道（不调模型）；`retrieval_enabled` / `retrieval_strict`
+         *     控制知识检索的开关与严格口径。库里读不到时一律按关闭算（ADR-0033 第三节）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按 id 升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["SwitchView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/switches/{switch_code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 切一个开关（一键降级）
+         * @description **只允许改已存在的 code**：新增一个没有人读的开关会让运营以为它生效了，
+         *     那是比没有开关更糟的状态——闸门这种东西，必须由代码先认它（ADR-0010）。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 开关编码（代码里的常量，如 force_rule_only / retrieval_enabled / retrieval_strict） */
+                    switch_code: components["parameters"]["SwitchCode"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SwitchUpdateRequest"];
+                };
+            };
+            responses: {
+                /** @description 切换后的开关 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["SwitchView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 开关不存在，或这个 code 代码里没人读（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/consults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 调用留痕抽检（按 prompt_version 归因分级漂移）
+         * @description 典型用法是「改了提示词之后，按新版本抽 20 条看分级分布有没有漂」——
+         *     所以过滤条件就是 `prompt_version`（可再按风险等级 / 是否降级收窄）。
+         *
+         *     **不下发问题原文**：`ai_consult.question_enc` 是字段级加密的病历口径（ADR-0013），
+         *     解密给运营看属于权限与合规问题，还没定（ADR-0033 的待澄清）。
+         *     留痕里的结构化事实足够回答「分级有没有漂、有没有降级、用了未复核条目没有」。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 按提示词版本归因（改完提示词抽新版本） */
+                    prompt_version?: string;
+                    /** @description 就医紧迫程度过滤（1 绿 / 2 黄 / 3 红） */
+                    risk_level?: number;
+                    /** @description 是否只看降级答复 */
+                    degraded?: boolean;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按咨询时间倒序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["ConsultAuditView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/community/contents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 内容审核队列（**按类型分别看**，默认只给待审）
+         * @description 三种内容共用一个形状、但**按类型分别查**（`content_type` 必填）：经验卡片 / 提问 / 回答
+         *     各住一张表，合并成一条跨表的 UNION 只会把「总条数」变成三次 COUNT 的和、
+         *     把排序变成跨表归并，换来的只是省一次点击——而运营的界面本来就是按类型分页签的。
+         *
+         *     社区内容一律先进待审，只有运营通过（`status=1`）之后才对其他用户可见；
+         *     机审命中敏感词的内容会直接落在**已驳回**（`status=2`），运营可以改判为通过——
+         *     词表误伤是常态，而「误伤了一个真实用户的内容且没人能改」比漏放一条更伤。
+         *
+         *     队列带 `author_id`：审核是**运营**的动作，要能追溯是谁发的（ADR-0037 第一节）。
+         *     这一条只在这一端成立：C 端的卡片视图恒匿名，审核后台不是「匿名」的例外，
+         *     而是另一个域（运营有处置权，也就必须看得见对象）。
+         *
+         *     `mine` 之类的相对字段这里没有——审核队列不关心「谁在看」。
+         */
+        get: {
+            parameters: {
+                query: {
+                    /** @description 内容类型：1 卡片 / 2 提问 / 3 回答 */
+                    content_type: number;
+                    /** @description 0 待审 / 1 已发布 / 2 已驳回（含已下架）；默认 0 */
+                    status?: number;
+                    /** @description 只看某个用户发的（处置一个刷屏账号时用） */
+                    author_id?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（先到先审） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["ContentReviewItemView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/community/contents/{content_type}/{content_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 内容类型：1 经验卡片 / 2 提问 / 3 回答 */
+                content_type: components["parameters"]["ContentType"];
+                /** @description 内容 id（按 content_type 解释：卡片 id / 提问 id / 回答 id） */
+                content_id: components["parameters"]["ContentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 审核通过（待审 / 被机审驳回 → 已发布）
+         * @description 通过之后内容立刻对其他用户可见（`status=1`）。**没有请求体**：通过时没有要对作者说的话
+         *     （内容只是出现了），硬塞一个「备注」字段而无处可存，就是让调用方以为它会被记录。
+         *     谁通过的、什么时候通过的在 `reviewed_by` / `reviewed_at` 与审计日志里；
+         *     被改判的机审命中词留在 `machine_hits` 里，那是这次改判的依据，不随改判清空。
+         *
+         *     运营的处置是**放行 / 拦住 / 下架**，不是替用户改内容（改内容等于平台替用户表态），
+         *     所以没有「编辑内容」的接口。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 内容类型：1 经验卡片 / 2 提问 / 3 回答 */
+                    content_type: components["parameters"]["ContentType"];
+                    /** @description 内容 id（按 content_type 解释：卡片 id / 提问 id / 回答 id） */
+                    content_id: components["parameters"]["ContentId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 通过后的内容 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ContentReviewItemView"];
+                        };
+                    };
+                };
+                /** @description 内容不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 内容已经是已发布状态（40900，非法迁移不是参数错误） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/community/contents/{content_type}/{content_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 内容类型：1 经验卡片 / 2 提问 / 3 回答 */
+                content_type: components["parameters"]["ContentType"];
+                /** @description 内容 id（按 content_type 解释：卡片 id / 提问 id / 回答 id） */
+                content_id: components["parameters"]["ContentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 驳回 / 下架（理由必填）
+         * @description 两个动作合一个入口，因为它们是**同一个状态迁移**（→ `status=2`）：待审内容被驳回、
+         *     已发布内容被下架，对用户的效果一样——都不再出现。
+         *
+         *     理由**必填**且会原样出现在**作者自己的**那份内容里（C 端 `mine=true` 的 `reject_reason`）：
+         *     只说「违规」而不说违什么，作者只会换个说法再发一遍。
+         *
+         *     已经是驳回状态的再驳回 → **40900**（非法迁移，ADR-0038 第一节的口径），
+         *     不是静默成功：这样「谁的处置生效了」才看得见。回答被从已发布打到驳回时，
+         *     所属提问的 `answer_count` 会跟着减——它数的是已过审的回答。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 内容类型：1 经验卡片 / 2 提问 / 3 回答 */
+                    content_type: components["parameters"]["ContentType"];
+                    /** @description 内容 id（按 content_type 解释：卡片 id / 提问 id / 回答 id） */
+                    content_id: components["parameters"]["ContentId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReviewRejectRequest"];
+                };
+            };
+            responses: {
+                /** @description 驳回 / 下架后的内容 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ContentReviewItemView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001）：理由缺失 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 内容不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 内容已经是驳回状态（40900，非法迁移不是参数错误） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/community/sensitive-words": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 敏感词表（含停用）
+         * @description 机审词表，**在库里维护**（ADR-0010 的业务可调项分层：词表是可运营调整的，不写死在代码里；
+         *     改完即时生效，不用重启）。运营要能看见自己停用过的词，所以默认连停用的一起给。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 只看启用 / 停用；不传表示全部 */
+                    enabled?: boolean;
+                    /** @description 按词模糊匹配，最长 64 字符 */
+                    keyword?: string;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按 id 倒序：新加的词在最上面） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["SensitiveWordView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 新增敏感词
+         * @description 词表同样**归运营**（ADR-0037 第一节的「内容审核」）。同一句词重复添加 → 40900
+         *     （唯一键也是这个口径）。命中的判定是**包含匹配**（不做正则、不做分词）：
+         *     运营能用肉眼预测「这句话为什么被拦」，是词表能不能被信任的前提。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SensitiveWordRequest"];
+                };
+            };
+            responses: {
+                /** @description 新增的词条 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["SensitiveWordView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 该词已在表里（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/community/sensitive-words/{word_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改敏感词（改词 / 启停 / 说明）
+         * @description 停用（`enabled=false`）是**常规操作**：误伤的词停掉即可，不必删——留着它才能解释
+         *     「昨天为什么拦了那条内容」。所以这个接口只做**软删除口径的停用**，没有删除动作。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 敏感词条 id */
+                    word_id: components["parameters"]["WordId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SensitiveWordRequest"];
+                };
+            };
+            responses: {
+                /** @description 修改后的词条 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["SensitiveWordView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 词条不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 改后的词与表里已有的词重复（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 考核规则（三项权重、达标线、分档阈值）
+         * @description 总分的权重（默认 **拉新 40 / 券 40 / 过程 20**，ADR-0039 第三节的交付文档口径）、
+         *     三项各自的达标线，以及基础 / 优选 / 战略三档的分档阈值与 AI 推荐优先级映射。
+         *
+         *     达标线为 0 表示**该项还没定要求**：按 ADR-0050 第四节，该维度不参与计分并重算权重
+         *     （明细里注明「未参与」），而不是给它记 0 分。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AssessmentRuleView"];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        /**
+         * 修改考核规则（**只归超级管理员**）
+         * @description 整体覆盖。权重之和必须为 **100**（否则 40001）；三档阈值必须齐全且严格递增，
+         *     基础档必须从 **0** 起（否则 40001）——否则会出现「谁都不匹配」的分数段。
+         *
+         *     `min_score` 用两位小数字符串（分数不走浮点，ADR-0011 的精度纪律）。
+         *
+         *     权限：ADR-0037 第一节的矩阵把考核规则配置划给超级管理员。角色体系尚未落地，
+         *     本切片的门禁是**登录域 + 超管名单**（`app.assessment.super-admin-user-ids`）：
+         *     名单未配置时**任何 admin 域身份都不能改**（fail-closed，见 ADR-0052 的「需要协调」）。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AssessmentRuleRequest"];
+                };
+            };
+            responses: {
+                /** @description 修改后的规则 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AssessmentRuleView"];
+                        };
+                    };
+                };
+                /** @description 权重之和不是 100 / 阈值不递增或基础档不为 0 / 分数格式不对（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 不是超级管理员（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 全平台考核列表
+         * @description 按账期、等级、门店名筛选，账期倒序。只有**已经算过的账期**才有行——
+         *     每月 1 日由定时任务算上月（ADR-0039 第三节）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 账期（yyyy-MM）；不传表示全部 */
+                    period?: string;
+                    /** @description 等级：1 基础 / 2 优选 / 3 战略合作；不传表示全部 */
+                    level?: number;
+                    /** @description 按门店名模糊匹配，最长 64 字符 */
+                    keyword?: string;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["AssessmentSummaryView"][];
+                            };
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{score_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 考核明细（每项得分、是否参与、数据来源与覆盖留痕）
+         * @description 运营看全平台的任意一条（服务者侧的同形状接口是 `provider.yaml` 的
+         *     `GET /assessments/{period}`，只能看自己的）。`items` 里未参与的项也在，
+         *     `overrides` 是这一期的覆盖留痕（谁、何时、改成多少、为什么）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 月度考核记录的 id（一个服务者一个账期一条） */
+                    score_id: components["parameters"]["ScoreId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AssessmentView"];
+                        };
+                    };
+                };
+                /** @description 该条考核记录不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{score_id}/overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 覆盖单项分（**必填理由，只归超级管理员**）
+         * @description ADR-0039 第三节：「允许超级管理员覆盖单项分，但必须留痕：谁、何时、理由、覆盖前后值都留。
+         *     否则算法是黑箱，服务者无法申诉。」
+         *
+         *     四条规则：
+         *     - **只能覆盖三项主项**（`INVITE` 拉新 / `COUPON` 券 / `PROCESS` 过程）：
+         *       过程子项是过程分的**构成**而不是考核的单项，覆盖它们等于绕过算法，不给这个出口；
+         *     - **理由必填**，且会随明细下发给服务者（否则「留痕」只对平台可见，申诉仍然无从谈起）；
+         *     - **覆盖后立刻重算总分与等级**（`provider.level` / `provider.monthly_score` 一并写回），
+         *       响应给的就是重算后的全貌；
+         *     - **可以再次覆盖**：每次都在留痕表里追加一条（before / after 都是当时的生效值），
+         *       算出来的原值始终留在 `calculated_score` 上——想把某一项还原，覆盖回原值即可。
+         *
+         *     权限：与规则配置同一道超管门禁（ADR-0037 第一节的矩阵）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 月度考核记录的 id（一个服务者一个账期一条） */
+                    score_id: components["parameters"]["ScoreId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AssessmentOverrideRequest"];
+                };
+            };
+            responses: {
+                /** @description 覆盖后的考核全貌（总分与等级已重算） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AssessmentView"];
+                        };
+                    };
+                };
+                /** @description 没填理由 / 项目编码不是三项主项之一 / 分数格式不对（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 不是超级管理员（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 该条考核记录不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+}
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
-    responses: never;
-    parameters: never;
+    schemas: {
+        /** @description 运营看到的工单：多了提交人、宠物与处置信息，便于排班与追溯。 */
+        HumanConsultAdminView: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            user_id?: number;
+            /** Format: int64 */
+            pet_id?: number;
+            /** Format: int64 */
+            consult_id?: number;
+            /** @description 0 未知 / 1 绿 / 2 黄 / 3 红（红色优先看） */
+            risk_level?: number;
+            /** @description 0 待处理 / 1 已回复 / 2 已关闭 */
+            status?: number;
+            /**
+             * Format: int64
+             * @description 处置人；0 表示还没人处理
+             */
+            operator_id?: number;
+            handled_at?: string | null;
+            created_at?: string;
+        };
+        HumanConsultStatusRequest: {
+            /** @description 1 已回复 / 2 已关闭（0 是初始态，不能设回） */
+            status: number;
+            /** @description 回复内容；`status=1` 时必填，会原样作为站内消息发给用户 */
+            reply_note?: string;
+        };
+        /** @description 一条症状映射（F011）。`item_name` / `category_name` 由服务端从目录现取，便于运营核对。 */
+        SymptomRuleView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 症状规范名（与知识侧词表同一套） */
+            symptom_keyword?: string;
+            item_code?: string;
+            /** @description 目录项名称；目录项被删时为空 */
+            item_name?: string | null;
+            category_name?: string | null;
+            /** @description 同一症状下的展示顺序，升序 */
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用 */
+            enabled?: number;
+            updated_at?: string;
+        };
+        SymptomRuleRequest: {
+            /** @description 症状规范名（如「腹泻」）；必须是知识侧已有的症状词，否则推荐永远命不中 */
+            symptom_keyword: string;
+            /** @description 目录项编码（如 HE-012） */
+            item_code: string;
+            /** @description 同一症状下的展示顺序；不传按 0 */
+            sort_order?: number;
+            /** @description 1 启用（默认）/ 0 停用 */
+            enabled?: number;
+        };
+        /** @description 标准目录分类（一级） */
+        ServiceCategoryView: {
+            /** Format: int64 */
+            id?: number;
+            code?: string;
+            /** @description 该项目编码的前两位（HE / GR / SP …） */
+            item_code_prefix?: string;
+            name?: string;
+            icon?: string;
+            description?: string;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+            /** @description 该分类下启用的项目数 */
+            item_count?: number;
+            updated_at?: string;
+        };
+        ServiceCategoryRequest: {
+            /** @description 2–32 位大写字母开头（如 HOSPITAL）；**创建后不可改** */
+            code: string;
+            /** @description 两位大写字母（如 HE）；**创建后不可改、不可复用** */
+            item_code_prefix: string;
+            name: string;
+            icon?: string | null;
+            description?: string | null;
+            sort_order?: number;
+        };
+        /** @description 标准目录项（二级，含价格区间） */
+        ServiceItemView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 形如 HE-001；**发布后不可改、不可复用** */
+            code?: string;
+            category_code?: string;
+            category_name?: string;
+            name?: string;
+            /** @description 价格区间下限（元，两位小数字符串） */
+            price_min?: string;
+            /** @description 价格区间上限（元，两位小数字符串） */
+            price_max?: string;
+            price_unit?: string;
+            duration_minutes?: number | null;
+            /** @description 1 犬 / 2 猫 / 3 犬猫 */
+            applicable_pets?: number;
+            description?: string;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+            updated_at?: string;
+        };
+        ServiceItemRequest: {
+            /** @description 形如 HE-001（两位大写字母 + 三位数字）；**创建后不可改** */
+            code: string;
+            /** @description 所属分类；**创建后不可改**（编码前缀与分类绑定） */
+            category_code: string;
+            name: string;
+            /** @description 区间下限，最多两位小数 */
+            price_min: string;
+            /** @description 区间上限，必须不低于下限 */
+            price_max: string;
+            /** @description 次 / 只 / 天 / 课时 / 件 */
+            price_unit?: string;
+            duration_minutes?: number | null;
+            /** @description 默认 3（犬猫） */
+            applicable_pets?: number;
+            description?: string | null;
+            sort_order?: number;
+        };
+        ServiceItemStatusRequest: {
+            /** @description 1 启用 / 0 停用（停用只挡新的选品） */
+            status: number;
+        };
+        CatalogItemProposalSummary: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            provider_id?: number;
+            provider_name?: string;
+            category_code?: string;
+            category_name?: string | null;
+            name?: string;
+            /** @description 服务者建议的区间下限（仅供参考） */
+            suggested_price_min?: string;
+            suggested_price_max?: string;
+            suggested_price_unit?: string;
+            /** @description 0 待审核 / 1 通过 / 2 驳回 */
+            status?: number;
+            reject_reason?: string | null;
+            item_code?: string | null;
+            submitted_at?: string;
+            reviewed_at?: string | null;
+        };
+        CatalogItemProposalView: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            provider_id?: number;
+            provider_name?: string;
+            category_code?: string;
+            category_name?: string | null;
+            name?: string;
+            description?: string | null;
+            suggested_price_min?: string;
+            suggested_price_max?: string;
+            suggested_price_unit?: string;
+            status?: number;
+            reject_reason?: string | null;
+            /** @description 通过后生成的正式目录项编码 */
+            item_code?: string | null;
+            review_remark?: string | null;
+            submitted_at?: string;
+            reviewed_at?: string | null;
+            /** Format: int64 */
+            reviewer_id?: number | null;
+            review_logs?: components["schemas"]["ReviewLogView"][];
+        };
+        CatalogItemProposalApproveRequest: {
+            /** @description 最终区间下限（必填，不默认采纳建议值） */
+            price_min: string;
+            /** @description 最终区间上限（必填） */
+            price_max: string;
+            /** @description 不传则沿用提案里的建议单位 */
+            price_unit?: string;
+            /** @description 不传则沿用提案里的名称 */
+            name?: string;
+            /** @description 指定项目编码（须与分类前缀一致且未被占用）；不传则自动排号 */
+            code?: string;
+            remark?: string | null;
+        };
+        ReviewApproveRequest: {
+            /** @description 审核备注，通过时通常为空 */
+            remark?: string | null;
+        };
+        ReviewRejectRequest: {
+            /** @description 驳回原因；**会原样展示给服务者** */
+            reason: string;
+        };
+        ReviewLogView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 1 入驻申请 / 2 服务上架审核 / 3 目录外提案 / 4 服务者状态变更 */
+            target_type?: number;
+            /** @description 1 提交 / 2 重提 / 3 通过 / 4 驳回 / 5 上架 / 6 下架 / 7 冻结 / 8 解冻 */
+            action?: number;
+            /**
+             * Format: int64
+             * @description 操作者 id；0 表示系统写入
+             */
+            actor_id?: number;
+            /** @description provider / admin；定时任务留空 */
+            actor_domain?: string;
+            remark?: string | null;
+            created_at?: string;
+        };
+        OnboardingApplicationSummary: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            provider_id?: number;
+            provider_name?: string;
+            provider_type?: number;
+            /** Format: int64 */
+            applicant_user_id?: number;
+            applicant_name?: string;
+            /** @description 脱敏 */
+            contact_phone?: string;
+            /** @description 0 待审核 / 1 通过 / 2 驳回 */
+            status?: number;
+            reject_reason?: string | null;
+            submit_count?: number;
+            submitted_at?: string;
+            reviewed_at?: string | null;
+        };
+        OnboardingApplicationView: {
+            /** Format: int64 */
+            id?: number;
+            status?: number;
+            reject_reason?: string | null;
+            review_remark?: string | null;
+            submit_count?: number;
+            submitted_at?: string;
+            reviewed_at?: string | null;
+            /** Format: int64 */
+            reviewer_id?: number | null;
+            /** Format: int64 */
+            applicant_user_id?: number;
+            applicant_name?: string;
+            /** @description 脱敏 */
+            contact_phone?: string;
+            provider?: components["schemas"]["ProviderProfileView"];
+            qualifications?: components["schemas"]["ProviderQualificationView"][];
+            review_logs?: components["schemas"]["ReviewLogView"][];
+        };
+        ProviderQualificationView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 1 营业执照 / 2 执业许可证 / 3 法人身份证 / 4 训犬师认证 / 5 健康证 / 6 其他 */
+            type?: number;
+            name?: string;
+            /** @description 证件号（脱敏） */
+            cert_no?: string | null;
+            /** @description 材料图片 URL；审核时要打开它看材料 */
+            file_url?: string | null;
+            valid_from?: string | null;
+            /** @description 到期日；为空表示长期有效 */
+            valid_until?: string | null;
+            /** @description 0 待审 / 1 通过 / 2 驳回 */
+            status?: number;
+            review_remark?: string | null;
+        };
+        /** @description 服务者（门店）信息；`phone` 是脱敏值 */
+        ProviderProfileView: {
+            /** Format: int64 */
+            id?: number;
+            name?: string;
+            /** @description 1 医院 / 2 洗护 / 3 训犬 / 4 寄养上门 / 5 食品用品 / 6 间接服务 */
+            type?: number;
+            /** @description 1 直接同业 / 2 直接异业 / 3 间接异业 */
+            category?: number;
+            logo?: string | null;
+            intro?: string | null;
+            address?: string;
+            lng?: string | null;
+            lat?: string | null;
+            /** @description 门店联系电话（脱敏） */
+            phone?: string;
+            business_hours?: components["schemas"]["BusinessHour"][];
+            /** @description 0 待审核 / 1 正常 / 2 驳回 / 3 冻结 */
+            status?: number;
+            level?: number;
+            region_code?: string | null;
+            monthly_score?: string;
+            rating?: string;
+            approved_at?: string | null;
+            created_at?: string;
+            updated_at?: string;
+        };
+        BusinessHour: {
+            /** @description 1 周一 … 7 周日 */
+            day_of_week: number;
+            /** @description HH:mm */
+            open_time: string;
+            /** @description HH:mm */
+            close_time: string;
+        };
+        ProviderStatusRequest: {
+            /** @description 1 正常（解冻）/ 3 冻结（清退落点） */
+            status: number;
+            /** @description 处置原因，进审核流水 */
+            reason?: string | null;
+        };
+        /** @description 服务者上架的服务项；名称与区间来自标准目录（现取，不是快照） */
+        ProviderServiceView: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            provider_id?: number;
+            /** @description 审核队列里有值 */
+            provider_name?: string | null;
+            service_code?: string;
+            service_name?: string | null;
+            category_code?: string | null;
+            category_name?: string | null;
+            /** @description 服务者定价 */
+            price?: string;
+            price_unit?: string | null;
+            /** @description 目录项当前区间下限（据此判断是否还在区间内） */
+            price_min?: string | null;
+            price_max?: string | null;
+            /** @description 0 待审核 / 1 已上架 / 2 已下架 / 3 已驳回 */
+            status?: number;
+            reject_reason?: string | null;
+            submitted_at?: string | null;
+            reviewed_at?: string | null;
+            updated_at?: string;
+        };
+        /** @description 券模板（平台统一定义的券）。`cost_bearer=2` 的模板就是「平台补贴券」的定义 */
+        CouponTemplateView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 模板编码（形如 CP-001）；**创建后不可改、不可复用** */
+            code?: string;
+            name?: string;
+            /** @description 抵扣面额（元，两位小数字符串） */
+            face_value?: string;
+            /** @description 使用门槛：订单总额不低于它才可用（0.00 表示无门槛） */
+            min_amount?: string;
+            /** @description 有效期：自发放之日起 N 天内有效 */
+            valid_days?: number;
+            /** @description 1 服务者成本 / 2 平台补贴；只影响核销统计与考核，不产生资金（ADR-0036） */
+            cost_bearer?: number;
+            /** @description 0 不限 / 1 限服务分类 / 2 限目录项 */
+            scope_type?: number;
+            /** @description 适用范围编码（分类编码或目录项编码）；scope_type=0 时为空 */
+            scope_codes?: string[];
+            /** @description 适用范围的现成文案，由服务端拼好 */
+            scope_desc?: string;
+            /** @description 平台补贴券的发放上限；为空表示不限（服务者成本券恒为空） */
+            issue_limit?: number | null;
+            /** @description 已发放张数（运营据此看上限还剩多少） */
+            issued_count?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+            description?: string | null;
+            created_at?: string;
+            updated_at?: string;
+        };
+        CouponTemplateRequest: {
+            /** @description 模板编码（两位大写字母 + 三位数字，如 CP-001）；**创建后不可改** */
+            code: string;
+            name: string;
+            /** @description 抵扣面额，最多两位小数且大于 0 */
+            face_value: string;
+            /** @description 使用门槛，可传 0.00（无门槛）；默认 0.00 */
+            min_amount?: string;
+            /** @description 自发放之日起有效天数 */
+            valid_days: number;
+            /** @description 1 服务者成本 / 2 平台补贴；**创建后不可改** */
+            cost_bearer: number;
+            /** @description 0 不限 / 1 限服务分类 / 2 限目录项；默认 0 */
+            scope_type?: number;
+            /** @description 适用范围编码；scope_type=0 时必须为空，否则必须都能在标准目录里找到 */
+            scope_codes?: string[];
+            /** @description 发放上限；只对平台补贴券有意义 */
+            issue_limit?: number | null;
+            description?: string | null;
+        };
+        CouponTemplateStatusRequest: {
+            /** @description 1 启用 / 0 停用（停用只挡新的发放与新的贡献） */
+            status: number;
+        };
+        /** @description 券池总览 + 对账口径（ADR-0037 第三节） */
+        CouponPoolOverviewView: {
+            /** @description 模板总数 */
+            template_count?: number;
+            /** @description 启用中的模板数 */
+            template_active_count?: number;
+            /** @description 服务者成本模板数 */
+            provider_cost_template_count?: number;
+            /** @description 平台补贴模板数 */
+            platform_subsidy_template_count?: number;
+            /** @description 生效中的贡献条数 */
+            contribution_count?: number;
+            /** @description 服务者承诺的额度合计 */
+            committed_total?: number;
+            /** @description 还可发放合计 */
+            available_total?: number;
+            /** @description 已发放券实例总数 */
+            issued_total?: number;
+            /** @description 已核销 */
+            redeemed_total?: number;
+            /** @description 未过期未核销（在用户手里） */
+            reserved_total?: number;
+            /** @description 已过期未核销（额度已释放回池） */
+            expired_total?: number;
+            /** @description 按来源拆开（邀请 / 打卡任务 / 积分兑换 / 平台补贴 / 月度阶梯） */
+            by_source?: components["schemas"]["CouponSourceStatView"][];
+            reconciliation?: components["schemas"]["CouponReconciliationView"];
+        };
+        CouponSourceStatView: {
+            /** @description 1 邀请 / 2 打卡任务 / 3 积分兑换 / 4 平台补贴 / 5 月度阶梯 */
+            source?: number;
+            issued?: number;
+            redeemed?: number;
+            reserved?: number;
+            expired?: number;
+        };
+        /**
+         * @description 对账恒等式：**实例数 = 已发放 = 已核销 + 未过期未核销 + 已过期未核销**。
+         *     本项目没有资金可对（ADR-0036），这张就是券的对账；不平即告警。
+         */
+        CouponReconciliationView: {
+            issued?: number;
+            redeemed?: number;
+            reserved?: number;
+            expired?: number;
+            /** @description false 表示不平，要人工查 */
+            balanced?: boolean;
+            /** @description 口径说明（直接给运营看） */
+            note?: string;
+        };
+        /** @description 券实例（发给某个用户的那一张） */
+        CouponView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 券码（排查用，不是安全凭证） */
+            code?: string;
+            /** Format: int64 */
+            user_id?: number;
+            /** Format: int64 */
+            template_id?: number;
+            template_code?: string;
+            template_name?: string;
+            /** @description 面额快照：模板后来改了面额，已发的券不受影响 */
+            face_value?: string;
+            min_amount?: string;
+            /** @description 1 邀请 / 2 打卡任务 / 3 积分兑换 / 4 平台补贴 / 5 月度阶梯 */
+            source?: number;
+            /**
+             * Format: int64
+             * @description 占用了哪条服务者贡献；平台补贴券为空
+             */
+            contribution_id?: number | null;
+            /**
+             * Format: int64
+             * @description 服务者贡献券的核销门店
+             */
+            provider_id?: number | null;
+            /** @description 核销门店名称（服务者成本券才有） */
+            provider_name?: string | null;
+            /** @description 1 待使用 / 2 已锁定（下单占用）/ 3 已核销 / 4 已过期 */
+            status?: number;
+            valid_from?: string;
+            valid_until?: string;
+            issued_at?: string;
+            redeemed_at?: string | null;
+            created_at?: string;
+        };
+        IssueCouponRequest: {
+            /**
+             * Format: int64
+             * @description 发给谁
+             */
+            user_id: number;
+            /**
+             * Format: int64
+             * @description 券模板 id（**必须是平台补贴券**）
+             */
+            template_id: number;
+            /** @description 发放说明（如「客诉补偿」），进券的来源引用 */
+            remark?: string | null;
+        };
+        RightsCodeView: {
+            /** @description 权益码（如 ai.unlimited）；**创建后不可改** */
+            code?: string;
+            name?: string;
+            description?: string | null;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用（停用不再允许新授予） */
+            status?: number;
+            created_at?: string;
+            updated_at?: string;
+        };
+        RightsCodeRequest: {
+            /** @description 小写字母 / 数字 / 点（如 quota.ai.bonus）；**仅新增时给，修改时不要传** */
+            code?: string;
+            name: string;
+            description?: string | null;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用；不传按启用处理 */
+            status?: number;
+        };
+        /** @description 一条授予记录（码 + 来源 + 到期） */
+        RightsGrantView: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            user_id?: number;
+            code?: string;
+            code_name?: string;
+            /** @description 1 订阅 / 2 邀请 / 3 打卡 / 4 运营补偿 */
+            source?: number;
+            /** @description 到期时间；为空表示永久 */
+            expire_at?: string | null;
+            /** @description 1 生效 / 2 已回收 */
+            status?: number;
+            /** @description 来源引用（哪一次邀请 / 哪个月份），幂等与追溯用 */
+            source_ref?: string | null;
+            remark?: string | null;
+            created_at?: string;
+            revoked_at?: string | null;
+        };
+        RightsGrantRequest: {
+            /** Format: int64 */
+            user_id: number;
+            code: string;
+            /** @description 1 订阅 / 2 邀请 / 3 打卡 / 4 运营补偿 */
+            source: number;
+            /** @description 到期时间（yyyy-MM-dd HH:mm:ss）；为空表示永久 */
+            expire_at?: string | null;
+            /** @description 来源引用；同一来源 + 引用 + 码只授予一次 */
+            source_ref?: string | null;
+            /** @description 手动作业的理由（客诉、线下签约等） */
+            remark?: string | null;
+        };
+        /** @description 权益判定的出口：每个码是否生效 + 来源 + 到期 */
+        RightsEvaluationView: {
+            /** Format: int64 */
+            user_id?: number;
+            rights?: components["schemas"]["RightsItemView"][];
+        };
+        RightsItemView: {
+            code?: string;
+            name?: string;
+            /** @description 当前是否生效（实时判定，来源优先级 订阅 > 邀请 > 打卡） */
+            effective?: boolean;
+            /** @description 生效那一条的来源；不生效时为空 */
+            source?: number | null;
+            /** @description 来源的中文名（订阅 / 邀请 / 打卡 / 运营补偿） */
+            source_name?: string | null;
+            /** @description 生效那一条的到期时间；为空表示永久 */
+            expire_at?: string | null;
+        };
+        InviteOverviewView: {
+            /** @description 已生成的邀请码数 */
+            invite_code_count?: number;
+            /** @description 通过邀请码注册的人数（不含被反作弊拦下的） */
+            registered_count?: number;
+            /** @description 待生效（已注册未结算） */
+            pending_count?: number;
+            /** @description 有效邀请数（被邀请人完成建档 + 24 小时内有行为） */
+            effective_count?: number;
+            /** @description 无效邀请数（反作弊或 24 小时无行为） */
+            invalid_count?: number;
+            /** @description 有效邀请转化率 = 有效 ÷ 注册（两位小数）；**替代 K 因子**（ADR-0039） */
+            valid_rate?: string;
+            /** @description 各档位的达成人数 */
+            ladder_stats?: components["schemas"]["InviteLadderStatView"][];
+        };
+        InviteLadderStatView: {
+            /** @description 门槛（有效邀请数） */
+            threshold?: number;
+            /** @description 已达成的用户数 */
+            achieved_count?: number;
+        };
+        /** @description 一条邀请关系（归因只在注册那一刻，之后不再改） */
+        InviteRelationView: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            inviter_user_id?: number;
+            /** Format: int64 */
+            invitee_user_id?: number;
+            invite_code?: string;
+            /** @description 1 分享链接（预填） / 2 注册表单手工填（两者以用户填的为准） */
+            channel?: number;
+            /** @description 1 待生效 / 2 有效 / 3 无效 */
+            status?: number;
+            /** @description SELF_INVITE / SAME_DEVICE / SAME_IP_SEGMENT / NO_ACTIVITY_24H */
+            reject_reason?: string | null;
+            /** @description 归因时间（= 注册时间） */
+            attributed_at?: string;
+            /** @description 被邀请人完成建档的时间 */
+            profile_completed_at?: string | null;
+            /** @description 结算时间（有效 / 无效的判定时刻） */
+            settled_at?: string | null;
+            created_at?: string;
+        };
+        InviteLadderTierView: {
+            /** @description 门槛（有效邀请数）：1 / 3 / 5 / 10 / 15 */
+            threshold?: number;
+            /** @description 1 发券 / 2 授权益；为空表示还没配奖励 */
+            reward_type?: number | null;
+            /** Format: int64 */
+            coupon_template_id?: number | null;
+            coupon_template_name?: string | null;
+            rights_code?: string | null;
+            rights_name?: string | null;
+            /** @description 发几张券（reward_type=1 时有效） */
+            reward_count?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+            updated_at?: string;
+        };
+        InviteLadderTierRequest: {
+            /** @description 1 发券 / 2 授权益；传空表示这一档不发东西（仍记录达成） */
+            reward_type?: number | null;
+            /**
+             * Format: int64
+             * @description reward_type=1 时必填
+             */
+            coupon_template_id?: number | null;
+            /** @description reward_type=2 时必填，授予**永久**权益 */
+            rights_code?: string | null;
+            /** @description 发券张数，默认 1 */
+            reward_count?: number;
+            /** @description 1 启用 / 0 停用 */
+            status: number;
+        };
+        InviteRiskRecordView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description SELF_INVITE / SAME_DEVICE / SAME_IP_SEGMENT / NO_ACTIVITY_24H */
+            rule?: string;
+            /** Format: int64 */
+            inviter_user_id?: number;
+            /** Format: int64 */
+            invitee_user_id?: number | null;
+            device_id?: string | null;
+            ip?: string | null;
+            /** @description 命中的原始判据（给运营看的一句话） */
+            detail?: string;
+            created_at?: string;
+        };
+        PointsOverviewView: {
+            /** @description 有积分账户的用户数 */
+            account_count?: number;
+            /** @description 当前余额合计 */
+            balance_total?: number;
+            /** @description 累计发放 */
+            earned_total?: number;
+            /** @description 累计消耗（兑换） */
+            spent_total?: number;
+            /** @description 今日发放（东八区业务日） */
+            today_earned?: number;
+            /** @description 今日获得过分的人数 */
+            today_awarded_users?: number;
+            /** @description 当前的每日获取上限 */
+            daily_earn_limit?: number;
+        };
+        PointsSettingsView: {
+            /** @description 每日获取上限（默认 20 分；邀请与一次性项不占此上限） */
+            daily_earn_limit?: number;
+        };
+        PointsSettingsRequest: {
+            daily_earn_limit: number;
+        };
+        /** @description 积分流水（有变动后余额，才能从流水重建余额） */
+        PointRecordView: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            user_id?: number;
+            behavior_code?: string;
+            behavior_name?: string;
+            /** @description 变动值（正为发放、负为兑换消耗、0 为只记行为不发分） */
+            change?: number;
+            /** @description 变动后余额 */
+            balance_after?: number;
+            /** @description 1 占每日上限 / 0 不占（邀请与一次性项） */
+            counts_toward_daily_cap?: number;
+            /** @description 来源引用（业务日、订单号、邀请关系 id），幂等靠它 */
+            source_ref?: string | null;
+            remark?: string | null;
+            created_at?: string;
+        };
+        PointBehaviorView: {
+            code?: string;
+            name?: string;
+            /** @description 单次分值（0 表示只记行为不发分，如查看 AI 建议） */
+            points?: number;
+            /** @description 1 占每日上限 / 0 不占 */
+            counts_toward_daily_cap?: number;
+            /** @description 每日次数上限；为空表示不限次 */
+            daily_count_limit?: number | null;
+            /** @description 每月次数上限；为空表示不限次 */
+            monthly_count_limit?: number | null;
+            /** @description 1 一次性（如完善档案） / 0 可重复 */
+            once_only?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+            sort_order?: number;
+            updated_at?: string;
+        };
+        PointBehaviorRequest: {
+            points: number;
+            /** @description 1 占 / 0 不占；不传保持原值 */
+            counts_toward_daily_cap?: number;
+            /** @description 每日次数上限；0 或空表示不限 */
+            daily_count_limit?: number | null;
+            /** @description 每月次数上限；0 或空表示不限 */
+            monthly_count_limit?: number | null;
+            /** @description 1 一次性 / 0 可重复；不传保持原值 */
+            once_only?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+        };
+        PointTaskView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 任务编码（如 DAILY_CHECK_IN） */
+            code?: string;
+            name?: string;
+            /** @description 1 每日 / 2 每周 */
+            period?: number;
+            /** @description 该任务统计的行为（进度按它算） */
+            behavior_code?: string;
+            behavior_name?: string;
+            /** @description 达标所需次数 */
+            target_count?: number;
+            /** @description 该行为的分值（任务本身不额外发分） */
+            points?: number;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+            updated_at?: string;
+        };
+        PointTaskRequest: {
+            /** @description 任务编码；**创建后不可改** */
+            code: string;
+            name: string;
+            /** @description 1 每日 / 2 每周 */
+            period: number;
+            /** @description 必须是已存在的行为码 */
+            behavior_code: string;
+            target_count: number;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+        };
+        /** @description 兑换档位（只兑平台补贴券） */
+        PointExchangeOptionView: {
+            /** Format: int64 */
+            id?: number;
+            name?: string;
+            /** @description 消耗积分 */
+            points_cost?: number;
+            /** Format: int64 */
+            coupon_template_id?: number;
+            coupon_template_name?: string;
+            /** @description 券面额（展示用） */
+            coupon_face_value?: string;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+            updated_at?: string;
+        };
+        PointExchangeOptionRequest: {
+            name: string;
+            points_cost: number;
+            /**
+             * Format: int64
+             * @description **必须是平台补贴券模板**
+             */
+            coupon_template_id: number;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+        };
+        /** @description 月度阶梯档位（上月累计积分 → 发券） */
+        PointLadderTierView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 门槛：上月累计获得积分不低于它 */
+            threshold_points?: number;
+            /** Format: int64 */
+            coupon_template_id?: number;
+            coupon_template_name?: string;
+            /** @description 发几张 */
+            coupon_count?: number;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+            updated_at?: string;
+        };
+        PointLadderTierRequest: {
+            threshold_points: number;
+            /**
+             * Format: int64
+             * @description **必须是平台补贴券模板**
+             */
+            coupon_template_id: number;
+            coupon_count?: number;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+        };
+        /** @description 一个提示词版本（正文一起给：运营要能看到自己改了什么） */
+        PromptTemplateView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 用途代码（当前只有 triage 一处） */
+            code?: string;
+            /** @description 版本号。**留痕按它归因分级漂移**（ADR-0010），改正文必须换号 */
+            version?: string;
+            /** @description 提示词正文 */
+            system_prompt?: string;
+            /**
+             * @description 工具定义（`report_triage` 的完整 JSON），与提示词同源——缺了模型不会按格式上报。
+             *     **只读**：工具定义由代码约束（ADR-0010 的代码常量那一层），改动走发版；
+             *     这里下发是为了让「当前生效的正文 + 它的工具定义」能一起被看见。库里的列 NOT NULL。
+             */
+            tool_schema?: string;
+            /** @description 灰度比例（0–100）。出问题把它改回 0 即是回滚，**不必发版** */
+            gray_ratio?: number;
+            /** @description 管线当前是否用它 */
+            enabled?: boolean;
+            /**
+             * @description 人工复核状态：pending_review / vetted。**接口不给改**（ADR-0040 第二节）
+             * @enum {string}
+             */
+            review_status?: "pending_review" | "vetted";
+            remark?: string | null;
+            /**
+             * Format: int64
+             * @description 最后一次改动的 operator_id（ADR-0011）
+             */
+            updated_by?: number | null;
+            updated_at?: string;
+        };
+        PromptTemplateRequest: {
+            /** @description 用途代码（当前只有 triage 一处）。**必填**：留空报 40001 */
+            code: string;
+            /** @description **必须是新版本号**：同 (code, version) 已存在时 40900 */
+            version: string;
+            /** @description 提示词正文 */
+            system_prompt: string;
+            /** @description 工具定义。**与提示词同源**：缺了模型不会按格式上报 */
+            tool_schema: string;
+            /** @description 灰度比例；新版本先设 0 再逐步放量 */
+            gray_ratio: number;
+            remark?: string | null;
+        };
+        PromptTemplateUpdateRequest: {
+            gray_ratio: number;
+            /** @description true 启用 / false 停用；**读写同形状**（库里的列仍是 tinyint） */
+            enabled: boolean;
+            /** @description 传了才覆盖，不传保持原值 */
+            remark?: string | null;
+        };
+        /** @description 一条硬红线规则（命中即短路，不经过模型，ADR-0021） */
+        RedFlagView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 规则编号（如 RF-007）。留痕引用它，所以不许重复 */
+            code?: string;
+            /** @description 主词 */
+            pattern?: string;
+            /** @description 变体（同义说法）最多 20 条；可为空数组 */
+            variants?: string[];
+            /** @description 适用物种：dog / cat / all */
+            species_scope?: string;
+            /** @description 适用年龄段：all / puppy_kitten / adult / senior */
+            age_stage_scope?: string;
+            /**
+             * @description 命中后的风险等级（不低于 2）
+             * @enum {integer}
+             */
+            level?: 2 | 3;
+            /** @description 命中后的第一句话（它是用户看到的动作） */
+            action_hint?: string;
+            /** @description 管线当前是否用它 */
+            enabled?: boolean;
+            /**
+             * @description 人工复核状态：pending_review / vetted。**接口不给改**（ADR-0040 第二节）
+             * @enum {string}
+             */
+            review_status?: "pending_review" | "vetted";
+            remark?: string | null;
+            updated_at?: string;
+        };
+        RedFlagRequest: {
+            /** @description 规则编号；重复 40900 */
+            code: string;
+            /** @description 主词 */
+            pattern: string;
+            /** @description 变体（单条最长 64）最多 20 条 */
+            variants?: string[] | null;
+            /**
+             * @description 省略按 all
+             * @enum {string}
+             */
+            species_scope?: "dog" | "cat" | "all";
+            /**
+             * @description 省略按 all
+             * @enum {string}
+             */
+            age_stage_scope?: "all" | "puppy_kitten" | "adult" | "senior";
+            /** @description 红线的等级不低于 2 */
+            level: number;
+            /** @description 命中后的第一句话，会直接给用户看 */
+            action_hint: string;
+            /** @description true 启用 / false 停用；**读写同形状**（库里的列仍是 tinyint） */
+            enabled: boolean;
+            remark?: string | null;
+        };
+        /** @description 一条分级规则（命中词 → 风险下限，**只抬不降**，ADR-0021） */
+        GradingRuleView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 规则编号；留痕引用它，所以不许重复 */
+            code?: string;
+            name?: string;
+            /** @description 命中词，1–20 条 */
+            match_terms?: string[];
+            /**
+             * @description 风险下限 1–3
+             * @enum {integer}
+             */
+            min_level?: 1 | 2 | 3;
+            /** @description 适用物种：dog / cat / all */
+            species_scope?: string;
+            /** @description 适用年龄段：all / puppy_kitten / adult / senior */
+            age_stage_scope?: string;
+            /** @description 建议（会进用户的照护要点，**不许写药名与剂量**） */
+            advice?: string | null;
+            /** @description 管线当前是否用它 */
+            enabled?: boolean;
+            /**
+             * @description 人工复核状态：pending_review / vetted。**接口不给改**（ADR-0040 第二节）
+             * @enum {string}
+             */
+            review_status?: "pending_review" | "vetted";
+            remark?: string | null;
+            updated_at?: string;
+        };
+        GradingRuleRequest: {
+            /** @description 规则编号；重复 40900 */
+            code: string;
+            name: string;
+            /** @description 命中词 1–20 条（单条最长 32） */
+            match_terms: string[];
+            /** @description 风险下限 */
+            min_level: number;
+            /**
+             * @description 省略按 all
+             * @enum {string}
+             */
+            species_scope?: "dog" | "cat" | "all";
+            /**
+             * @description 省略按 all
+             * @enum {string}
+             */
+            age_stage_scope?: "all" | "puppy_kitten" | "adult" | "senior";
+            /** @description 建议文案，**不许写药名与剂量** */
+            advice?: string | null;
+            /** @description true 启用 / false 停用；**读写同形状**（库里的列仍是 tinyint） */
+            enabled: boolean;
+            remark?: string | null;
+        };
+        /** @description 一个护栏词（输出侧过滤依据） */
+        GuardTermView: {
+            /** Format: int64 */
+            id?: number;
+            /**
+             * @description drug 药名 / phrase 越界表述（诊断、剂量、处方）
+             * @enum {string}
+             */
+            kind?: "drug" | "phrase";
+            /** @description 词条 */
+            term?: string;
+            /** @description 说明（为什么加它） */
+            note?: string | null;
+            /** @description 管线当前是否用它 */
+            enabled?: boolean;
+            /**
+             * @description 人工复核状态：pending_review / vetted。**接口不给改**（ADR-0040 第二节）
+             * @enum {string}
+             */
+            review_status?: "pending_review" | "vetted";
+            updated_at?: string;
+        };
+        GuardTermRequest: {
+            /**
+             * @description drug（药名）/ phrase（越界表述）
+             * @enum {string}
+             */
+            kind: "drug" | "phrase";
+            /** @description 词条；同类同词重复 40900 */
+            term: string;
+            note?: string | null;
+            /** @description true 启用 / false 停用；**读写同形状**（库里的列仍是 tinyint） */
+            enabled: boolean;
+        };
+        /** @description 一个运行时开关（**语义在代码里**，库里只存当前状态，ADR-0010） */
+        SwitchView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 开关编码（代码里的常量，如 force_rule_only） */
+            code?: string;
+            enabled?: boolean;
+            /** @description 这个开关是什么意思（给运营看的说明） */
+            remark?: string | null;
+            updated_at?: string;
+        };
+        SwitchUpdateRequest: {
+            /** @description true 打开 / false 关闭；**读写同形状**（库里的列仍是 tinyint） */
+            enabled: boolean;
+        };
+        /**
+         * @description 一次咨询的抽检视图（ADR-0033 第四节记的那些留痕列）。
+         *     **不含问题原文**：`ai_consult.question_enc` 是字段级加密的病历口径（ADR-0013），
+         *     解密给运营看属权限与合规问题、还没定（ADR-0033 的待澄清）——先把结构化事实给出来，
+         *     够做「按 prompt_version 抽样看分级分布」这件事。
+         */
+        ConsultAuditView: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            pet_id?: number;
+            /**
+             * @description 就医紧迫程度：1 绿 / 2 黄 / 3 红
+             * @enum {integer}
+             */
+            risk_level?: 1 | 2 | 3;
+            /** @description true 表示这次是降级答复（模型超时 / 不可用 / 输出不可用） */
+            degraded?: boolean;
+            /** @description 机器可读的降级原因码与上游明细（只在留痕里，不下发给用户） */
+            degrade_reason?: string | null;
+            /** @description 命中的红线规则编号；**非空表示这次没有经过模型**（ADR-0021） */
+            red_flag_hits?: string[];
+            /**
+             * @description 输出护栏与配置读取的留痕标记。三类前缀各自可读：
+             *     `dose` / `phrase:xxx` / `drug:xxx`（模型输出或运营文案越界，ADR-0021 第四条）、
+             *     `kb:flag:<条目>:<原因>`（检索到的条目被安全门剔除或被护栏清洗）、
+             *     `citation:<编号>`（编造 / 无效引用被剔除）。
+             *
+             *     **`switch:<开关码>:unreadable` 是 ADR-0050 §三 的落点**：运营配置里某个运行时开关
+             *     **读不到**（库不可达）时由 AI 服务写入这个标记——「开关读不到」与「开关确实为关」
+             *     是两件事，前者是故障、要有人告警，后者是运营的意图。开关确实为关时**不带这个标记**。
+             */
+            guard_hits?: string[];
+            /** @description 真被引用的知识条目编号。**只含 vetted**——召回集 ≠ 引用集（ADR-0033 第四节） */
+            citations?: string[];
+            /** @description 用到的**未复核**条目编号。抽检时最该看的就是这些（它们没有兽医背书） */
+            unvetted_hits?: string[];
+            /** @description 检索自检结果（ok / empty / skipped / unavailable / disabled…）；`empty` 是召回缺口的观测口，`unavailable` 与 `disabled` 是故障与人为关闭之分（ADR-0033 第二节 / ADR-0050 第三节） */
+            retrieval_check?: string | null;
+            /** @description 运营可调项这一批（提示词 / 分级规则 / 护栏词表 / 运行时开关）读到了没有：ok / unavailable。**它是可观测的事实，不是降级**——unavailable 时那一项回落到代码基线、咨询照常（ADR-0050 第三节 / ADR-0010 的分层）。**（需要协调：AI 服务侧已产出该字段，Java 侧的落库与映射尚未接线，见 ADR-0052 的「需要协调」）** */
+            ops_config_check?: string | null;
+            model_name?: string | null;
+            model_version?: string | null;
+            /** @description 按它归因分级漂移（ADR-0010） */
+            prompt_version?: string | null;
+            latency_ms?: number;
+            created_at?: string;
+        };
+        /**
+         * @description AI 咨询的**只读统计**（`AiConsultStatsApi.ConsultStats`）——**不是 HTTP 响应体**：
+         *     健康报告（#115）经这个 ph-api 接口取两个数，而不去 join ph-ai 的表（ADR-0006；
+         *     「开第二个例外」只有 ADR-0009 那一条）。它是**跨模块接口的形状**，
+         *     在这里立条目是为了让「schema 名 ↔ DTO 类名」保持一一对应。
+         */
+        ConsultStats: {
+            /** @description 窗口内的咨询次数（含红线短路与降级——那也花掉了一次用户动作） */
+            total?: number;
+            /** @description 其中判为红色的次数（risk_level=3，含红线规则判的红） */
+            red_count?: number;
+        };
+        /**
+         * @description 审核队列里的一行。三种社区内容（卡片 / 提问 / 回答）共用这个形状——
+         *     审核要的是「谁、什么时候、发了什么、现在什么状态」，三种内容在这四件事上同构，
+         *     各写一张视图只会让运营切换三个页面看同一件事。
+         *
+         *     `title` 只有卡片与提问有，回答为空；`content` 一律给**全文**（不是摘要）：
+         *     审核必须看到完整原文，截断的审核等于没审。
+         */
+        ContentReviewItemView: {
+            /** @description 1 经验卡片 / 2 提问 / 3 回答 */
+            content_type?: number;
+            /** @description 内容类型中文名（经验卡片 / 提问 / 回答） */
+            content_type_name?: string;
+            /** Format: int64 */
+            content_id?: number;
+            /**
+             * Format: int64
+             * @description 作者 id（**只在这一端出现**：审核是运营的动作，要能追溯；C 端的卡片视图恒匿名）
+             */
+            author_id?: number;
+            /** @description 标题；回答没有标题，为空 */
+            title?: string | null;
+            /** @description 正文全文 */
+            content?: string;
+            /**
+             * Format: int64
+             * @description 回答所属的提问 id；卡片与提问为空
+             */
+            question_id?: number | null;
+            /** @description 0 待审 / 1 已发布 / 2 已驳回或已下架 */
+            status?: number;
+            status_name?: string;
+            /** @description 被驳回 / 下架的理由（运营填的原文）；没被驳回时为空 */
+            reject_reason?: string | null;
+            /** @description 机审命中的敏感词（逗号分隔）；未命中或人工处置时为空 */
+            machine_hits?: string | null;
+            created_at?: string;
+        };
+        /** @description 机审词表里的一条。命中判定是**包含匹配**（不做正则、不做分词），运营要能肉眼预测拦截结果。 */
+        SensitiveWordView: {
+            /** Format: int64 */
+            id?: number;
+            word?: string;
+            /** @description 分类标签（给运营自己看的：广告 / 引流 / 违规…），不参与判定 */
+            category?: string | null;
+            /** @description 是否参与机审；停用不删——留着它才能解释「昨天为什么拦了那条内容」 */
+            enabled?: boolean;
+            /** @description 为什么拦这个词 */
+            remark?: string | null;
+            updated_at?: string;
+        };
+        SensitiveWordRequest: {
+            /** @description 词条（当前平台的词都是中文短语，按**包含**匹配；大小写不敏感） */
+            word: string;
+            /** @description 分类标签（不参与判定） */
+            category?: string | null;
+            /** @description 是否启用；不传按启用处理 */
+            enabled?: boolean | null;
+            /** @description 给运营看的说明：为什么拦这个词 */
+            remark?: string | null;
+        };
+        /** @description 一个账期的考核结果（列表行）。明细见 `AssessmentView` */
+        AssessmentSummaryView: {
+            /** Format: int64 */
+            id?: number;
+            /**
+             * Format: int64
+             * @description 服务者 id；**只在运营侧有值**（服务者看自己的列表不需要它）
+             */
+            provider_id?: number;
+            /** @description 门店名称；**只在运营侧有值** */
+            provider_name?: string | null;
+            /** @description 考核账期（yyyy-MM）；每月 1 日算上月（ADR-0039 第三节） */
+            period?: string;
+            /** @description 总分（0.00–100.00 的两位小数字符串）。**分数是字符串不是浮点**（ADR-0011 的精度纪律） */
+            total_score?: string;
+            /** @description 1 基础 / 2 优选 / 3 战略合作（分档阈值在本后台配置） */
+            level?: number;
+            /** @description 等级中文名（基础 / 优选 / 战略合作），由服务端给出 */
+            level_name?: string;
+            /** @description AI 推荐优先级：1 最高 / 2 较高 / 3 普通。**只存映射结果，不改推荐逻辑**（那属别的切片） */
+            recommend_priority?: number;
+            /** @description 参与计分的权重合计（100 = 三项全参与；缺项按 ADR-0050 第四节重算后会小于 100） */
+            participated_weight?: number;
+            /** @description 本期是否有单项分被超级管理员覆盖（留痕在明细的 `overrides` 里） */
+            overridden?: boolean;
+            /** @description 计算时间（yyyy-MM-dd HH:mm:ss，东八区） */
+            calculated_at?: string;
+        };
+        /**
+         * @description 一项考核明细。**三项主项**的 `item_code` 是 INVITE（拉新）/ COUPON（券）/ PROCESS（过程）；
+         *     过程分的五个子项挂在 PROCESS 下（`parent_code` = PROCESS）：
+         *     PROCESS_RESPONSE（接单响应）/ PROCESS_REDEEM_RATE（核销率）/ PROCESS_REPORT_RATE（报工完整率）/
+         *     PROCESS_REVIEW（评价分）/ PROCESS_CANCEL_RATE（服务者取消率）。
+         *
+         *     **未参与（`participated=false`）的项照样下发**：它们是「这个分为什么是这么算出来的」的答案，
+         *     藏起来就只剩一个说不清的总分（ADR-0050 第四节点名要「明细里注明未参与」）。
+         */
+        AssessmentItemView: {
+            /** @description 项目编码（见上面的枚举） */
+            item_code?: string;
+            /** @description 中文名，由服务端给出 */
+            item_name?: string;
+            /** @description 父项：过程子项为 PROCESS；三项主项为空 */
+            parent_code?: string | null;
+            /** @description 该项在主项层级的权重（百分比）；过程子项为空（子项之间等权，ADR-0039 第二节） */
+            weight?: number;
+            /** @description 是否参与计分。false = 平台侧无该维度要求（ADR-0050 第四节），权重按参与项重算 */
+            participated?: boolean;
+            /** @description 当前生效得分（0.00–100.00 的两位小数字符串）；未参与时为空 */
+            score?: string | null;
+            /** @description 算法算出来的原始得分；没被覆盖时与 `score` 相同（被覆盖后仍保留在它上面） */
+            calculated_score?: string | null;
+            /** @description 原始指标值（人话，如「有效邀请 3 人」「完成率 0.60 × 核销 8 张」）；未参与时为空 */
+            raw_value?: string | null;
+            /** @description 该项当时的达标线快照（规则改了不影响已算出的历史） */
+            target_value?: string | null;
+            /** @description 数据来源（如「ph-order 订单统计」）；未参与时这里写清是哪条事实缺了 */
+            data_source?: string;
+            /** @description 说明：未参与的原因 / 覆盖说明 / 已实现的降级说明 */
+            note?: string | null;
+            /** @description 该项是否被超级管理员覆盖过 */
+            overridden?: boolean;
+        };
+        /** @description 单项分覆盖的留痕（append-only）。**谁、何时、改成多少、为什么都留** */
+        AssessmentOverrideView: {
+            /** Format: int64 */
+            id?: number;
+            item_code?: string;
+            item_name?: string;
+            /** @description 覆盖前的生效值（两位小数字符串；覆盖前未参与时为空） */
+            before_score?: string | null;
+            /** @description 覆盖后的生效值 */
+            after_score?: string;
+            /** @description 覆盖理由（必填，服务者可见——否则算法是黑箱、无法申诉） */
+            reason?: string;
+            /**
+             * Format: int64
+             * @description 操作者（超级管理员）的账号 id
+             */
+            operator_id?: number;
+            created_at?: string;
+        };
+        /**
+         * @description 一个账期的考核全貌。服务者侧看自己的，运营侧看全平台的（`provider_id` / `provider_name`
+         *     **只在运营侧有值**——与 `CouponContributionView.provider_name` 同一口径）。
+         */
+        AssessmentView: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            provider_id?: number;
+            provider_name?: string | null;
+            period?: string;
+            total_score?: string;
+            level?: number;
+            level_name?: string;
+            recommend_priority?: number;
+            participated_weight?: number;
+            overridden?: boolean;
+            calculated_at?: string;
+            /** @description 三项主项 + 过程子项（未参与的也在） */
+            items?: components["schemas"]["AssessmentItemView"][];
+            /** @description 覆盖留痕（按时间正序）；没被覆盖过时为空数组 */
+            overrides?: components["schemas"]["AssessmentOverrideView"][];
+        };
+        /** @description 一个等级的档位（基础 / 优选 / 战略合作）。**阈值与优先级可改，等级本身不可增删** */
+        AssessmentLevelRuleView: {
+            /** @description 1 基础 / 2 优选 / 3 战略合作 */
+            level?: number;
+            /** @description 等级中文名，由服务端给出 */
+            level_name?: string;
+            /** @description 进入这一档的最低总分（两位小数字符串，闭区间） */
+            min_score?: string;
+            /** @description AI 推荐优先级：1 最高 / 2 较高 / 3 普通。**只有映射结果会被写进考核记录与 `provider.level`，推荐逻辑本身不在本切片** */
+            recommend_priority?: number;
+            updated_at?: string;
+        };
+        /** @description 考核规则（权重 + 三项达标线 + 三档阈值） */
+        AssessmentRuleView: {
+            /** @description 拉新项权重（默认 40） */
+            invite_weight?: number;
+            /** @description 券项权重（默认 40） */
+            coupon_weight?: number;
+            /** @description 过程项权重（默认 20） */
+            process_weight?: number;
+            /** @description 拉新达标线（有效邀请数）；**0 = 未配置 → 该项不参与**（ADR-0050 第四节） */
+            invite_target?: number;
+            /** @description 券达标线（完成率 × 核销数，ADR-0039 第三节的口径）；"0.00" = 未配置 → 该项不参与 */
+            coupon_target?: string;
+            /** @description 接单响应时长的达标线（分钟）：不超过它记满分，超过按比例扣 */
+            response_minutes_target?: number;
+            /** @description 三个档位（基础 / 优选 / 战略合作），按 level 升序 */
+            levels?: components["schemas"]["AssessmentLevelRuleView"][];
+            updated_at?: string;
+        };
+        AssessmentLevelRuleRequest: {
+            /** @description 1 基础 / 2 优选 / 3 战略合作 */
+            level: number;
+            /** @description 进入这一档的最低总分（两位小数字符串） */
+            min_score: string;
+            /** @description 1 最高 / 2 较高 / 3 普通 */
+            recommend_priority: number;
+        };
+        /** @description 整体覆盖考核规则。**改了只影响之后算出的账期**——历史账期存的是当时的快照。 */
+        AssessmentRuleRequest: {
+            /** @description 拉新项权重（百分比） */
+            invite_weight: number;
+            /** @description 券项权重（百分比） */
+            coupon_weight: number;
+            /** @description 过程项权重（百分比）；**三项之和必须为 100**（否则 40001） */
+            process_weight: number;
+            /** @description 拉新达标线（有效邀请数）；0 = 未配置 → 该项不参与 */
+            invite_target: number;
+            /** @description 券达标线（完成率 × 核销数）；"0.00" = 未配置 → 该项不参与 */
+            coupon_target: string;
+            /** @description 接单响应时长的达标线（分钟，正整数） */
+            response_minutes_target: number;
+            /** @description 三个档位，必须**恰好三档**（1/2/3 各一条）且 `min_score` 严格递增、基础档为 0.00 */
+            levels: components["schemas"]["AssessmentLevelRuleRequest"][];
+        };
+        /**
+         * @description 覆盖单项分。**只能覆盖三项主项**（INVITE / COUPON / PROCESS）——过程子项是过程分的构成
+         *     而不是考核的单项，覆盖它们等于绕过算法。理由必填且会随明细下发给服务者。
+         */
+        AssessmentOverrideRequest: {
+            /** @description 三项主项之一：INVITE / COUPON / PROCESS */
+            item_code: string;
+            /** @description 覆盖后的得分（0.00–100.00 的两位小数字符串） */
+            score: string;
+            /** @description 覆盖理由（必填，服务者可见） */
+            reason: string;
+        };
+        /**
+         * @description **登录不做口令格式校验**（不设 minLength 之类）：格式规则只属于注册，
+         *     登录只有「匹配 / 不匹配」两种结果，不匹配一律 40100。
+         */
+        LoginRequest: {
+            /** @example 13800138000 */
+            phone: string;
+            /** @example pet12345 */
+            password: string;
+        };
+        ApiResponse: {
+            /** @description 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes） */
+            code: number;
+            /**
+             * @description 提示文案，前端直接展示——**但只在失败响应（`code != 0`）里有保证**：
+             *     `code === 0` 时共享请求层只把 `data` 交给调用方（见 packages/shared 的请求层），
+             *     这句在到达页面前就丢了。所以**成功响应里要给用户看的文案必须由 `data` 里的字段承载**
+             *     （例：`/invites/attribution` 的 `data.notice`），不要把话写在这里当作能显示。
+             */
+            message: string;
+            /** @description 业务数据，可为对象 / 数组 / null */
+            data?: unknown;
+            /** @description 全链路追踪 ID */
+            request_id?: string;
+        };
+        UserProfile: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * @description 脱敏手机号，形如 `138****8000`
+             * @example 138****8000
+             */
+            phone: string;
+            nickname: string;
+            /** @description 头像 URL；未设置为 null */
+            avatar?: string;
+            /**
+             * @description 0 未知 / 1 男 / 2 女
+             * @enum {integer}
+             */
+            gender: 0 | 1 | 2;
+            /**
+             * Format: int64
+             * @description 最近一次显式切换到的宠物。没切换过、或那只宠物已被删除时为 null——
+             *     这时前端取宠物列表的第一只作为默认。
+             */
+            active_pet_id?: number;
+            /** @example 2026-09-27 10:00:00 */
+            created_at?: string;
+        };
+        TokenPair: {
+            /** @description JWT；请求时放 Authorization: Bearer 请求头 */
+            access_token: string;
+            /** @description 不透明随机串，一次性使用（ADR-0012） */
+            refresh_token: string;
+            /** @description Access Token 剩余秒数（7200） */
+            expires_in: number;
+            user: components["schemas"]["UserProfile"];
+        };
+        RefreshRequest: {
+            refresh_token: string;
+        };
+        LogoutRequest: {
+            refresh_token: string;
+        };
+        PageResult: {
+            list: unknown[];
+            page: number;
+            /** @default 20 */
+            page_size: number;
+            total: number;
+            has_more: boolean;
+        };
+    };
+    responses: {
+        /** @description 未登录或 Token 已过期（40100 / 40101） */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content?: never;
+        };
+    };
+    parameters: {
+        CategoryId: number;
+        ItemId: number;
+        /** @description 目录外服务提案 id */
+        RequestId: number;
+        /** @description 入驻申请 id */
+        ApplicationId: number;
+        ProviderId: number;
+        /** @description 服务者服务项 id */
+        ServiceId: number;
+        /** @description 券模板 id */
+        TemplateId: number;
+        /** @description 权益授予记录 id */
+        GrantId: number;
+        /** @description 权益码（如 ai.unlimited） */
+        RightsCode: string;
+        UserId: number;
+        /** @description 邀请阶梯门槛（有效邀请数：1 / 3 / 5 / 10 / 15） */
+        Threshold: number;
+        /** @description 行为码（SIGN_IN / CHECK_IN / INVITE / REVIEW / PROFILE_COMPLETE / AI_ADVICE / SHARE） */
+        BehaviorCode: string;
+        TaskId: number;
+        OptionId: number;
+        TierId: number;
+        /** @description 提示词版本 id */
+        PromptId: number;
+        /** @description 红线规则 id */
+        RedFlagId: number;
+        /** @description 分级规则 id */
+        RuleId: number;
+        /** @description 护栏词条 id */
+        TermId: number;
+        /** @description 开关编码（代码里的常量，如 force_rule_only / retrieval_enabled / retrieval_strict） */
+        SwitchCode: string;
+        /** @description 内容类型：1 经验卡片 / 2 提问 / 3 回答 */
+        ContentType: number;
+        /** @description 内容 id（按 content_type 解释：卡片 id / 提问 id / 回答 id） */
+        ContentId: number;
+        /** @description 敏感词条 id */
+        WordId: number;
+        /** @description 月度考核记录的 id（一个服务者一个账期一条） */
+        ScoreId: number;
+        /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+        IdempotencyKey: string;
+        Page: number;
+        PageSize: number;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;

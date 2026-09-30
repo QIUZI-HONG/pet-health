@@ -10,7 +10,12 @@ export interface components {
         ApiResponse: {
             /** @description 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes） */
             code: number;
-            /** @description 提示文案，前端直接展示 */
+            /**
+             * @description 提示文案，前端直接展示——**但只在失败响应（`code != 0`）里有保证**：
+             *     `code === 0` 时共享请求层只把 `data` 交给调用方（见 packages/shared 的请求层），
+             *     这句在到达页面前就丢了。所以**成功响应里要给用户看的文案必须由 `data` 里的字段承载**
+             *     （例：`/invites/attribution` 的 `data.notice`），不要把话写在这里当作能显示。
+             */
             message: string;
             /** @description 业务数据，可为对象 / 数组 / null */
             data?: unknown;

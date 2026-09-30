@@ -2,9 +2,22 @@
 #
 # 消费方：C 端（桌面 Web）。公共组件（统一响应 / 错误码 / 分页）见 common.yaml。
 #
-# 状态：**账号与宠物档案（#94）、打卡与评分（#97）、提醒与消息（#99）、文件（#95）已定义**。
-# 其余业务接口待地图上未裁决的决策：订单交易 #77（且卡在支付语义澄清）、券池 #53、
-# 核销 #55、裂变 #54、标准目录 #75、服务者入驻 #78、AI 对话与分诊见 docs/design/ai-service.md。
+# 状态：**账号与宠物档案（#94）、打卡与评分（#97）、提醒与消息（#99）、文件（#95）、
+# 档案分项与时间轴（#102）、健康报告（#115）、专项照护模式（#116）已定义**。
+# 本轮新增（**契约先定稿，实现由后续路线接手**）：交易域 C 端（订单与号源，切片 #77 / #109）、
+# 券的 C 端（#53 / #110）、权益（#80 / #112）、邀请与积分（#54 / #111 / #113）。
+# 本轮再新增（**同样是契约先定稿、实现同轮落地**）：社区的经验卡片与问答互助（#84 / F020，见下）。
+# **本轮最后新增（契约先定稿，实现留给下一个切片）**：服务者与目录的 C 端浏览——
+# `GET /providers` 与 `GET /providers/{provider_id}`（ADR-0034 / ADR-0035 / ADR-0037）。
+# 这两条补的是「下单页看不到价格」那道缝：号源查询只回答「什么时候能做」，
+# 不回答「这家店做这个项目多少钱」，于是用户只能盲点提交。
+# 仍未定义：**标准服务目录（`GET /catalog/**`）的 C 端浏览（#75，属目录路线）**、评价（#79）、
+# AI 对话与分诊见 docs/design/ai-service.md。
+#
+# 交易域的接口形状按已拍板的 ADR 写：ADR-0038（订单状态机 / 核销凭证 / 权益码 / 积分）、
+# ADR-0036（钱在门店付）、ADR-0034（下单复用目录区间校验）、ADR-0037（角色与券池）、
+# ADR-0039（邀请归因）、ADR-0040（三道照片墙）、ADR-0044 / 0045 / 0046（券池 / 权益 / 邀请积分的实现口径）。
+# ADR 没定的一律标 **（待澄清：…）**，不自己拍。
 #
 # 契约先于代码（ADR-0005）：**前端类型由契约生成**（pnpm --filter @pet-health/shared gen:api），
 # **后端 DTO 手写**但必须与契约对齐。改了这里就要重跑生成，CI 会检查生成物是否同步。
@@ -19,8 +32,11 @@ info:
 
     两条贯穿全部接口的约定：
 
-    - **鉴权**：除 `/auth/**` 外都要求 `Authorization: Bearer <access_token>`，
-      Token 的登录域必须是 `app`（ADR-0012）。C 端 Token 调服务者后台接口一律 40100。
+    - **鉴权**：除 `/auth/**` 与**标注了 `security: []` 的只读浏览接口**外，都要求
+      `Authorization: Bearer <access_token>`，Token 的登录域必须是 `app`（ADR-0012）。
+      C 端 Token 调服务者后台接口一律 40100。
+      只读浏览为什么不需要身份：**「游客」不是角色**——未登录就是没有身份，而浏览服务者与详情
+      不需要身份（ADR-0037 第一节）。带令牌调用也不改变结果（这两条接口没有任何个性化）。
     - **越权**：所有资源按归属校验（交付文档 6.3）。**别人的资源一律按不存在处理**（40400），
       不返回 40300——40300 会泄露「这个 id 存在」这一事实。
 
@@ -39,7 +55,11 @@ tags:
   - name: score
     description: 健康评分（五维，算法见 ADR-0018）
   - name: record
-    description: 档案记录（本期只做防疫：疫苗 / 驱虫日期）
+    description: 档案记录（打卡之外的档案事实：防疫、分项、就医、时间轴）
+  - name: report
+    description: 健康报告（周报 / 月报 / 行为改善 / 卫生评分；决策见 ADR-0031）
+  - name: care
+    description: 专项照护模式（老年 / 慢病自动开启；决策见 ADR-0032）
   - name: message
     description: 消息中心（健康提醒 + 业务通知，决策见 ADR-0019）
   - name: file
@@ -48,6 +68,28 @@ tags:
     description: AI 健康咨询（切片 #98；分级标准与红线见 ADR-0021，模型调用在独立服务里，见 ADR-0009）
   - name: compliance
     description: 合规文档（切片 #74；正文占位、待法务定稿，见 ADR-0025）
+  - name: order
+    description: 订单与号源（四态状态机、核销码、三道照片墙；决策见 ADR-0038 / ADR-0036 / ADR-0040）
+  - name: coupon
+    description: 我的券（券的 C 端：查看、下单锁定、取消释放；决策见 ADR-0037 / ADR-0044）
+  - name: points
+    description: 积分中心（积分与任务，只兑平台补贴券；决策见 ADR-0038 第四节 / ADR-0046）
+  - name: rights
+    description: 我的权益（每个权益码是否生效 + 来源 + 到期；决策见 ADR-0038 第三节 / ADR-0045）
+  - name: invite
+    description: 邀请（我的邀请码与进度、注册归因；决策见 ADR-0039 第一节 / ADR-0046）
+  - name: community
+    description: |
+      社区：经验卡片与问答互助（切片 #84 / F020）。**慢病社群后置**——它需要慢病标签聚合的内容流
+      与内容种子，两样现在都没有，先做就是一个没人发帖的空壳（ADR-0050 第一节）。
+      嵌入位置在首页与档案页的侧栏，**不做独立 Tab**；发文需权益码 `community.post`，
+      内容一律进审核（ADR-0041 第一节）。
+  - name: provider
+    description: |
+      服务者与目录的 C 端浏览（**只读**；决策见 ADR-0034 / ADR-0035 / ADR-0037）：
+      按分类与关键词找店、看店、看这家店在架的服务项与价格。
+      **不需要身份**（ADR-0037 第一节），且**不含敏感字段**：联系电话按 ADR-0049 第二节脱敏，
+      资质只给摘要（**证照编号不回显**）。标准服务目录本身（`GET /catalog/**`）仍未定义。
 
 security:
   - bearerAuth: []
@@ -256,7 +298,7 @@ paths:
                     properties:
                       data:
                         type: array
-                        items: { $ref: "#/components/schemas/Pet" }
+                        items: { $ref: "#/components/schemas/PetView" }
     post:
       tags: [pet]
       summary: 添加宠物
@@ -276,7 +318,7 @@ paths:
                   - $ref: "./common.yaml#/components/schemas/ApiResponse"
                   - type: object
                     properties:
-                      data: { $ref: "#/components/schemas/Pet" }
+                      data: { $ref: "#/components/schemas/PetView" }
         "400":
           description: 参数错误（40001）
 
@@ -296,7 +338,7 @@ paths:
                   - $ref: "./common.yaml#/components/schemas/ApiResponse"
                   - type: object
                     properties:
-                      data: { $ref: "#/components/schemas/Pet" }
+                      data: { $ref: "#/components/schemas/PetView" }
         "404":
           $ref: "./common.yaml#/components/responses/NotFound"
     put:
@@ -319,7 +361,7 @@ paths:
                   - $ref: "./common.yaml#/components/schemas/ApiResponse"
                   - type: object
                     properties:
-                      data: { $ref: "#/components/schemas/Pet" }
+                      data: { $ref: "#/components/schemas/PetView" }
         "404":
           $ref: "./common.yaml#/components/responses/NotFound"
     delete:
@@ -355,7 +397,7 @@ paths:
                   - $ref: "./common.yaml#/components/schemas/ApiResponse"
                   - type: object
                     properties:
-                      data: { $ref: "#/components/schemas/Pet" }
+                      data: { $ref: "#/components/schemas/PetView" }
         "404":
           $ref: "./common.yaml#/components/responses/NotFound"
 
@@ -491,7 +533,7 @@ paths:
                     properties:
                       data:
                         type: array
-                        items: { $ref: "#/components/schemas/EpidemicRecord" }
+                        items: { $ref: "#/components/schemas/EpidemicRecordView" }
         "404":
           $ref: "./common.yaml#/components/responses/NotFound"
     post:
@@ -501,7 +543,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/EpidemicRecordInput" }
+            schema: { $ref: "#/components/schemas/EpidemicRecordRequest" }
       responses:
         "200":
           description: 创建成功
@@ -512,7 +554,7 @@ paths:
                   - $ref: "./common.yaml#/components/schemas/ApiResponse"
                   - type: object
                     properties:
-                      data: { $ref: "#/components/schemas/EpidemicRecord" }
+                      data: { $ref: "#/components/schemas/EpidemicRecordView" }
         "400":
           description: 参数错误（40001）
   /pets/{pet_id}/epidemic-records/{record_id}:
@@ -646,10 +688,15 @@ paths:
   /messages/{message_id}:
     delete:
       tags: [message]
-      summary: 删除单条消息（软删除，幂等）
+      summary: 删除单条消息（软删除）
       description: |
         删除不等于关闭该类型：用户删掉这一条，不代表以后不想收这类提醒。
         要停止某一类请用 `/messages/settings`。
+
+        **不幂等**：重复删除同一条（以及删别人的）一律 40400——消息是顶层资源，
+        按「不存在与越权同码」处理，免得用 id 探测存在性（口径见 docs/conventions.md）。
+        宠物名下的子资源（打卡分项、防疫记录）相反：先校验归属（不是自己的宠物 40400），
+        自身删除幂等（没有也返回成功）。
       parameters:
         - name: message_id
           in: path
@@ -705,7 +752,7 @@ paths:
                     properties:
                       data:
                         type: array
-                        items: { $ref: "#/components/schemas/ReminderSetting" }
+                        items: { $ref: "#/components/schemas/ReminderSettingView" }
     put:
       tags: [message]
       summary: 修改某类提醒的开关
@@ -715,7 +762,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/ReminderSettingInput" }
+            schema: { $ref: "#/components/schemas/ReminderSettingRequest" }
       responses:
         "200":
           description: 修改后的全部开关
@@ -728,7 +775,7 @@ paths:
                     properties:
                       data:
                         type: array
-                        items: { $ref: "#/components/schemas/ReminderSetting" }
+                        items: { $ref: "#/components/schemas/ReminderSettingView" }
         "400":
           description: 参数错误（40001），含「该类型不可关闭」
 
@@ -757,7 +804,338 @@ paths:
                   - $ref: "./common.yaml#/components/schemas/ApiResponse"
                   - type: object
                     properties:
-                      data: { $ref: "#/components/schemas/HealthScore" }
+                      data: { $ref: "#/components/schemas/HealthScoreView" }
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+
+  # ---------- 档案分项与时间轴（切片 #102，字段清单与多源规则见 ADR-0030）----------
+  #
+  # 分项是**原始记录**（`archive_record` 的行），评分是它们的派生视图（ADR-0018 / ADR-0030）——
+  # 所以这里没有第二套评分口径。
+  #
+  # 8 个分项的读写分工：
+  #   metrics / diet / behavior / mood / hygiene    读走本组接口；写走打卡（六项一天一条，幂等）
+  #   documents（防疫 + 证件）                       防疫写走 /epidemic-records，证件写走本组接口
+  #   elderly                                       读写都走本组接口（照护模式未开启时 enabled=false）
+  #   media                                         读 /pets/{id}/files（biz_type=profile）；本组接口不落库
+  /pets/{pet_id}/archive-sections:
+    parameters:
+      - $ref: "#/components/parameters/PetId"
+    get:
+      tags: [record]
+      summary: 档案分项概览（8 个入口）
+      description: |
+        交付文档 4.16.4 画的 8 个模块入口：核心指标 / 证件与合规 / 行为 / 情绪 / 卫生 / 饮食 / 老年专项 / 照片视频。
+        返回**固定 8 项、顺序固定**（前端直接渲染，不需要自己排），每项带副行说明与已录条数。
+
+        「老年专项」在专项照护未开启时 `enabled=false`（`disabled_reason` 说明原因），前端显示灰态入口；
+        「照片视频」的 `content_source=files`——它的内容在文件模块（`biz_type=profile`），本接口只给入口与说明。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/ArchiveSectionView" }
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+
+  /pets/{pet_id}/archive-records:
+    parameters:
+      - $ref: "#/components/parameters/PetId"
+    get:
+      tags: [record]
+      summary: 分项记录列表（分页）
+      description: |
+        按业务日期倒序。`section` 不传则返回全部分项（含打卡六项与防疫——它们也是这张表的行）。
+
+        **多源写入的展示口径**（ADR-0030）：同一分项可能有多条不同来源的记录，
+        接口给每条标 `authoritative`（该分项的权威来源，见 `ArchiveRecordView` 的说明），
+        前端把权威那条作为「当前值」，其余按时间列出——**不做静默覆盖，两条都在**。
+      parameters:
+        - name: section
+          in: query
+          description: |
+            分项编码；不传则全部。
+
+            **`section=media` 返回 40001**：照片视频的内容在文件模块（`/files?biz_type=profile`），
+            这条接口读不到它——返回空列表会被读成「没有照片」，而事实是「不在这个接口里」。
+          schema:
+            type: string
+            enum: [metrics, documents, behavior, mood, hygiene, diet, elderly, media, medical]
+        - name: from
+          in: query
+          description: 起始业务日期（含）`YYYY-MM-DD`
+          schema: { type: string, example: "2026-09-01" }
+        - name: to
+          in: query
+          description: 结束业务日期（含）`YYYY-MM-DD`
+          schema: { type: string, example: "2026-09-30" }
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/ArchiveRecordView" }
+        "400":
+          description: 参数错误（40001），含日期格式与分项编码非法
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+    post:
+      tags: [record]
+      summary: 录入一条分项记录
+      description: |
+        可写的**只有列表语义的分项**：`metrics`（其他核心指标，落 `category=10`）、
+        `documents`（证件，落 11）、`elderly`（老年专项，落 12）、`medical`（就医，落 8）。
+
+        **体重与排泄不在可写范围**（传 `metrics` 时落的是「其他指标」这一档）：它们是打卡六项，
+        有「一天一条、重复即更新、可撤销、进评分完整度」的语义，必须走 `/check-ins`；
+        防疫同理走 `/epidemic-records`。写接口按 `section` 落 `category`，服务端不信任客户端传来的编码。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ArchiveRecordRequest" }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ArchiveRecordView" }
+        "400":
+          description: 参数错误（40001），含分项不可写、日期超窗（只能录今天或过去 7 天）
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+
+  /pets/{pet_id}/archive-records/{record_id}:
+    parameters:
+      - $ref: "#/components/parameters/PetId"
+      - name: record_id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    put:
+      tags: [record]
+      summary: 修改一条分项记录
+      description: |
+        只允许改**本接口写入的分项**（metrics / documents / elderly / medical）——打卡与防疫有自己的接口，
+        从这条路径改它们会让「一天一条」的幂等语义出现两套入口。
+        `section` 不可改（要换分项就删了重录），日期同样受 7 天窗口约束。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ArchiveRecordRequest" }
+      responses:
+        "200":
+          description: 修改后的记录
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ArchiveRecordView" }
+        "400":
+          description: 参数错误（40001）
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+    delete:
+      tags: [record]
+      summary: 删除一条分项记录（软删除，幂等）
+      description: |
+        先校验宠物归属（不是自己的宠物 40400），**子资源自身删除幂等**（没有也返回成功）——
+        与宠物名下的打卡分项、防疫记录同一口径（docs/conventions.md）。
+      responses:
+        "200":
+          description: 已删除
+          content:
+            application/json:
+              schema:
+                $ref: "./common.yaml#/components/schemas/ApiResponse"
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+
+  /pets/{pet_id}/timeline:
+    parameters:
+      - $ref: "#/components/parameters/PetId"
+    get:
+      tags: [record]
+      summary: 健康时间轴（分页，倒序）
+      description: |
+        **只收四类事件**（ADR-0030，交付文档 4.16.4 的「圆点 + 日期 + 事件」）：
+
+        - `medical` 就医记录（`category=8`）
+        - `vaccine` / `deworm` 疫苗与驱虫（`category=7`，按子类型分）
+        - `abnormal` **异常**打卡（`category` 1–6 且标注异常）
+        - `provider` 服务者报工（`source=3`）
+
+        **正常打卡不进时间轴**：一天最多 6 条日常记录，全放进来会把时间轴淹成流水账，
+        失去「回头找那次就医 / 那次异常」的检索价值（它们在自己的打卡卡与分项列表里）。
+      parameters:
+        - name: type
+          in: query
+          description: 事件类型；不传则四类都返回
+          schema:
+            type: string
+            enum: [medical, vaccine, deworm, abnormal, provider]
+        - name: from
+          in: query
+          description: 起始日期（含）`YYYY-MM-DD`
+          schema: { type: string, example: "2026-09-01" }
+        - name: to
+          in: query
+          description: 结束日期（含）`YYYY-MM-DD`
+          schema: { type: string, example: "2026-09-30" }
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/TimelineEventView" }
+        "400":
+          description: 参数错误（40001）
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+
+  # ---------- 健康报告（切片 #115，决策见 ADR-0031）----------
+  /pets/{pet_id}/health-reports:
+    parameters:
+      - $ref: "#/components/parameters/PetId"
+    get:
+      tags: [report]
+      summary: 健康报告列表（按期回看）
+      description: |
+        四类报告：`type` 1 周报 / 2 月报 / 3 行为改善 / 4 卫生评分，按周期倒序。
+
+        **读取时惰性生成当期**（与消息中心的惰性补算同一模式，ADR-0031）：不传 `type` 时生成当期周报与月报，
+        传了 `type` 就生成该类的当期。生成是**幂等的**（同宠物 + 类型 + 周期起点唯一），
+        同一天再次读取是**更新当期那一行**（当天又打了卡，当期报告应跟着变）。
+
+        报告由**规则模板拼装、不经过模型**：每个数字都与评分卡、趋势图同源。
+        **历史周期不回改**——报告记的是**当时**的口径。
+      parameters:
+        - name: type
+          in: query
+          description: 报告类型；不传则返回全部类型（并只惰性生成当期周报与月报）
+          schema: { type: integer, enum: [1, 2, 3, 4] }
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/HealthReportView" }
+        "400":
+          description: 参数错误（40001）
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+
+  # ---------- 专项照护模式（切片 #116，决策见 ADR-0032）----------
+  /pets/{pet_id}/care-mode:
+    parameters:
+      - $ref: "#/components/parameters/PetId"
+    get:
+      tags: [care]
+      summary: 专项照护模式状态
+      description: |
+        **它是派生结果，不是存储的状态**：年龄按 `birthday` 实时算（≥ 阈值）或有慢病标记即开启，
+        慢病解除即退出（ADR-0024 第二节 + ADR-0032）。
+
+        打开这项功能对用户意味着什么，`effects` 里逐条说明（评分多一维、档案多一个分项、
+        AI 咨询带专项上下文、提醒按照护档）。**这些说明文案由后端给**——医疗相关的口径散落到前端
+        一定会漏改（与 AI 免责声明同一理由）。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CareModeView" }
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+    put:
+      tags: [care]
+      summary: 打开 / 关闭专项照护模式
+      description: |
+        **只用于「用户手动关闭」**（`enabled=false`）：关闭后历史数据全部保留，
+        但**老年维不再计入总分**，服务端会**重算当日评分行**（否则趋势图上会留着一条按旧口径算的点）。
+
+        `enabled=true` 表示**清除手动关闭**、回到派生结果：如果宠物确实不满年龄且没有慢病，
+        返回的 `active` 仍是 false——**不能把一只 2 岁的健康宠物手动「打开」成照护模式**。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CareModeRequest" }
+      responses:
+        "200":
+          description: 修改后的状态
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CareModeView" }
         "404":
           $ref: "./common.yaml#/components/responses/NotFound"
 
@@ -969,6 +1347,1471 @@ paths:
                     properties:
                       data: { $ref: "#/components/schemas/AiConsultView" }
 
+  /pets/{pet_id}/ai-consults/{consult_id}/transfer:
+    parameters:
+      - name: pet_id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+      - name: consult_id
+        in: path
+        required: true
+        description: 要转人工的那次 AI 咨询 id
+        schema: { type: integer, format: int64 }
+    post:
+      tags: [ai]
+      summary: 转人工咨询（把这次咨询交给平台人工跟进）
+      description: |
+        **口径（本项目裁决）**：转人工 = **登记一条人工咨询工单，由平台运营跟进**（用户在消息中心
+        收到「已受理」，运营回复后再收到一条）。它**不接支付**：交付文档写「39 元/次」，
+        而本项目钱在门店付、平台不经手资金（ADR-0036），没有线上收费路径——要收费得先定收款主体。
+        它**也不直接派给服务者**：派给谁需要一套匹配规则（就近 / 接诊能力 / 排班），那是一张独立的票；
+        运营先接住，人工判断后再转给合适的门店。
+
+        **幂等**：一次咨询只能转一次（工单表在 `consult_id` 上唯一）。重复提交**不是错误**，
+        返回同一条工单——用户连点两下不该先看到成功再看到失败。
+
+        请求体为空：工单只引用那次咨询（问题原文已在留痕里，字段级加密），
+        不再开一个用户自由文本字段（多一处加密面，且不带来新信息）。
+      responses:
+        "200":
+          description: 已受理（含重复提交时的同一条工单）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/HumanConsultView" }
+        "404":
+          description: 咨询不存在或不属于该宠物（40400：不泄露「这个 id 存在但不是你的」）
+
+  # ---------- 知识库浏览（F024 / F025；知识层的**只读**出口）----------
+  #
+  # 为什么要有这一组：知识条目此前只有 AI 咨询能引用（`AiConsultView.citations`），用户看不到
+  # 「平台到底知道什么」。这一组把它开放成可浏览的知识库：按分类翻、按关键词搜、看单条正文。
+  #
+  # 三条口径：
+  #
+  #   1. **需要登录**：与社区同属「内容面」——权限矩阵里游客只给「浏览服务 / 商家」，
+  #      知识库不属于那条；而且条目要展示复核状态，是「给人看的内容」而不是「找服务」。
+  #   2. **`review_status` 必须展示**：平台的知识条目多数是 `pending_review`（工程按公开兽医共识起草、
+  #      待合作兽医复核，ADR-0025 第二节），所以契约把它作为必填字段下发——不许把未复核说成已复核（ADR-0033）。
+  #   3. **列表不下发正文**（`body` 为空）、详情才有：省一次几 KB 的传输，也让「点进去看」有意义。
+  #      中文匹配与 AI 咨询的检索**同一套**（MySQL ngram 短语，子串可命中）：同一张表不该有两种搜索行为。
+  /knowledge/entries:
+    get:
+      tags: [knowledge]
+      summary: 知识条目列表（按分类翻 / 按关键词搜）
+      description: |
+        只返回**可读**的条目：复核通过或待复核（与 AI 咨询能引用的同一批）；草稿与已删除不出现。
+        排序按分类的展示顺序（运营维护的词典顺序）→ 条目编号：知识不是内容流，编号即稳定顺序。
+
+        `keyword` 走与 AI 咨询检索同一套中文匹配（ngram 短语），所以「犬瘟」能命中「犬瘟热」。
+      parameters:
+        - name: category_code
+          in: query
+          description: 分类编码（breed / vaccine / antiparasitic / triage / disease / behavior / nutrition / care / first_aid / drug）；不传表示全部
+          schema: { type: string, maxLength: 32 }
+        - name: keyword
+          in: query
+          description: 关键词（标题 / 摘要 / 正文），最长 64 字符
+          schema: { type: string, maxLength: 64 }
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/KnowledgeEntryView" }
+        "400":
+          description: 参数错误（40001）：关键词超长、页码或每页条数越界
+
+  /knowledge/entries/{code}:
+    parameters:
+      - name: code
+        in: path
+        required: true
+        description: 条目编号（形如 K-0011）
+        schema: { type: string, maxLength: 32 }
+    get:
+      tags: [knowledge]
+      summary: 一条知识条目的正文
+      description: |
+        详情比列表多 `body`（正文）与 `source_*`（来源可追溯）。**不可读的条目不在这里出现**：
+        不存在的编号、已删除、或复核状态不可读，一律 **40400**——与「看不到」同码，
+        免得用编号探测「哪些条目存在但被撤下了」。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/KnowledgeEntryView" }
+        "404":
+          description: 条目不存在或不可读（40400）
+
+  # ---------- AI 帮我找服务（F011，**规则版**；决策见 ADR-0050 第二节）----------
+  #
+  # 交付文档 F011 的诉求是「描述症状 → 推荐项目」。这一条**不调模型**：先用已入库的
+  # 症状分诊词表把句子里的症状认出来（含「拉稀」这类口语别名），再用「症状 → 目录项」的
+  # 映射表给出推荐。选规则版的理由是**推荐理由要说得出来**——「因为你说腹泻，建议常见病诊疗」
+  # 里的每个字都来自数据；模型版在知识条目还没复核的情况下只能给出一段编出来的理由。
+  # 模型的意图路由（ADR-0025 第五节）将来是**叠加**，不是替换。
+  #
+  # 三条口径：
+  #
+  #   1. **需要身份**（与其它 AI 功能一致，本文件顶部没有 `security: []` 就是要求 bearer）：
+  #      推荐本身不含隐私数据，但它触发一次 AI 侧调用、且是「AI 功能」的一部分；
+  #   2. **认不出症状不是错误**：返回 200 + 空 `matched`，`notice` 里给下一步（直接浏览目录）。
+  #      AI 侧读不到知识时同样 200——`degraded=true` + 一句「暂时认不出」（ADR-0026 的口径）；
+  #   3. **不做医疗判定**：`matched` 里带出分诊条目的就医紧迫程度（`risk_level`），
+  #      红色的必须同时出现在 `notice` 里（与 AI 咨询同一条安全要求）。
+  /service-recommendations:
+    post:
+      tags: [ai]
+      summary: AI 帮我找服务（描述症状 → 推荐项目，规则版）
+      description: |
+        输入一句话（「我家猫今天拉稀两次」），返回**认出来的症状**与**推荐的服务项目**。
+        推荐理由是拼出来的、可解释的：「因为你说腹泻，建议先做常见病诊疗」——
+        症状词来自知识侧的受控词典，项目来自标准目录，两者之间的对应关系是运营可调的映射表。
+
+        `recommendations` 里的项目**只到「项目」这一级、不指门店**：哪家店能做、各自多少钱，
+        用 `GET /catalog/items/{item_code}/providers` 查——推荐链路不掺和门店状态
+        （掺和了就要面对「这家今天不上架了」的同步问题）。
+
+        `risk_level` 是**认出来的症状**对应的就医紧迫程度（1 绿 / 2 黄 / 3 红，与 AI 咨询同一口径），
+        取命中里最高的那个；一个症状都没认出来时为空。它**不是诊断**，也不改变推荐结果——
+        它只影响界面上的提示级别。`notice` 里必须把红色风险说出来（前端不许自己拼这句话）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceRecommendationRequest" }
+      responses:
+        "200":
+          description: 推荐结果（可能为空，也可能是降级答复）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ServiceRecommendationView" }
+        "400":
+          description: 参数错误（40001）：描述为空或超过 500 字
+
+
+  # ---------- 服务者与目录的 C 端浏览（**只读**；决策见 ADR-0034 / ADR-0035 / ADR-0037）----------
+  #
+  # 这一组补的是一道具体的缝：**用户在下单页看不到价格**。号源查询回答「什么时候能做」，
+  # 订单创建回答「总共多少钱」，但没有一条接口回答「这家店做这个项目多少钱」——
+  # 于是用户只能盲点提交，靠订单返回的 `estimated_pay_amount` 才知道价格（ADR-0047 的推进顺序里
+  # 目录路线欠着这一半）。两条接口都在这一组里补齐：
+  #
+  #   - `GET /providers`          —— 找店（按分类 / 关键词 / 分页）；
+  #   - `GET /providers/{id}`     —— 看店（资质摘要 + 营业时间 + **在架服务项与价格**）；
+  #   - `GET /catalog/categories` —— 标准目录的六个分类；
+  #   - `GET /catalog/items`      —— 目录项（项目 + 平台区间价）；
+  #   - `GET /catalog/items/{item_code}/providers`
+  #                               —— **按项目找店**：做这个项目的门店与它们的定价。
+  #
+  # 四条贯穿这一组的口径：
+  #
+  #   1. **只读，且不需要身份**（ADR-0037 第一节「游客不是角色，只读接口不需要身份」）——
+  #      所以两条都标了 `security: []`：未登录也能浏览，带令牌也不改变结果；
+  #   2. **可见性口径只有一个**（本组接口的「不存在」包含四种情况）：服务者未过审 / 已驳回 /
+  #      已冻结，或**资质材料全部过期**——最后一条与上架门禁用的是同一个判断（ADR-0035 决定 6 / 7：
+  #      「只判有没有一份没过期的材料」），所以它对调用方一律表现为 **40400**，
+  #      与「这个 id 不存在」同码（docs/conventions.md 的越权 / 不可用口径）；
+  #   3. **不含敏感字段**：联系电话按 ADR-0049 第二节脱敏（`138****8888`），
+  #      资质只给摘要（材料名 + 有效期），**证照编号连脱敏值都不回显**——
+  #      C 端用户没有核验证件号的需求，而少一个字段就少一处泄漏面；
+  #   4. **目录侧只出「启用」的分类与项目**：停用的分类不列、停用的项目不列（`status=1` 且未软删）。
+  #      停用是运营的动作，意味着「这个项目暂时不对外」——把它列出来只会让人白跑一趟。
+
+  /providers:
+    get:
+      tags: [provider]
+      summary: 服务者列表（找店：分类 / 关键词 / 分页）
+      description: |
+        只返回**可下单的店**：`status=1`（审核通过且未冻结）**且**至少有一份未过期的资质材料
+        ——过滤口径照 ADR-0035（决定 6 / 7）：资质全部过期的服务者已被自动下架全部在架服务项，
+        他出现在列表里只会把用户引到一个下不了单的详情页。
+
+        关键词在**门店名称**上模糊匹配（服务项名称不参与：那是详情页里的事，
+        在列表上匹配服务名会让「搜疫苗」把整条街的医院都列出来）。排序固定为
+        **考核等级优先（战略 > 优选 > 基础）→ 评分降序 → id 升序**：等级即交付文档 2.3 的
+        「等级决定 AI 推荐优先级」（考核算出 `provider.level`，见 ADR-0052 第三节）；
+        `rating` 是**评价聚合出来的平均分**（口径见 `GET /providers/{provider_id}/reviews`），
+        没有评价的店取数据库默认值——给一个确定的顺序，不把「数据库碰巧返回的顺序」当排序。
+        **没有月度成绩的新店** `level` 就是默认的「基础」（1）——等级只分三档，
+        新店不会被特殊对待（既不优待也不惩罚），要往上走只能靠考核结果。
+
+        **本接口不需要身份**（`security: []`，ADR-0037 第一节）。响应里没有 `status` / `level` /
+        `monthly_score` 这些内部字段：C 端看到的只有「能对外说的那一面」。
+
+        **（待澄清：是否要求「至少有一个已上架服务项」才进列表——ADR-0035 只写了按服务者状态过滤，
+        没写这一条；本契约按「不要求」写（详情页的 `services` 为空时如实说「暂无在架服务」），
+        要做成硬条件需要在契约里加一句。**）
+      security: []
+      parameters:
+        - name: type
+          in: query
+          description: 服务者分类（交付文档 5.2 的六大类）：1 医院 / 2 洗护 / 3 训犬 / 4 寄养上门 / 5 食品用品 / 6 间接服务；不传表示全部
+          schema: { type: integer, minimum: 1, maximum: 6 }
+        - name: keyword
+          in: query
+          description: 门店名称关键词（模糊匹配），最长 32 字符；不传表示不过滤
+          schema: { type: string, maxLength: 32 }
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功（评分降序，同分按 id 升序）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/ProviderSummaryView" }
+        "400":
+          description: 参数错误（40001）：类型不在 1–6、关键词超长、页码或每页条数越界
+
+  /providers/{provider_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProviderId"
+    get:
+      tags: [provider]
+      summary: 服务者详情（看店：资质摘要 + 营业时间 + 在架服务项与价格）
+      description: |
+        **这一条就是「下单页看不到价格」的答案**：`services` 是这家店**已上架**的服务项
+        （`provider_service.status=1`，待审核 / 已下架 / 已驳回都不出现）连同它当下的定价
+        `price`——价格是服务者在平台区间内定的那个值（ADR-0034 第三节：区间由运营维护，
+        服务者只能在区间内定价；下单时服务端还会再校验一次，越界返回 90001）。
+
+        价格是**展示值**，不是收款事实：钱在门店直接付给服务者（ADR-0036）。
+
+        `qualifications` 只给**已通过审核且未过期**的材料摘要（类型 / 名称 / 有效期），
+        **不给证照编号**；`business_hours` 里不出现的星期几就是休息（ADR-0035 与 provider.yaml
+        的同一约定：用「不出现 = 不营业」而不是 `closed: true`，后者会出现自相矛盾的行）。
+
+        **本接口不需要身份**（`security: []`）。以下四种情况一律 **40400**：
+        服务者未过审 / 已驳回 / 已冻结 / 资质材料全部过期——「看不到」与「不存在」对外是同一件事。
+        `services` 为空是**正常结果**（这家店此刻没有在架服务），前端照实说「暂无在架服务」，
+        不要把它显示成错误。
+      security: []
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ProviderDetailView" }
+        "404":
+          description: 服务者不存在、不可浏览（未过审 / 已驳回 / 已冻结）、或资质已全部过期（40400）
+
+  # ---------- 评价晒单（第一版：评分 + 一句话；决策见下方两条接口的说明）----------
+  #
+  # 这一组只有两条，一条写一条读。**路径按调用方语义、数据按归属**：
+  #
+  #   - `POST /orders/{order_id}/review` —— 评价属于订单，写在订单域；
+  #   - `GET /providers/{provider_id}/reviews` —— 读的是「一家店的评价」，
+  #     所以路径挂在门店（服务者）域下；但**这些行归订单域**（`order_review` 是 ph-order 的表），
+  #     由 ph-order 来服务这条读路径。**不为了「路径在门店域」把表挪给 ph-provider**：
+  #     评价是订单的产物（没有订单就没有评价），唯一键「一单一评」也挂在 `order_id` 上。
+  #
+  # 第一版**刻意不做**（别把它们当成漏了）：图片评价、追评、匿名、服务者回复、内容审核、
+  # 评价维度拆分（服务 / 价格 / 环境分开打分）。这一版要的是「用户能评价、门店评分会动」这个闭环。
+  /providers/{provider_id}/reviews:
+    parameters:
+      - $ref: "#/components/parameters/ProviderId"
+    get:
+      tags: [provider, order]
+      summary: 某门店的评价列表（分页，最近的在前）
+      description: |
+        门店详情页的「用户评价」区块。
+
+        **需要登录**（未登录 → 40100），与知识库 / 社区 / AI 咨询同属「内容面」：权限矩阵里
+        游客只给「浏览服务」（见本文件知识库那一组的同一条口径）。评价是用户写下的内容，
+        与「这家店多少钱、有什么资质」不是一类东西——后者才是游客该看的。
+        **（这条不是「忘了加免登录」**：C 端的免登录只读路由表在 {@code JwtAuthenticationFilter}
+        里，往那里加一条要连带想清楚「游客还能看哪些内容」，属另一个决定。**）**
+
+        `rating` 与 `content` 都是用户自己填的：`content` 可以为空（评分是必填的），
+        列表要能显示「只打了分没写字」的行——合约上它是 `null`，不是空串。
+
+        **本接口不做门店可见性判定**（不在「服务者未过审 / 已驳回 / 已冻结 / 资质全过期」时返回 40400）：
+        那套口径属于 ph-provider 的浏览面，而本接口的数据供给方是订单域。不可浏览的店，
+        它的门店详情页本身就打不开，用户到不了这个区块。与之对应：
+        不存在的 `provider_id` 返回 **200 + 空列表**，不是 40400。
+
+        门店的**平均分**不在这条接口里，它是 `ProviderDetailView.rating`（同一批评价的聚合值，
+        评价成功时由订单域算好回写；没有评价的店是数据库默认值）。
+        本接口的 `total` 是**评价条数**，两个数一起看才是「N 分 / M 条评价」。
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功（没有评价时 `list` 为空、`total` 为 0，不是错误）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/OrderReviewView" }
+        "400":
+          description: 页码或每页条数越界（40001）
+        "401":
+          description: 未登录或 Token 已过期（40100 / 40101）——评价是「内容面」，要身份
+
+  /catalog/categories:
+    get:
+      tags: [catalog]
+      summary: 标准服务目录的分类（六个大类）
+      description: |
+        交付文档 5.2 的六个分类（医院 / 洗护美容 / 训犬 / 寄养上门 / 食品用品 / 间接服务），
+        按运营维护的 `sort_order` 升序。**只返回启用中的分类**（`status=1`），停用的不列。
+
+        为什么要给 C 端这条：分类名与顺序由运营维护在库里，它被**两处**直接使用——按项目
+        浏览的导航（`GET /catalog/items` 的分组），以及运营后台的目录维护页。这两处读服务端，
+        运营改名立刻生效。
+
+        **服务页的「六个筛选项」不在这条路径上**：那一排筛的是**服务者类型**（库里 1–6 的固定
+        枚举，见 `ProviderSummaryView.type`），标签由 C 端自己列出（`ServicesView.vue` 的
+        `CATEGORY_FILTERS`），卡片上的分类名仍取服务端的 `type_name`。也就是说：
+        改这两个接口里的分类名不会改到那排筛选项，反之亦然——两者是不同的东西，不是一个抄了另一个。
+
+        `item_count` 是这个分类下**启用中**的目录项数（停用的不计），用于列表页的「N 个项目」。
+      security: []
+      responses:
+        "200":
+          description: 成功（按 sort_order 升序）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/CatalogCategoryView" }
+
+  /catalog/items:
+    get:
+      tags: [catalog]
+      summary: 目录项列表（项目 + 平台区间价）
+      description: |
+        **平台区间价是给用户看的参考范围，不是某家店的报价。**某家店做这个项目多少钱要看
+        `GET /catalog/items/{item_code}/providers` 或门店详情——价格由服务者在区间内自行定价
+        （ADR-0034 第三节），同一个项目在不同门店的价格可以不同。
+
+        `keyword` 在**项目名称**上模糊匹配（分类名不参与：分类靠 `category_code` 精确筛）。
+        排序按项目的 `sort_order` → `code` 升序：与运营后台里同一分类内看到的顺序一致——
+        两处顺序不同会让「我在后台排在第一个」的运营困惑。分类之间的顺序由 `GET /catalog/categories`
+        给（按分类的 `sort_order`），前端先按分类分组建展示即可，不必让分页查询跨表排序。
+
+        **只返回启用中的项目**（`status=1` 且未软删）：停用项不允许新增选品，对 C 端也没有意义。
+      security: []
+      parameters:
+        - name: category_code
+          in: query
+          description: 分类编码（HOSPITAL / GROOMING / TRAINING / BOARDING / SUPPLIES / INDIRECT）；不传表示全部
+          schema: { type: string, maxLength: 32 }
+        - name: keyword
+          in: query
+          description: 项目名称关键词（模糊匹配），最长 32 字符；不传表示不过滤
+          schema: { type: string, maxLength: 32 }
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/CatalogItemView" }
+        "400":
+          description: 参数错误（40001）：关键词超长、页码或每页条数越界
+
+  /catalog/items/{item_code}/providers:
+    parameters:
+      - name: item_code
+        in: path
+        required: true
+        description: 目录项编码（形如 HE-004）
+        schema: { type: string, maxLength: 32 }
+    get:
+      tags: [catalog]
+      summary: 做这个项目的门店（按项目找店）
+      description: |
+        反向的那一半：`/providers` 是「这家店做什么」，这一条是「这个项目哪家店能做」。
+
+        只列**可下单的门店**（与 `/providers` 同一可见性口径：状态正常且有未过期资质），
+        并且**只列该项目在该店处于「已上架」状态**的那些（`provider_service.status=1`）——
+        待审核 / 已下架 / 已驳回都不出现，点了会 40400 的按钮不能给用户。
+
+        `price` 是**这家店自己的定价**（元，两位小数字符串；在平台区间内，下单时服务端会再校验一次）。
+        `service_id` 就是下单要传的那个 id（`OrderCreateRequest.service_id`）。
+
+        排序：**考核等级优先（战略 > 优选 > 基础）→ 评分降序 → 门店 id 升序**——
+        等级即「AI 推荐优先级」（ADR-0052 第三节）；`rating` 是评价聚合出的平均分
+        （与 `/providers` 同一口径），没有评价的店取数据库默认值。
+
+        项目不存在、被停用或已软删时 **40400**（与「这个项目没有门店做」是两件事：
+        后者返回 200 + 空列表）。
+      security: []
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功（没有门店做这个项目时 `list` 为空，不是错误）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/CatalogItemProviderView" }
+        "404":
+          description: 目录项不存在或已停用（40400）
+
+  # ---------- 交易域：号源与订单（切片 #77 / #109；决策见 ADR-0038 / ADR-0036 / ADR-0034 / ADR-0040）----------
+  #
+  # 这一组的三条口径写在这里，免得每个接口重复一遍：
+  #
+  #   - **钱在门店付**（ADR-0036）：订单上只有「总额 − 券面额 = 预估实付（`estimated_pay_amount`）」
+  #     这个**展示用计算值**。任何地方都不出现收款 / 资金 / 结算 / 退款字段——平台不经手资金，
+  #     核销只是履约确认，与钱彻底解耦（ADR-0038 第二节）；
+  #   - **四态 + 取消**（ADR-0038 第一节）：0 待接单 / 1 已预约 / 2 履约中 / 3 已完成 / 4 已取消。
+  #     非法迁移一律 **40900**（状态冲突，不是参数错误）；**没有「30 分钟未支付自动取消」**，
+  #     预约时间过后不核销只发提醒、超 24 小时标记异常进看板；
+  #   - **没有退款单**：取消与服务者清退都不产生任何资金动作，清退时未完成订单转「已取消」（ADR-0036）。
+  /providers/{provider_id}/appointment-slots:
+    parameters:
+      - $ref: "#/components/parameters/ProviderId"
+    get:
+      tags: [order]
+      summary: 某服务项在某天的可预约时段（号源）
+      description: |
+        下单前的号源查询：服务项在特定日期与时段上可被预约的**容量单位**，以时段为粒度
+        （CONTEXT.md 的号源条目、ADR-0038 第一节）。
+
+        只返回该服务者营业时间内、属于该服务项、且还没过去的时段。
+        **约满的时段照样返回**（`full=true`）：前端要把它显示成「已满」——让它从列表里消失，
+        用户会以为门店那天根本不营业。
+
+        `booked_count` 含「履约中」与「已完成」的订单：服务做完了也不释放号源（那段营业时间被用掉了）。
+        并发抢同一时段由服务端的唯一键 / 乐观锁兜住，后到者下单时得到 40900「该时段已被预约」
+        （ADR-0038 第一节）。
+
+        **（待澄清：时段的分割粒度与默认容量——按营业时间的整数小时还是按服务项时长、每个时段
+        初始容量由谁给，ADR-0038 只写了「按时段容量占用」，没写粒度。所以本契约只暴露
+        `capacity` / `booked_count` / `available_count` 三个数，数值从哪来留给实现。）**
+      parameters:
+        - name: service_id
+          in: query
+          required: true
+          description: 服务者的服务项 id（号源挂在服务项上，见 CONTEXT.md 的号源条目）
+          schema: { type: integer, format: int64 }
+        - name: date
+          in: query
+          required: true
+          description: 日期（YYYY-MM-DD）
+          schema: { type: string }
+      responses:
+        "200":
+          description: 成功（按时段先后升序）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AppointmentSlotView" }
+        "400":
+          description: 日期格式不对、或日期已过去（40001）
+        "404":
+          description: 服务者不存在 / 服务项不属于该服务者或未上架（40400）
+
+  /orders:
+    get:
+      tags: [order]
+      summary: 我的订单（分页 + 状态筛选）
+      description: |
+        只返回当前账号下的订单，按下单时间倒序。别人的订单一律按不存在处理（40400）。
+
+        **核销码不在列表里**：它是到店凭证，只出现在详情里，而且**到预约时间才可见**
+        （ADR-0038 第二节：太早泄漏等于把凭证挂在外面）。
+      parameters:
+        - name: status
+          in: query
+          description: 0 待接单 / 1 已预约 / 2 履约中 / 3 已完成 / 4 已取消；不传表示全部
+          schema: { type: integer, minimum: 0, maximum: 4 }
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/OrderSummaryView" }
+    post:
+      tags: [order]
+      summary: 创建订单（下单即占用号源；用券则同时锁定券）
+      description: |
+        下单成功即做两件事：① 占用一个号源；② `coupon_id` 非空时把那张券置为「已锁定」——
+        **下单锁定 → 取消释放 → 核销时券转「已用」**（ADR-0038 第一节的券交接口径，
+        三层对象见 ADR-0037 第三节）。
+
+        四条会被拒绝的规则：
+        - 该时段的号源已占满 → **40900**「该时段已被预约」（ADR-0038 第一节的并发口径）；
+        - 服务项未上架 / 不属于该服务者，或宠物不属于我 → **40400**（不可选项按不存在处理）；
+        - 预约时段不在营业时间内、时间已过去、字段格式不对 → **40001**；
+        - 券不可用 → 业务码（都是 HTTP 200）：**80001** 券不可用——券不属于我、已过期、
+          已被别的订单占用、或不满足门槛 / 适用范围；**80002** 券已核销——这张券已经被用掉了。
+          （ADR-0038 第二节给了这两个码第一个真实产出路径。）
+
+        服务端在锁券与建单之前会按**目录项的价格区间重新校验一次**（ADR-0034 第五节）：
+        服务者的定价若已被运营收窄到区间外，返回业务码 **90001**（HTTP 200），`message` 就是
+        「价格须在¥X-¥Y之间」——区间校验只有 `CatalogPricingApi.requirePriceInRange` 一处实现，
+        选品定价与下单共用它。
+
+        **钱在门店付**（ADR-0036）：订单只记录展示用的「预估实付」，不产生收款事实。
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderCreateRequest" }
+      responses:
+        "200":
+          description: 下单成功（返回订单详情）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/OrderView" }
+        "400":
+          description: 参数错误（40001）
+        "404":
+          description: 宠物不属于我 / 服务者或服务项不存在（40400）
+        "409":
+          description: 该时段已被预约（40900）
+
+  /orders/{order_id}:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      tags: [order]
+      summary: 订单详情（含核销码与照片墙进度）
+      description: |
+        一笔订单的完整视图：状态、门店与服务项、预约时段、金额、所用的券、
+        **6 位核销码**，以及**三道照片墙的进度**。
+
+        两条可见性规则：
+        - `redeem_code` **到预约时间才可见**（ADR-0038 第二节）。未到预约时间、订单已取消 /
+          已完成 / 未进入「已预约」时为 null；
+        - `photo_wall` 的槽位在订单进入「履约中」后才有内容（ADR-0040 第四节）。
+          `reportable` 与 `missing_slots` 由服务端算出来，**前端不要自己判**——
+          「三个槽位各至少一张才允许报工」是服务端的硬约束。
+
+        **界面必须写明**：本次服务的费用在门店直接付给服务者（ADR-0038 第二节 / ADR-0036），
+        `estimated_pay_amount` 只是展示用的预估。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/OrderView" }
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+
+  /orders/{order_id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    post:
+      tags: [order]
+      summary: 取消订单（按阶段：待接单直接取消；已预约发起取消申请）
+      description: |
+        取消规则**按阶段分**（ADR-0038 第一节），同一个入口两种结果，看订单当时的状态：
+        - **待接单**：直接取消 → 订单转「已取消」，号源与锁定的券一并释放；
+        - **已预约**：这里只是**发起取消申请**——订单仍是「已预约」，等门店同意
+          （门店同意 / 拒绝在服务者侧；拒绝必须填理由）；此时 `cancel_request_status=1 待门店处理`；
+        - **履约中**：**不可取消** → 40900（只能报工完成，或由运营干预）；
+        - **已完成 / 已取消**：40900（非法迁移）。
+
+        **没有超时自动取消**：预约时间过了没核销不会自动取消——自动取消会让用户白跑一趟店；
+        改为给服务者发超时提醒，超 24 小时标记异常进看板（ADR-0038 第一节）。
+
+        **没有退款单**：钱在门店付，取消不产生任何资金动作（ADR-0036）。
+        重复取消返回 40900（已取消是终态）——前端按钮禁用 2 秒 + `Idempotency-Key` 是这一层要用的。
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderCancelRequest" }
+      responses:
+        "200":
+          description: 已取消，或已提交取消申请（返回订单详情，看 `status` 与 `cancel_request_status`）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/OrderView" }
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+        "409":
+          description: 订单已到不可取消的阶段，或已是终态（40900）
+
+  /orders/{order_id}/review:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    post:
+      tags: [order]
+      summary: 评价晒单（评分必填 + 一句话可选）
+      description: |
+        **评价属于订单**：只有「已完成」的订单能评价——服务真的发生过，用户才有的可说。
+        评价成功会带动两件事：① 给用户发一笔 **REVIEW 行为分**（分值 / 频次由积分配置定，
+        见 ADR-0038 第四节）；② 重算这家门店的平均分并回写 `provider.rating`
+        （所以 `/providers`、`/providers/{provider_id}` 里的 `rating` 从这一版起会变）。
+        两件事都不改写本次评价的响应形状。
+
+        三条会被拒绝的规则：
+
+        - **不是自己的订单** → **40400**（越权与不存在同码，免得用 `order_id` 探测别人的订单）；
+        - **订单不在「已完成」** → **40900**（待接单 / 已预约 / 履约中 / 已取消都不能评价，
+          `message` 里说明当前状态）；
+        - **一单只能评一次** → **40900**（口径**不是幂等**：第二次提交是状态冲突，
+          与「重复核销 40900」同一条纪律——幂等返回会让「我明明只评了一次」这种疑问无从解释）。
+          重复由唯一键兜底，并发双击也只会有一条评价。
+
+        **评分越界（不在 1–5）或缺失** → **40001**。评分是**整数**（1–5 星），第一版不做半星。
+
+        `content` 可选、最长 500 字（空串按未填处理，存 `null`）。**第一版没有**：图片评价、
+        追评、匿名、服务者回复、内容审核、维度拆分——别把界面做成能传这些东西的样子。
+
+        幂等键可选（`Idempotency-Key`）：重复提交本就会被 40900 挡下，所以这一条不像
+        `/points/exchange` 那样**必须**带——界面禁用 2 秒 + 服务端的唯一键已经够用。
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderReviewRequest" }
+      responses:
+        "200":
+          description: 评价成功（返回评价视图）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/OrderReviewView" }
+        "400":
+          description: 参数错误（40001）：评分缺失或不在 1–5、文字超过 500 字
+        "404":
+          $ref: "./common.yaml#/components/responses/NotFound"
+        "409":
+          description: 订单不是「已完成」，或这一单已经评价过（40900）
+
+  # ---------- 券的 C 端（切片 #110；决策见 ADR-0037 第三节 / ADR-0038 第一节 / ADR-0044）----------
+  /coupons:
+    get:
+      tags: [coupon]
+      summary: 我的券
+      description: |
+        当前账号名下的券。券由平台**定向发放**（邀请 / 打卡任务 / 积分兑换 / 平台补贴 / 月度阶梯），
+        **不做抢券**（ADR-0037 第三节）。按发放时间倒序。
+
+        `provider_name` 是**核销门店**：服务者贡献的券**只能在其本店核销**，所以用户手里拿到的是
+        「某某店的券」而不是一张「任意店可用」的券（ADR-0037 第三节、ADR-0044 待澄清第 1 条）。
+        平台补贴券按模板适用范围核销，`provider_id` / `provider_name` 为空。
+
+        券只是**到店抵扣凭证**：面额与门槛用于展示与到店抵扣，不产生任何资金流（ADR-0036）。
+      parameters:
+        - name: status
+          in: query
+          description: 1 待使用 / 2 已锁定（下单占用）/ 3 已核销 / 4 已过期；不传表示全部
+          schema: { type: integer, minimum: 1, maximum: 4 }
+        - name: source
+          in: query
+          description: 1 邀请 / 2 打卡任务 / 3 积分兑换 / 4 平台补贴 / 5 月度阶梯；不传表示全部
+          schema: { type: integer, minimum: 1, maximum: 5 }
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/CouponView" }
+
+  /coupons/{coupon_id}/lock:
+    parameters:
+      - $ref: "#/components/parameters/CouponId"
+    post:
+      tags: [coupon]
+      summary: 锁定券（下单占用）
+      description: |
+        把券置为「已锁定（2）」——下单前的占用（ADR-0038 第一节：**下单锁定券（占用）**）。
+        锁定是**占用不是消耗**：券还没核销，用户并没有失去它；核销时券才转「已用」，
+        取消订单时券释放回「待使用」（`/coupons/{coupon_id}/release`）。
+
+        谁占用、谁释放：锁由**订单**持有——`POST /orders` 带 `coupon_id` 时也会锁一次，
+        这里给的是「用户点『用这张券』」这一个显式入口，两个入口对同一张券的效果一样。
+        幂等：重复锁定同一张券返回同样的结果（它已被当前用户占用，不是错误）。
+
+        业务码（**HTTP 200**，ADR-0038 第二节给了这两个码真实产出路径）：
+        - **80001** 券不可用：已被**别的订单**占用（**也可能因为锁过期后被他人占用**——券锁 30 分钟、
+          过期按读时判断，ADR-0049 §三）、已过期、不满足门槛或适用范围；
+        - **80002** 券已核销：这张券已经被用掉了，不能再锁。
+
+        **（待澄清：锁定的有效期与超时自动释放——ADR 只写了「下单锁定 / 取消释放」，
+        没说没成单的锁怎么收场。本契约按「锁由持有它的订单释放」写，不设 TTL。**）
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 已锁定（返回券的最新状态）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CouponView" }
+        "404":
+          description: 券不存在或不属于我（40400）
+
+  /coupons/{coupon_id}/release:
+    parameters:
+      - $ref: "#/components/parameters/CouponId"
+    post:
+      tags: [coupon]
+      summary: 释放券（取消订单时）
+      description: |
+        把锁定的券放回「待使用（1）」（ADR-0038 第一节：**取消释放**）。
+
+        只释放**锁定的、未核销的**券：
+        - 已核销 → 业务码 **80002**（券已核销，不可释放，HTTP 200）；
+        - 已被某个**未结束的订单**持有 → **40900**：先取消那一单，取消动作本身会释放它。
+          （不让它被单独释放，是因为那样订单会握着一张已经回到池子里的券——同一个面额被抵扣两次。）
+        - 未被锁定（本来就待使用）→ 幂等成功，返回当前状态。
+
+        **（待澄清：无主的锁是否要能在这里直接收回——见 `lock` 的待澄清。**）
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 已释放（返回券的最新状态）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CouponView" }
+        "404":
+          description: 券不存在或不属于我（40400）
+        "409":
+          description: 券被未结束的订单占用（40900）
+
+  # ---------- 积分中心（切片 #113；决策见 ADR-0038 第四节 / ADR-0046）----------
+  /points:
+    get:
+      tags: [points]
+      summary: 积分中心（余额、今日上限、任务进度、行为分值、兑换档位）
+      description: |
+        积分是**另一套账**（与权益并列）：只有分值与余额，**不能兑换现金、不能提现**
+        （CONTEXT.md 的积分条目、ADR-0038 第四节）。
+
+        一次给出这一页要用的四块数据：
+        - 账户：`balance` / `today_earned` / `daily_earn_limit`（每日获取上限默认 20 分，
+          **邀请与一次性项不占这个上限**——否则一次 20 分的邀请会把当天的额度吃光）；
+        - 任务进度（每日 / 每周两档）：进度**按行为流水聚合**，任务本身**不额外发分**
+          （`points` 只是把该行为的分值取出来展示）；
+        - 行为分值表：签到 1 / 打卡 3 / 邀请有效注册 20 / 评价晒单 5 / 完善档案 10，
+          分值、频次与启停都可运营调整；
+        - 兑换档位：**只兑平台补贴券**（成本归平台，不消耗服务者的贡献额度）。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PointsCenterView" }
+
+  /points/sign-in:
+    post:
+      tags: [points]
+      summary: 每日签到
+      description: |
+        任务清单里的第一条（`point_task` 的 `DAILY_SIGN_IN`，F017）。签到记一次 `SIGN_IN` 行为，
+        分值由运营在后台配（种子里是 1 分；配成 0 就是「记行为不发分」）。
+
+        **天然幂等，不要 `Idempotency-Key`**：这一次的引用是 `sign-in:{业务日期}`
+        （`point_record.source_ref` 上有唯一键），且 `SIGN_IN` 的每日次数上限本来就是 1。
+        同一天再调一次返回 `awarded=false`、余额不变——**那是结果不是错误**，
+        客户端双击、网络重试都不会多发分。
+
+        与打卡（`CHECK_IN`）是两件事：打卡记的是六项健康任务的内容，签到只记「今天来过」。
+      responses:
+        "200":
+          description: 签到结果（重复签到同样是 200，看 `awarded`）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PointSignInView" }
+        "401":
+          $ref: "./common.yaml#/components/responses/Unauthorized"
+
+  /points/exchange:
+    post:
+      tags: [points]
+      summary: 用积分兑换券
+      description: |
+        兑换只兑**平台补贴券**（ADR-0038 第四节）：兑换消耗的是平台的成本，
+        **不消耗服务者的贡献额度**——否则等于把兑换成本转嫁给服务者，直接抵消它出券的意愿。
+
+        三条不变量：
+        - 扣分与发券在**同一个事务**里，要么都成、要么都不成（ADR-0046 第六节）；
+        - 余额不足 → 40900（整笔不发，不部分发放）；
+        - **幂等只能靠 `Idempotency-Key`**（ADR-0028）：一次兑换没有天然的业务引用
+          （`source_ref` 是「用户 + 档位 + 毫秒」拼的追溯值，不当幂等键用，ADR-0046 第六节），
+          所以这个头在这里是**必须带**的。
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PointExchangeRequest" }
+      responses:
+        "200":
+          description: 兑换成功（返回新余额与发到手里的那张券）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PointExchangeView" }
+        "400":
+          description: 参数错误（40001）
+        "404":
+          description: 兑换档位不存在或已停用（40400）
+        "409":
+          description: 积分余额不足（40900）
+
+  # ---------- 我的权益（切片 #112；决策见 ADR-0038 第三节 / ADR-0045）----------
+  /rights:
+    get:
+      tags: [rights]
+      summary: 我的权益（每个码：是否生效 + 来源 + 到期）
+      description: |
+        权益引擎的 C 端出口（ADR-0038 第三节）：`rights(userId) → {码: {是否生效, 来源, 到期}}`。
+        判定是**实时的**（不缓存，ADR-0045 第一节），来源优先级 **订阅 > 邀请（永久）> 打卡（当月）**，
+        **不按到期时间比较**——「邀请得永久 + 订阅得月度」这种组合下按到期比会把语义算错。
+
+        `effective=false` 的码也列出来（带名字）：界面要能显示「你有这项权益、但当前不生效」，
+        而不是让用户看到一个空的权益页。
+
+        判定口径与运营后台的排查视图（`GET /admin/rights/users/{user_id}`）是**同一份**，
+        各模块不得自己拼规则（ADR-0045 的 Consequences：任何模块自己拼一套规则，
+        都会让客服与用户看到两个答案）。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/RightsEvaluationView" }
+
+  # ---------- 邀请（切片 #111；决策见 ADR-0039 第一节 / ADR-0046）----------
+  /invites/code:
+    get:
+      tags: [invite]
+      summary: 我的邀请码与邀请进度
+      description: |
+        邀请的两个入口之一：分享链接带 `?invite=CODE`（落地页记住 7 天，前端行为），
+        另一个是注册表单手工填（ADR-0039 第一节）；`channel` 区分这两者。
+
+        **归因时点是注册那一刻**，以用户填的码为准，链接只做预填，**不做事后补填**
+        （补填是刷券的入口）。
+
+        进度按**有效邀请数**算：有效 = 被邀请人完成建档 **且** 24 小时内有行为
+        （ADR-0046 第二节），阶梯 1 / 3 / 5 / 10 / 15 也按有效数计——按注册数算的话，
+        同一批刷出来的号当晚就能把阶梯奖领走。
+
+        谁能调：登录用户（C 端）。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/InviteCenterView" }
+    post:
+      tags: [invite]
+      summary: 生成我的邀请码
+      description: |
+        分享的前提是先有一条码。生成**不删旧码**：旧码已经分享出去了，删掉等于让那些链接失效。
+
+        **（待澄清：码上的 `channel` 语义，以及是否「同一渠道复用一条码」——
+        ADR-0046 待澄清第 6 条明说这个字段现在只做记录、不确定要不要用于分析。
+        本契约按「每次调用生成一条新码、渠道标签随码记下」写。**）
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InviteCodeRequest" }
+      responses:
+        "200":
+          description: 建好的邀请码
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/InviteCodeView" }
+        "400":
+          description: 渠道标签不在允许范围内（40001）
+
+  /invites/attribution:
+    post:
+      tags: [invite]
+      summary: 注册归因（把用户填的邀请码提交给平台）
+      description: |
+        **归因只有一次机会，时点就是注册那一刻**（ADR-0039 第一节 / ADR-0046 第一节）：
+        注册成功后由前端立即调用一次。**没有任何接口能事后补一条邀请关系**（运营后台也没有）——
+        补填是刷券的入口，这条口径在接口层就没有出口，而不是靠运营自觉。
+
+        三条行为约定：
+        - 一个账号只被归因一次（`invite_relation.invitee_user_id` 唯一）。重复调用返回
+          `attributed=false` + `reason=ALREADY_ATTRIBUTED`——**这不是报错，是明确的业务结果**；
+          此时 `relation_status` 为 `null`（**契约只定义「刚归因成功」的那一次**：成功时回 1＝待生效；
+          重复调用不再回关系状态，避免前端把旧关系的状态当成本次结果）
+        - 被反作弊拦下时**注册仍然成功**：返回 `attributed=false` + 命中的判据
+          （`SELF_INVITE` / `SAME_DEVICE` / `SAME_IP_SEGMENT`），拦下的是邀请关系，不是账号。
+          **给用户看的那句话在 `data.notice` 里**（前端直接展示这个字段），
+          它**不暴露反作弊判据的细节**（ADR-0046 第三节）；判据名 `reason` 只给排查用，
+          不是给人看的文案——把判据说清楚等于教人怎么绕过。
+        - 归因成功时关系是「**待生效**」：观察窗（24 小时）内有没有行为由结算批算判
+          （`NO_ACTIVITY_24H` 不会在这里返回），之后才转有效 / 无效（ADR-0046 第二节）。
+
+        归因对象就是当前登录账号，请求里没有「给谁归因」这个字段——没有出口可绕。
+
+        **为什么那句话在 `data.notice` 而不是信封的 `message` 里**（一次真实的踩坑）：
+        `code=0` 时调用方拿到的只有 `data`，信封的 `message` 在到达页面前就丢了
+        （见 common.yaml 的 `ApiResponse.message`），于是前端只能按 `reason` 自己拼一句——
+        文案就有了两份实现，服务端改一句前端不知道。所以：**给用户看的话一律走 `data` 里的字段**，
+        `message` 只在失败响应里有保证。本接口仍把同一句放进 `message`（两处同一个来源），
+        但**前端以 `data.notice` 为准**。
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InviteAttributionRequest" }
+      responses:
+        "200":
+          description: 已处理（是否建立了关系看 `attributed`）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/InviteAttributionView" }
+        "400":
+          description: 参数错误（40001）：邀请码或渠道缺失
+
+  # ---------- 社区：经验卡片（切片 #84 / F020；决策见 ADR-0041 第一节 / ADR-0050 第一节）----------
+  /community/cards:
+    get:
+      tags: [community]
+      summary: 经验卡片列表（按同品种 / 同病聚合，分页）
+      description: |
+        默认只给**已发布**（`status=1`）的卡片：待审与被拒的内容不出现在公开列表里
+        （ADR-0041 第一节「内容进审核」）。`mine=true` 时改成「我发的卡片」，
+        此时连待审与被拒的一起给，每行带 `status`——作者要能看到自己的内容停在哪一步，
+        否则「发布」在他眼里就是石沉大海，再也不会发第二次。
+
+        **卡片恒匿名**（ADR-0041 第一节、交付文档 F020「录入即生成卡片（匿名）」）：
+        响应里没有作者 id、没有昵称、没有宠物昵称，也没有来源记录的正文细节。
+        卡片一旦发出去，任何调用方都拼不回「这是谁家的猫」——这是这一块唯一的硬承诺。
+
+        聚合口径是**卡片上的快照标签**：`species` / `breed` / `disease_tag` 在生成卡片时随卡片落库，
+        之后宠物改名、品种登记被纠正，都不会改写已经发出去的历史卡片。
+      parameters:
+        - name: species
+          in: query
+          description: 按物种聚合：1 犬 / 2 猫；不传表示全部
+          schema: { type: integer, minimum: 1, maximum: 2 }
+        - name: breed
+          in: query
+          description: 按品种聚合（与卡片上的品种快照精确匹配），最长 32 字符
+          schema: { type: string, maxLength: 32 }
+        - name: disease_tag
+          in: query
+          description: 按同病聚合（慢病标签，与卡片上的快照精确匹配），最长 32 字符
+          schema: { type: string, maxLength: 32 }
+        - name: mine
+          in: query
+          description: true = 我发的卡片（含待审与被拒）；默认 false = 已发布的全部
+          schema: { type: boolean, default: false }
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功（按发布时间倒序）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/CommunityCardView" }
+    post:
+      tags: [community]
+      summary: 一键生成经验卡片（从打卡 / 就医记录）
+      description: |
+        **发文要权益码 `community.post`**（ADR-0041 第一节）：没有这项权益返回 **40300**，
+        与「未登录」的 40100 分开——前者是「登录了但没这项能力」，前端该引导去做任务 / 邀请；
+        后者该引导去登录。判定走 ph-privilege 的 `rights(userId)`（ADR-0038 第三节），
+        社区不自己查表拼规则。
+
+        卡片与**来源记录关联**：`source_type`（1 打卡 / 2 就医记录）+ `source_ref`（来源记录 id）
+        指出这张卡片是从哪条记录生成的，`pet_id` 指出是哪只宠物的记录；服务端校验这只宠物属于当前用户
+        （不属于我 → 40400，与不存在同码）。**服务端不重读档案正文**：卡片正文由前端从记录预填、
+        用户改完再提交——「一键生成」是编辑动作，不是导出动作，档案正文也不该经社区再暴露一次。
+
+        提交后一律进**待审**（`status=0`）：机审敏感词命中 → 直接**被拒**（`status=2`）；
+        未命中 → 留在待审，等运营通过（ADR-0041 第一节：机审敏感词 + 运营人工处置；
+        权限矩阵里「内容审核」归运营，ADR-0037 第一节）。作者在自己的列表里看得到当前状态，
+        也看得到 `reject_reason`（机审命中时是「内容命中敏感词」，运营下架时是运营填的原文）
+        ——**但不告诉作者命中哪个词**：说了词表就会被绕开；运营若认为该说明，写在理由里。
+
+        校验顺序是**权益 → 归属 → 内容**：没有权限时不回答「这只宠物是不是你的」，
+        两件事不该互相成为探测对方的手段。
+
+        **（待澄清：`source_ref` 只做关联与追溯，服务端不校验「这条记录确实属于 `pet_id`」——
+        档案模块没有「按 id 取一条记录」的对外接口（ADR-0006 不许 join 它的表），
+        为一个展示用的关联去扩它的接口不在本切片范围内。**）
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommunityCardCreateRequest" }
+      responses:
+        "200":
+          description: 建好的卡片（含审核状态；匿名视图）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CommunityCardView" }
+        "400":
+          description: 参数错误（40001）
+        "403":
+          description: 没有社区发帖权益（40300，与未登录的 40100 分开）
+        "404":
+          description: 宠物不存在或不属于我（40400）
+
+  /community/cards/{card_id}:
+    parameters:
+      - $ref: "#/components/parameters/CardId"
+    get:
+      tags: [community]
+      summary: 经验卡片详情（匿名）
+      description: |
+        与列表同一份匿名视图。**只有已发布的卡片对非作者可见**：待审与被拒的卡片，
+        作者看得到、别人一律 40400（越权与不存在同码，docs/conventions.md）。
+
+        `liked` 是**看的人**点没点过赞，不是作者的属性——它不会泄露任何身份。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CommunityCardView" }
+        "404":
+          description: 卡片不存在，或还没过审且不是我的（40400）
+
+  /community/cards/{card_id}/likes:
+    parameters:
+      - $ref: "#/components/parameters/CardId"
+    post:
+      tags: [community]
+      summary: 点赞（幂等）
+      description: |
+        点赞**不需要 `community.post`**：它不是发文，是互动。反复点同一张卡片返回同样的结果
+        （同一个人对同一张卡片只算一次赞，唯一键兜底），不报 40900——点赞按钮重试是常态。
+
+        只有**已发布**的卡片能被点赞：待审 / 被拒的卡片别人看不见，也就点不到（40400）。
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 点赞后的卡片（`liked=true` + 最新 `like_count`）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CommunityCardView" }
+        "404":
+          description: 卡片不存在，或还没过审（40400）
+    delete:
+      tags: [community]
+      summary: 取消点赞（**宠物名下的子资源口径**：幂等）
+      description: |
+        归属先校验（卡片不存在 / 没过审 → 40400），然后**子资源自身删除幂等**：
+        本来就没点过赞返回成功，不是错误（docs/conventions.md 的删除类接口口径：
+        顶层资源不幂等、宠物名下的子资源删除幂等——点赞挂在卡片下，属后者）。
+      responses:
+        "200":
+          description: 取消后的卡片（`liked=false` + 最新 `like_count`）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CommunityCardView" }
+        "404":
+          description: 卡片不存在，或还没过审（40400）
+
+  # ---------- 社区：问答互助（切片 #84 / F020；决策见 ADR-0041 第一节）----------
+  /community/questions:
+    get:
+      tags: [community]
+      summary: 问答列表（分页）
+      description: |
+        默认只给已发布的提问。列表**不带回答正文**（`answer_count` 是过审回答的条数，
+        被采纳的那条由 `adopted_answer_id` 指出），回答正文在详情里给：问答页一屏十个问题，
+        把每个问题的一串回答一起下发，既没人看，也让分页失去意义。
+
+        `mine=true` 时改成「我提的问题」（含待审与被拒），用来看出自己的问题卡在哪一步。
+      parameters:
+        - name: disease_tag
+          in: query
+          description: 按慢病标签聚合，与提问上的快照精确匹配，最长 32 字符
+          schema: { type: string, maxLength: 32 }
+        - name: mine
+          in: query
+          description: true = 我提的问题（含待审与被拒）；默认 false = 已发布的全部
+          schema: { type: boolean, default: false }
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功（按提问时间倒序）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/CommunityQuestionView" }
+    post:
+      tags: [community]
+      summary: 提问
+      description: |
+        **需要权益码 `community.post`**（同发卡片）：没有 → 40300。
+
+        提问同样进审核，规则与卡片一致（待审 / 机审命中即被拒 / 运营通过后才对别人可见）。
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommunityQuestionCreateRequest" }
+      responses:
+        "200":
+          description: 建好的提问（含审核状态）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CommunityQuestionView" }
+        "400":
+          description: 参数错误（40001）
+        "403":
+          description: 没有社区发帖权益（40300）
+
+  /community/questions/{question_id}:
+    parameters:
+      - $ref: "#/components/parameters/QuestionId"
+    get:
+      tags: [community]
+      summary: 提问详情（含回答）
+      description: |
+        回答的可见范围是「**已发布的 + 我自己写的**」：别人待审的回答对提问者也不可见
+        （没审过的内容不进入任何人的阅读路径），而自己写的回答自己要能看到状态——
+        否则「我明明答了」与「详情里没有」会同时成立。列表接口则不带回答（见列表说明）。
+
+        提问本身没对别人可见时（待审 / 被拒）一律 40400，作者自己看得到。
+        `mine` 是「这条问题是不是我提的」——采纳只有一个入口，界面据此决定要不要显示「采纳」。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CommunityQuestionView" }
+        "404":
+          description: 提问不存在，或还没过审且不是我的（40400）
+
+  /community/questions/{question_id}/answers:
+    parameters:
+      - $ref: "#/components/parameters/QuestionId"
+    post:
+      tags: [community]
+      summary: 回答
+      description: |
+        **需要权益码 `community.post`**：回答也是发文，与提问、发卡片同一道门（ADR-0041 第一节）。
+
+        回答进审核（待审 / 机审命中即被拒 / 运营通过后才出现在详情里）；
+        给一个**别人看不见的提问**（待审 / 被拒 / 已删）回答一律 40400。
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommunityAnswerCreateRequest" }
+      responses:
+        "200":
+          description: 建好的回答（含审核状态）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CommunityAnswerView" }
+        "400":
+          description: 参数错误（40001）
+        "403":
+          description: 没有社区发帖权益（40300）
+        "404":
+          description: 提问不存在，或还没过审（40400）
+
+  /community/questions/{question_id}/answers/{answer_id}/adopt:
+    parameters:
+      - $ref: "#/components/parameters/QuestionId"
+      - $ref: "#/components/parameters/AnswerId"
+    post:
+      tags: [community]
+      summary: 采纳回答（只有提问者，且一条问题只能采纳一个）
+      description: |
+        两条不变量（交付文档 F020「采纳」）：
+
+        - **只有提问者能采纳**：别人（包括回答者自己）采纳 → **40400**，不是 40300——
+          采纳按钮只会出现在提问者界面上，别人来调只能是拿 id 试探（docs/conventions.md 的越权口径）；
+        - **一条问题只能采纳一个回答**：重复采纳（包括改采纳另一个）→ **40900**。
+          这一条靠 `community_question.adopted_answer_id` 上的**条件更新**落地
+          （`WHERE adopted_answer_id IS NULL`），不是先查后判——并发下先查后判会双通过。
+
+        `answer_id` 必须**属于这条问题、且已经过审**，否则 40400：没审过的回答对提问者也不可见，
+        看不见的东西不能被采纳（否则等于给「提议外人看不到的答案」开了一条路）。
+        采纳**不回退**：没有「取消采纳」这个动作（没有需求支撑，而它会让「已解决的问题」
+        变成可以反复翻转的状态）。
+
+        **采纳不额外给权益或积分**：权益与积分的发放路径由 ADR-0038 第四节钉死，
+        社区这里不发明第三条（要加也是那条账目的事）。
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 采纳后的提问（含被采纳的回答 id）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CommunityQuestionView" }
+        "400":
+          description: 参数错误（40001）
+        "404":
+          description: 提问或回答不存在 / 不是我提的问题 / 回答不属于这条提问或还没过审（40400）
+        "409":
+          description: 这条问题已经采纳过回答（40900，非法迁移不是参数错误）
+
 components:
   securitySchemes:
     bearerAuth:
@@ -981,6 +2824,42 @@ components:
       name: pet_id
       in: path
       required: true
+      schema: { type: integer, format: int64 }
+    ProviderId:
+      name: provider_id
+      in: path
+      required: true
+      description: 服务者（门店）id
+      schema: { type: integer, format: int64 }
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      description: 订单 id
+      schema: { type: integer, format: int64 }
+    CouponId:
+      name: coupon_id
+      in: path
+      required: true
+      description: 券实例 id（发给某个用户的那一张，不是券模板 id）
+      schema: { type: integer, format: int64 }
+    CardId:
+      name: card_id
+      in: path
+      required: true
+      description: 经验卡片 id
+      schema: { type: integer, format: int64 }
+    QuestionId:
+      name: question_id
+      in: path
+      required: true
+      description: 提问 id
+      schema: { type: integer, format: int64 }
+    AnswerId:
+      name: answer_id
+      in: path
+      required: true
+      description: 回答 id（采纳时它必须属于路径上的那条提问）
       schema: { type: integer, format: int64 }
 
   schemas:
@@ -1081,7 +2960,7 @@ components:
       properties:
         pet_id: { type: integer, format: int64 }
 
-    Pet:
+    PetView:
       type: object
       required: [id, name, species, gender]
       properties:
@@ -1183,9 +3062,9 @@ components:
           minItems: 1
           maxItems: 6
           description: 本次提交的分项；同一个日期可以分多次提交（例如先记体重，晚上再补其他的）
-          items: { $ref: "#/components/schemas/CheckInItemInput" }
+          items: { $ref: "#/components/schemas/CheckInItemRequest" }
 
-    CheckInItemInput:
+    CheckInItemRequest:
       type: object
       required: [category]
       properties:
@@ -1270,7 +3149,7 @@ components:
           type: string
           description: 一句话说明分数怎么来的，例如「近 7 天记录 4 天，异常 1 次」——评分必须可解释
 
-    HealthScore:
+    HealthScoreView:
       type: object
       required: [grade, dimensions]
       properties:
@@ -1298,7 +3177,7 @@ components:
 
     # ---------- 防疫记录（切片 #99）----------
 
-    EpidemicRecordInput:
+    EpidemicRecordRequest:
       type: object
       required: [kind, name, given_on]
       properties:
@@ -1322,7 +3201,7 @@ components:
             不填就没有提醒（宁可少提醒，也不要替用户猜周期）。
           example: "2027-09-01"
 
-    EpidemicRecord:
+    EpidemicRecordView:
       type: object
       required: [id, kind, name, given_on]
       properties:
@@ -1370,7 +3249,30 @@ components:
         pet_id: { type: integer, format: int64, description: 相关宠物；业务通知可能为空 }
         created_at: { type: string, example: "2026-09-27 08:00:00" }
 
-    ReminderSetting:
+    BusinessNotification:
+      type: object
+      description: |
+        一条**业务通知**的载荷形状（`BusinessMessageApi.BusinessNotification`）——**不是 HTTP 请求/响应体**：
+        订单取消、券快过期、邀请生效、预约临近这些事件发生在别的模块，由事件发生方经这个
+        ph-api 接口投递给 ph-reminder（ADR-0006：谁都不许直接写 `message` 表）。
+        收件人看到的是 `MessageView`，**这个形状只在模块之间流转**。
+
+        在这里立条目是为了让「schema 名 ↔ DTO 类名」保持一一对应（同 `ConsultStats` 的处理）：
+        ph-api 里出现的每个 DTO 都能在契约里找到出处，读者才不会把跨模块端口的载荷误当成对外承诺。
+      properties:
+        user_id: { type: integer, format: int64, description: 收件人 }
+        type: { type: integer, description: 通知类型码：7 订单 / 8 券 / 9 邀请（与 `MessageView.type` 同表；10 系统 目前无生产者） }
+        dedup_key:
+          type: string
+          description: |
+            幂等键，**必须全局唯一地表达「这是哪一件事」**（如 `order-cancelled-42`）：
+            批算每天跑、事件可能重试，同一件事只该有一条消息。
+        title: { type: string, description: 短标题（消息列表直接展示） }
+        content: { type: string, description: 正文（消息详情文案） }
+        action_hint: { type: string, description: 按钮文案；不需要跳转时为 null }
+        action_target: { type: string, description: 按钮跳转的前端路由；不需要跳转时为 null }
+
+    ReminderSettingView:
       type: object
       required: [type, name, enabled]
       description: |
@@ -1389,7 +3291,7 @@ components:
           type: boolean
           description: 是否允许用户关闭。**红色等级的提醒为 false**，前端要把开关置灰并说明原因
 
-    ReminderSettingInput:
+    ReminderSettingRequest:
       type: object
       required: [type, enabled]
       properties:
@@ -1478,6 +3380,21 @@ components:
           description: 参与判断的图片（先经 /files 上传拿到的 file_id）
           items: { type: integer, format: int64 }
 
+    AiConsultCitation:
+      type: object
+      description: |
+        回答引用到的一条知识条目（切片 #101），配 `AiConsultView.citations`。
+        **这个形状本身就是引用口径的一部分**：只承载 `vetted` 的条目——未复核内容没有
+        出现在这里的通道，它只能以 `unvetted_used` 这个布尔提醒用户（ADR-0033 第四节）。
+      properties:
+        entry_id: { type: string, description: 对外编号（如 K-0010）。跨环境稳定，界面显示的就是它 }
+        title: { type: string, description: 条目标题 }
+        category: { type: string, description: 条目的知识类目代码 }
+        source_title: { type: string, description: 原始资料名（如《WSAVA 2024 犬猫疫苗接种指南》） }
+        source_version: { type: string, nullable: true, description: 版本（如「2024 版」）；没有时为空 }
+        source_url: { type: string, nullable: true, description: 原始资料链接；没有时为空（界面上不显示空链接） }
+        review_status: { type: string, description: 复核状态，当前恒为 vetted, enum: [vetted] }
+
     AiConsultView:
       type: object
       required: [id, risk_level, need_hospital, degraded, disclaimer]
@@ -1496,6 +3413,22 @@ components:
           description: 命中的红线规则编号。**非空表示这次没有经过模型**（ADR-0021）
           items: { type: string }
           example: ["RF-007"]
+        citations:
+          type: array
+          description: |
+            本次回答**实际引用**的知识条目，**只含兽医复核过（vetted）的条目**——
+            召回集 ≠ 引用集（ADR-0033 第四节）。条目编号在 `entry_id` 里。
+
+            **空数组时界面不许出现「基于知识库」这句话**（ADR-0040 第二节）：
+            这个解禁条件是「至少有一条 vetted 引用」，与「检索层未接」是两码事——
+            检索层没接、或本次没召回时它就是空数组，界面一律按「无来源的通用建议」表述。
+          items: { $ref: "#/components/schemas/AiConsultCitation" }
+        unvetted_used:
+          type: boolean
+          description: |
+            本轮上下文里用到了**未复核**条目。为 true 时后端已把「本次建议参考了尚未经兽医复核的
+            平台资料」拼进 `disclaimer`，**界面不要再自己造一句**（ADR-0040 第二节）。
+            用到哪些未复核条目只在服务端留痕（`ai_consult.unvetted_hits`），不下发。
         degraded:
           type: boolean
           description: true 表示这是降级答复（AI 服务超时或不可用），不是模型结论
@@ -1523,6 +3456,308 @@ components:
           description: |
             今日剩余次数。到 0 之后接口**照常返回结果**——解锁路径在 #112 权益引擎里，
             现在拦截会把用户挡在一扇没有出口的门后面
+
+    # ---------- 档案分项与时间轴（切片 #102，字段清单见 ADR-0030）----------
+
+    ArchiveSectionView:
+      type: object
+      required: [code, name, description, content_source, recordable, enabled]
+      description: |
+        一个档案分项的入口。**8 个分项与评分五维不同构**（CONTEXT.md）：分项是录进去的、维度是算出来的，
+        两者多对多——所以这里没有任何「分数」字段。
+      properties:
+        code:
+          type: string
+          description: |
+            metrics 核心指标 / documents 证件与合规 / behavior 行为 / mood 情绪 /
+            hygiene 卫生 / diet 饮食 / elderly 老年专项 / media 照片视频
+          enum: [metrics, documents, behavior, mood, hygiene, diet, elderly, media]
+        name: { type: string, example: "核心指标" }
+        description:
+          type: string
+          description: 副行说明（交付文档 4.16.4 的「图标 + 标题 + 副行说明」）
+          example: "体重、体温、饮水这些能反映身体状态的数值"
+        content_source:
+          type: string
+          description: |
+            records 这个分项的内容在档案记录表里；files 它在文件模块（`biz_type=profile`），
+            本接口只给入口与说明——照片不落档案表（ADR-0023 第二条）
+          enum: [records, files]
+        recordable:
+          type: boolean
+          description: 是否可用 `POST /archive-records` 录入。打卡六项、防疫、照片视频为 false（各有自己的入口）
+        enabled:
+          type: boolean
+          description: 该分项当前是否可用。**只有「老年专项」会为 false**（专项照护未开启）
+        disabled_reason:
+          type: string
+          nullable: true
+          description: 不可用的原因，前端直接展示（如「7 岁以上或有慢病时自动开启」）
+        record_count:
+          type: integer
+          nullable: true
+          description: 已录条数；`content_source=files` 时为 null（照片条数要从文件接口取）
+        latest_date:
+          type: string
+          nullable: true
+          description: 最近一条的业务日期 `YYYY-MM-DD`；没有记录时为 null
+
+    ArchiveRecordView:
+      type: object
+      required: [id, section, category, record_date, title]
+      properties:
+        id: { type: integer, format: int64 }
+        section:
+          type: string
+          description: 所属分项（读取时由 `category` 反查；就医记录为 medical）
+          enum: [metrics, documents, behavior, mood, hygiene, diet, elderly, media, medical]
+        category:
+          type: integer
+          description: |
+            落库分项编码：1体重2饮食3排泄4行为5情绪6卫生7防疫8就医10其他指标11证件12老年专项。
+            与契约的 `section` 是两个层次——`section` 是界面的分项，`category` 是这一行的实际编码
+          example: 11
+        record_date:
+          type: string
+          description: 业务日期 `YYYY-MM-DD`（补录的是补的那一天）
+          example: "2026-09-20"
+        title:
+          type: string
+          description: 一句话标题，时间轴与列表直接展示
+          example: "免疫证"
+        value:
+          type: string
+          nullable: true
+          description: 结构化取值：数值指标是数字字符串（体温 38.5），证件是证件号；无取值时为 null
+        unit:
+          type: string
+          nullable: true
+          description: 单位（体温 ℃、体重 kg）；无单位时为 null
+        due_on:
+          type: string
+          nullable: true
+          description: 下次到期 / 应接种日 `YYYY-MM-DD`；不填表示没有到期概念
+          example: "2027-09-20"
+        note: { type: string, nullable: true, description: 备注 }
+        abnormal:
+          type: boolean
+          description: 是否被标注为异常——评分按它扣分（ADR-0018），也是进时间轴的条件之一
+        source:
+          type: integer
+          description: "1 用户 / 2 AI / 3 服务者报工（多源写入的分级规则见 ADR-0030）"
+          enum: [1, 2, 3]
+        source_label:
+          type: string
+          example: "用户录入"
+        authoritative:
+          type: boolean
+          description: |
+            **该分项的权威来源是否为这一条**（ADR-0030 的多源口径）：
+
+            - 证件与防疫以**服务者报工**为准；体重/饮食/排泄/行为/情绪/卫生/其他指标/老年专项/就医以**用户**为准；
+            - **AI 永远不是权威**（它只产生建议）；
+            - 权威来源缺席时，次一级来源自然成为权威。
+
+            同一天可能有两条不同来源的记录（冲突时**两条都保留**）——前端把 `authoritative=true` 的那条当作
+            分项「当前值」，其余按时间列出，不做静默覆盖。
+        backfilled: { type: boolean, description: 该条是否为补录（不冒充当场录入，ADR-0018） }
+        created_at: { type: string, example: "2026-09-20 10:00:00" }
+
+    ArchiveRecordRequest:
+      type: object
+      required: [section, date, title]
+      description: |
+        可写的分项只有四个（列表语义的那些）：`metrics` 落 `category=10`（其他核心指标）、
+        `documents` 落 11（证件）、`elderly` 落 12、`medical` 落 8。
+
+        **体重与排泄不在可写范围**：它们走打卡接口（一天一条、可撤销、进评分完整度）。
+      properties:
+        section:
+          type: string
+          enum: [metrics, documents, elderly, medical]
+          description: metrics 其他指标 / documents 证件 / elderly 老年专项 / medical 就医记录
+        date:
+          type: string
+          description: 业务日期 `YYYY-MM-DD`；只能录今天或过去 7 天（与打卡同一窗口）
+          example: "2026-09-20"
+        title:
+          type: string
+          maxLength: 64
+          description: 标题（体温 / 免疫证 / 复查 / 呕吐就诊）
+          example: "免疫证"
+        value:
+          type: string
+          maxLength: 128
+          description: 取值；证件类可填证件号。**数值指标只做形状校验，不做医学判读**
+          example: "38.5"
+        unit: { type: string, maxLength: 16, example: "℃" }
+        due_on:
+          type: string
+          description: 到期 / 下次日期 `YYYY-MM-DD`；不能早于 `date`
+          example: "2027-09-20"
+        note: { type: string, maxLength: 500 }
+        abnormal: { type: boolean, default: false }
+
+    TimelineEventView:
+      type: object
+      required: [id, type, type_name, date, title]
+      description: |
+        时间轴的一条事件。**只收四类**（ADR-0030）：就医、疫苗/驱虫、**异常**打卡、服务者报工。
+        正常打卡不进时间轴——否则一天最多 6 条日常记录会把它淹成流水账。
+      properties:
+        id: { type: integer, format: int64, description: 对应 `archive_record.id` }
+        type:
+          type: string
+          enum: [medical, vaccine, deworm, abnormal, provider]
+        type_name: { type: string, example: "就医记录" }
+        category: { type: integer, description: 落库分项编码 }
+        date: { type: string, example: "2026-09-20" }
+        title: { type: string, example: "呕吐就诊" }
+        summary:
+          type: string
+          nullable: true
+          description: 一行摘要（取值 / 备注 / 到期状态），没有就是 null
+        source: { type: integer, enum: [1, 2, 3] }
+        source_label: { type: string }
+        abnormal: { type: boolean }
+        backfilled: { type: boolean }
+
+    # ---------- 健康报告（切片 #115，决策见 ADR-0031）----------
+
+    HealthReportView:
+      type: object
+      required: [id, type, type_name, period_start, period_end, privilege_code, generated_at, payload]
+      description: |
+        **只有两种报告**（本轮拍板）：周报（上一个完整自然周）与月报（上一个完整自然月）。
+        规则模板拼装、**不经过模型**——每个数字都与评分卡、趋势图同源。
+        历史周期不回改：报告记的是**当时**的口径（ADR-0031）。
+
+        界面文案统一叫「健康周报 / 健康月报」：**不写「AI 生成」**——我们没调模型（ADR-0028 的口径）。
+      properties:
+        id: { type: integer, format: int64 }
+        type:
+          type: integer
+          description: "1 周报 / 2 月报"
+          enum: [1, 2]
+        type_name: { type: string, example: "健康周报" }
+        period_start: { type: string, example: "2026-09-14" }
+        period_end: { type: string, example: "2026-09-20" }
+        grade: { type: string, nullable: true, description: 同期档位文案（良好 / 尚可 / 需关注）；没有数据时为 null }
+        total_score: { type: integer, nullable: true, description: 周期内的总分均值；一条记录都没有时为 null }
+        tier:
+          type: integer
+          description: |
+            1 基础版（只有「评分与趋势」+「打卡完成度」）/ 2 完整版（含「异常与亮点」与「建议清单」）。
+            **本期只标注、不拦截**（ADR-0031：权益引擎未落地，拦截会把用户挡在一扇没有出口的门后面）
+          enum: [1, 2]
+        privilege_code:
+          type: string
+          description: 完整版对应的权益码（与 #80 的权益码表对齐）；基础版报告同样给这个码，前端按段标解锁
+          example: "report.full"
+        tier_note: { type: string, description: 解锁说明，前端展示在需要权益的段落上 }
+        generated_at: { type: string, example: "2026-09-21 08:10:00" }
+        payload: { $ref: "#/components/schemas/HealthReportPayload" }
+
+    HealthReportPayload:
+      type: object
+      required: [headline, sections, stats, notice]
+      properties:
+        headline: { type: string, example: "豆豆的健康周报" }
+        sections:
+          type: array
+          description: "**固定四段、顺序固定**（前端按段渲染，不需要自己排）"
+          items:
+            type: object
+            required: [code, name, lines, requires_privilege]
+            properties:
+              code:
+                type: string
+                description: |
+                  score_and_trend 评分与趋势（基础）/ abnormal_and_highlights 异常与亮点（完整）/
+                  checkin_completion 打卡完成度（基础）/ suggestions 建议清单（完整）
+                enum: [score_and_trend, abnormal_and_highlights, checkin_completion, suggestions]
+              name: { type: string, example: "评分与趋势" }
+              lines: { type: array, items: { type: string } }
+              requires_privilege:
+                type: boolean
+                description: 该段是否需要 `report.full`。**true 时内容照常返回**（本期不拦截），前端只标解锁
+        stats: { $ref: "#/components/schemas/HealthReportStats" }
+        notice:
+          type: string
+          description: 口径说明（免责 + 数据来源 + 「建议清单是行动项、不是医学建议」），前端必须展示
+
+    HealthReportStats:
+      type: object
+      description: 报告的汇总数字。**全部来自 `health_score` 按天的行与 `archive_record`**，不解析 JSON 也能渲染一行。
+      properties:
+        record_days: { type: integer, description: 周期内有记录的天数 }
+        period_days: { type: integer, description: 周期总天数（完成度的分母） }
+        abnormal_count: { type: integer, description: 周期内标注异常的次数 }
+        avg_total: { type: integer, nullable: true, description: 周期内评分均值 }
+        avg_behavior: { type: integer, nullable: true, description: 行为维均值（行为/情绪分项的来源） }
+        avg_hygiene: { type: integer, nullable: true, description: 卫生维均值 }
+        prev_avg_total: { type: integer, nullable: true, description: 上一个等长周期的总分均值（对比用） }
+        prev_abnormal_count: { type: integer, nullable: true, description: 上一个等长周期的异常次数 }
+        weight_min: { type: string, nullable: true, description: 周期内体重最小值（decimal 字符串） }
+        weight_max: { type: string, nullable: true }
+        ai_consults: { type: integer, description: "周期内 AI 咨询次数（经 ph-ai 的只读接口取，不 join 它的表）" }
+        ai_red_flags: { type: integer, description: 其中判为红色的次数 }
+        provider_records: { type: integer, description: "周期内服务者报工写入档案的条数（来自 `source=3`；#107 落地前恒为 0）" }
+
+    # ---------- 专项照护模式（切片 #116，决策见 ADR-0032）----------
+
+    CareModeView:
+      type: object
+      required: [active, reasons, effects, disabled_by_user]
+      description: |
+        **派生结果，不是存储的状态**：年龄按 `birthday` 实时算（≥ 阈值）或有慢病标记即开启，
+        慢病解除即退出。唯一落库的是「用户手动关闭」这枚意愿位（`disabled_by_user`）。
+      properties:
+        active: { type: boolean, description: 当前是否生效（派生结果 ∧ 未被用户关闭） }
+        reasons:
+          type: array
+          description: 开启的原因（可能两条都有）
+          items:
+            type: object
+            required: [code, label]
+            properties:
+              code: { type: string, enum: [elderly, chronic] }
+              label: { type: string, example: "已进入老年期（9 岁）" }
+        age_text:
+          type: string
+          nullable: true
+          description: "年龄的可读文案（如「9 岁 3 个月」）；没填生日时为 null"
+        age_years: { type: integer, nullable: true }
+        age_threshold_years:
+          type: integer
+          description: 当前的年龄阈值（按物种取，运营可调；改数据即可，不需要发版）
+          example: 7
+        elderly_since:
+          type: string
+          nullable: true
+          description: 达到年龄阈值的日期 `YYYY-MM-DD`；未达到或没有生日时为 null
+        chronic_desc: { type: string, nullable: true, description: 慢病描述（用户自述；平台不核验） }
+        disabled_by_user:
+          type: boolean
+          description: 用户是否手动关闭过。`true` 时 `active=false`，但 `reasons` 仍如实给出派生原因
+        effects:
+          type: array
+          description: |
+            开启后到底改变了什么（**由后端给文案**：医疗相关口径散落到前端一定会漏改）。
+            也是交付文档 F009「四项变化」在接口上的落点
+          items: { type: string }
+          example: ["评分多一个「老年专项」维度，并计入总分", "档案里多出「老年专项」分项入口"]
+        notice:
+          type: string
+          description: 一句提醒：开启/关闭会让总分口径变化（维数变了），不是健康恶化或改善
+
+    CareModeRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          description: false = 用户手动关闭；true = 清除手动关闭、回到派生结果
 
     ComplianceDocumentView:
       type: object
@@ -1558,12 +3793,17 @@ components:
               chronic_desc: { type: string, nullable: true }
               records:
                 type: array
-                description: 打卡分项与防疫记录都是这里的行（同属 archive_record）
+                description: |
+                  打卡分项、分项记录与防疫记录都是这里的行（同属 archive_record）。
+                  `content` 是**该行的载荷原文**：打卡与防疫是扁平键值 JSON（`{"status":"normal"}`），
+                  分项记录（证件 / 其他指标 / 老年专项 / 就医）是结构化 JSON
+                  （`{"title":"免疫证","value":"...","unit":"...","note":"..."}`，落在 `structured_payload` 列）。
+                  导出视图刻意保持扁平的一列载荷：给医院看的是原始记录，不是平台的字段划分。
                 items:
                   type: object
                   properties:
                     record_date: { type: string }
-                    category: { type: integer, description: "1体重2饮食3排泄4行为5情绪6卫生7防疫" }
+                    category: { type: integer, description: "1体重2饮食3排泄4行为5情绪6卫生7防疫8就医10其他指标11证件12老年专项" }
                     content: { type: string, nullable: true }
                     source: { type: integer, nullable: true, description: "1用户 2AI 3服务者报工" }
                     due_on: { type: string, nullable: true }
@@ -1580,6 +3820,21 @@ components:
                     hygiene: { type: integer, nullable: true }
                     epidemic: { type: integer, nullable: true }
                     elderly: { type: integer, nullable: true }
+              reports:
+                type: array
+                description: |
+                  健康报告（ADR-0031）：**派生视图**，与 `records` 分开放，免得接收方把
+                  平台对数据的解释当成原始记录。没有报告时是**空数组**（不是 null）。
+                items:
+                  type: object
+                  properties:
+                    type: { type: integer, description: "1 周报 / 2 月报" }
+                    type_name: { type: string, example: "健康周报" }
+                    period_start: { type: string }
+                    period_end: { type: string }
+                    grade: { type: string, nullable: true }
+                    total_score: { type: integer, nullable: true }
+                    payload: { $ref: "#/components/schemas/HealthReportPayload" }
         messages:
           type: array
           items:
@@ -1597,3 +3852,820 @@ components:
         notice:
           type: string
           description: 给用户看的一句话：这不是逐字段的完整副本
+
+    # ------------------------------------------------------------------ 交易域（订单与号源，切片 #77 / #109）
+    #
+    # 金额一律是**字符串两位小数**（ADR-0011：浮点在 JS 里会丢精度）。
+    # 订单上只有「总额 − 券面额 = 预估实付」这一组展示用计算值：**没有收款、没有结算、
+    # 没有退款**（ADR-0036）。
+
+    AppointmentSlotView:
+      type: object
+      description: |
+        一个可预约的时段（号源）。**以时段为粒度**（CONTEXT.md 的号源条目）。
+        容量语义见 ADR-0038 第一节；**粒度的具体数值来源待澄清**。
+      properties:
+        date: { type: string, description: 日期（YYYY-MM-DD） }
+        start_time: { type: string, description: 时段开始（HH:mm） }
+        end_time: { type: string, description: 时段结束（HH:mm） }
+        capacity:
+          type: integer
+          description: 该时段的号源容量。**（待澄清：容量粒度——ADR-0038 只写了「按时段容量占用」，没写一个时段能约几个、由谁给）**
+        booked_count: { type: integer, description: 已占用的数量（含「履约中」与「已完成」的订单：服务做完了也不释放号源） }
+        available_count: { type: integer, description: 还能约几个 = 容量 − 已占用 }
+        full: { type: boolean, description: 是否已约满。**约满的时段照样返回**：前端要显示「已满」，不能让它静默消失 }
+
+    OrderCreateRequest:
+      type: object
+      required: [pet_id, provider_id, service_id, appointment_date, start_time]
+      properties:
+        pet_id: { type: integer, format: int64, description: 给哪只宠物下单；不属于我 → 40400 }
+        provider_id: { type: integer, format: int64, description: 服务者（门店）id }
+        service_id:
+          type: integer
+          format: int64
+          description: 服务者的服务项 id（`provider_service`），**不是目录项编码**；未上架按不存在处理（40400）
+        appointment_date: { type: string, description: 预约日期（YYYY-MM-DD），与 `start_time` 一起定位一个号源 }
+        start_time:
+          type: string
+          description: 预约时段的开始时间（HH:mm）。取值来自 `/providers/{provider_id}/appointment-slots`（号源查询）
+        coupon_id:
+          type: integer
+          format: int64
+          nullable: true
+          description: 下单要用的券实例 id；不传表示不用券。券在下单时被**锁定**（ADR-0038 第一节），不可用返回 80001
+        remark: { type: string, maxLength: 255, nullable: true, description: 给门店的备注（如宠物的特殊注意事项） }
+
+    OrderCancelRequest:
+      type: object
+      description: 取消理由。**ADR 只对「门店拒绝用户的取消申请」强制要求理由**（见服务者侧的 `OrderCancelRejectRequest`），所以这里是可选的。
+      properties:
+        reason: { type: string, maxLength: 255, nullable: true, description: 取消 / 申请取消的理由，会展示给门店 }
+
+    OrderSummaryView:
+      type: object
+      description: 订单列表行。**不含核销码**（到店凭证不进列表，ADR-0038 第二节）
+      properties:
+        id: { type: integer, format: int64 }
+        order_no: { type: string, description: 对用户可读的订单号（**（待澄清：订单号的格式与生成规则）**） }
+        status: { type: integer, description: 0 待接单 / 1 已预约 / 2 履约中 / 3 已完成 / 4 已取消（ADR-0038 第一节） }
+        provider_id: { type: integer, format: int64 }
+        provider_name: { type: string }
+        service_id: { type: integer, format: int64 }
+        service_name: { type: string }
+        pet_id: { type: integer, format: int64 }
+        pet_name: { type: string }
+        appointment_date: { type: string, description: 预约日期（YYYY-MM-DD） }
+        start_time: { type: string, description: 预约时段开始（HH:mm） }
+        end_time: { type: string, description: 预约时段结束（HH:mm） }
+        total_amount: { type: string, description: 服务总额（元，两位小数字符串） }
+        coupon_discount: { type: string, description: 券面额抵扣（元）；没用券时是 "0.00" }
+        estimated_pay_amount: { type: string, description: 预估实付 = 总额 − 券面额。**展示用计算值，不是收款事实**（ADR-0036）：钱在门店直接付给服务者 }
+        created_at: { type: string }
+
+    OrderView:
+      type: object
+      description: |
+        订单详情。比列表多出核销码、照片墙、所用券与取消申请，
+        以及状态迁移的时间点（接单 / 核销 / 报工 / 取消）。
+      properties:
+        id: { type: integer, format: int64 }
+        order_no: { type: string, description: 对用户可读的订单号（**（待澄清：订单号的格式与生成规则）**） }
+        status: { type: integer, description: 0 待接单 / 1 已预约 / 2 履约中 / 3 已完成 / 4 已取消（ADR-0038 第一节） }
+        provider_id: { type: integer, format: int64 }
+        provider_name: { type: string }
+        service_id: { type: integer, format: int64 }
+        service_name: { type: string }
+        pet_id: { type: integer, format: int64 }
+        pet_name: { type: string }
+        appointment_date: { type: string, description: 预约日期（YYYY-MM-DD） }
+        start_time: { type: string, description: 预约时段开始（HH:mm） }
+        end_time: { type: string, description: 预约时段结束（HH:mm） }
+        total_amount: { type: string }
+        coupon_discount: { type: string }
+        estimated_pay_amount: { type: string, description: 预估实付。**不是收款事实**（ADR-0036） }
+        coupon:
+          description: 本单锁定的券；不用券时为 null。**锁定 ≠ 消耗**：核销时券才转「已核销」，取消订单时释放回「待使用」（ADR-0038 第一节）
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/CouponView"
+        remark: { type: string, nullable: true, description: 我下单时给门店的备注 }
+        redeem_code:
+          type: string
+          nullable: true
+          description: |
+            6 位核销码（ADR-0038 第二节）。**到预约时间才可见**——未到预约时间、订单还没进入
+            「已预约 / 履约中」、或已取消 / 已完成时为 null。它不是安全凭证，风险由
+            「谁有权核销 + 核销幂等 + 核销需要服务者在场」兜住。
+        accepted_at: { type: string, nullable: true, description: 门店接单时间 }
+        redeemed_at: { type: string, nullable: true, description: 核销时间（履约确认，**与收款无关**） }
+        reported_at: { type: string, nullable: true, description: 报工完成时间 }
+        report_remark: { type: string, nullable: true, description: 门店报工时留下的说明 }
+        photo_wall: { $ref: "#/components/schemas/OrderPhotoWallView" }
+        cancel_request_status:
+          type: integer
+          nullable: true
+          description: 1 待门店处理 / 2 门店已同意 / 3 门店已拒绝；为空表示没有取消申请（ADR-0038 第一节：已预约阶段的用户取消要经服务者同意）
+        cancel_requested_at: { type: string, nullable: true, description: 我发起取消申请的时间 }
+        cancel_reason: { type: string, nullable: true, description: 取消 / 申请取消的理由 }
+        cancel_rejected_reason: { type: string, nullable: true, description: 门店拒绝取消的理由（拒绝必填，ADR-0038 第一节） }
+        cancelled_at: { type: string, nullable: true, description: 进入「已取消」的时间 }
+        cancelled_by: { type: integer, nullable: true, description: 1 用户 / 2 服务者 / 3 运营（ADR-0038 第一节的「已取消」可由这三方推进） }
+        review:
+          description: |
+            这一单的评价；还没评价时为 null（第一版一单一评，所以至多一条，不是数组）。
+            **放在订单详情里**是为了让界面能如实显示「已评价」的状态：没有它，用户刷新页面后
+            会再看到一次评价入口，点下去只会拿到 40900。
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/OrderReviewView"
+        created_at: { type: string }
+
+    OrderPhotoWallView:
+      type: object
+      description: |
+        三道照片墙（ADR-0040 第四节）：接宠检查 / 服务防护 / 取宠对比，**三者缺一不可**。
+        订单进入「履约中」后开放；**三个槽位各至少一张照片才允许报工**——这条硬约束在服务端
+        （交付文档 2.5 的验收标准「缺一道则系统拒绝报工」，前端禁用按钮不算数）。
+        照片 `biz_type=care`、**归属订单**，不进用户的档案照片墙（ADR-0040 / ADR-0030）。
+      properties:
+        slots:
+          type: array
+          description: 固定三个槽位（未上传的槽位也在，`satisfied=false`）
+          items: { $ref: "#/components/schemas/OrderPhotoSlotView" }
+        reportable: { type: boolean, description: 是否已满足报工条件（三个槽位各至少一张）。**服务端算出来的**，前端不要自己判 }
+        missing_slots:
+          type: array
+          description: 还缺哪几个槽位（1 接宠检查 / 2 服务防护 / 3 取宠对比）。报工被拒时界面要能说清「缺哪一道」，不能只说「报工失败」
+          items: { type: integer }
+
+    OrderPhotoSlotView:
+      type: object
+      properties:
+        slot: { type: integer, description: 1 接宠检查 / 2 服务防护 / 3 取宠对比, enum: [1, 2, 3] }
+        slot_name: { type: string, description: 槽位名（接宠检查 / 服务防护 / 取宠对比），由服务端给出 }
+        photos:
+          type: array
+          description: 该槽位的照片（**判断依据是服务端的计数，不是前端数数组长度**）
+          items: { $ref: "#/components/schemas/FileView" }
+        remark: { type: string, nullable: true, description: 该槽位的备注 }
+        satisfied: { type: boolean, description: 该槽位是否已至少有一张照片 }
+        updated_at: { type: string, nullable: true }
+
+    OrderReviewRequest:
+      type: object
+      required: [rating]
+      description: |
+        一条评价的提交（契约 `POST /orders/{order_id}/review`）。**只有评分是必填的**：
+        最低成本的一条反馈就是「几星」，文字是可选的加码——要求必填会把「懒得写字」的用户劝退，
+        而他们正是评价率的大头。
+
+        第一版**没有**图片 / 追评 / 匿名 / 维度拆分，所以这个请求体里只有两个字段。
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: 评分（整数，1–5 星）。越界或缺失 → 40001。**整数，不给半星**
+        content:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: 一句话评价（可选，最长 500 字）。空串按未填处理（存 null），不会存出一个空字符串
+
+    OrderReviewView:
+      type: object
+      description: |
+        一条评价（`POST /orders/{order_id}/review` 的响应、`GET /providers/{provider_id}/reviews`
+        的列表行、`OrderView.review` 同一形状）。
+
+        **没有评价人字段**（昵称 / 手机号 / 头像都不下发）：第一版不做匿名开关，也没有想清楚
+        「评价要不要带用户身份」这件事（带了就要连带处理脱敏与展示授权），所以先不给——
+        门店页上显示的是「N 分 + 一句话」，不显示是谁说的。宠物也不下发（那是订单内部关系）。
+
+        `content` 可以为 `null`（只打分不写字），界面要能显示这种行，不要显示成空白块。
+      properties:
+        id: { type: integer, format: int64 }
+        order_id: { type: integer, format: int64, description: 被评价的订单（一单一评：它上面有唯一键） }
+        provider_id: { type: integer, format: int64, description: 被评价的门店 }
+        rating: { type: integer, description: 评分（整数，1–5 星） }
+        content: { type: string, nullable: true, description: 文字评价；只打分没写字时为 null }
+        created_at: { type: string, description: 评价时间 }
+
+    # 券实例由 provider.yaml / admin.yaml 与这里**各写一遍**（契约文件之间不互相 $ref，
+    # 只有 common.yaml 是共享的），形状必须一致——三份对的是同一个后端 DTO（ADR-0047 的漂移校验会盯）。
+    CouponView:
+      type: object
+      description: 券实例（发给某个用户的那一张）。C 端看到的是自己的券：`provider_id` / `provider_name` 是**核销门店**
+      properties:
+        id: { type: integer, format: int64 }
+        code: { type: string, description: 券码（客服排查用，不是安全凭证） }
+        user_id: { type: integer, format: int64 }
+        provider_id: { type: integer, format: int64, nullable: true, description: 服务者贡献券的核销门店；平台补贴券为空（按模板适用范围核销） }
+        provider_name: { type: string, nullable: true, description: 核销门店名称；平台补贴券为空。服务者贡献券**只能在其本店核销**（ADR-0037 第三节），所以用户拿到的是「某某店的券」 }
+        template_id: { type: integer, format: int64 }
+        template_code: { type: string }
+        template_name: { type: string }
+        face_value: { type: string, description: 面额快照：模板后来改了面额，已发的券不受影响（券是平台对用户的承诺，ADR-0044 第六节） }
+        min_amount: { type: string, description: 使用门槛：订单总额不低于它才可用（"0.00" 表示无门槛） }
+        source: { type: integer, description: 1 邀请 / 2 打卡任务 / 3 积分兑换 / 4 平台补贴 / 5 月度阶梯 }
+        contribution_id: { type: integer, format: int64, nullable: true, description: 占用了哪条服务者贡献；平台补贴券为空 }
+        status: { type: integer, description: 1 待使用 / 2 已锁定（下单占用）/ 3 已核销 / 4 已过期 }
+        valid_from: { type: string }
+        valid_until: { type: string }
+        issued_at: { type: string }
+        redeemed_at: { type: string, nullable: true }
+        created_at: { type: string }
+
+    # ------------------------------------------------------------------ 积分（切片 #113）
+
+    PointSignInView:
+      type: object
+      required: [awarded, points, balance]
+      description: |
+        一次签到的结果。**重复签到不是错误**：`awarded=false`、`points=0`、余额不变，
+        客户端据此把按钮显示成「今天已签到」，而不是弹一个错误。
+      properties:
+        awarded: { type: boolean, description: 本次是否真的记上了（今天已签过时为 false） }
+        points: { type: integer, description: 本次得分；重复签到为 0（运营把 SIGN_IN 配成 0 分时也恒为 0） }
+        balance: { type: integer, format: int64, description: 签到后的积分余额 }
+        notice:
+          type: string
+          nullable: true
+          description: 给用户看的一句话（与信封 message 同一句，见 contract/common.yaml）
+
+    PointsCenterView:
+      type: object
+      description: 积分中心：账户 + 任务进度 + 行为分值 + 兑换档位（ADR-0038 第四节）
+      properties:
+        balance: { type: integer, description: 当前积分余额（整数；不是金额，不能提现） }
+        today_earned: { type: integer, description: 今日已获得（东八区业务日）。用来让用户看懂「为什么这次没加分」 }
+        daily_earn_limit: { type: integer, description: 每日获取上限（默认 20 分）。**邀请与一次性项不占这个上限** }
+        tasks:
+          type: array
+          description: 每日在前、按 sort_order 升序。**任务本身不额外发分**（`points` 是该行为的分值，ADR-0038 第四节）
+          items: { $ref: "#/components/schemas/PointTaskProgressView" }
+        behaviors:
+          type: array
+          description: 行为分值表（签到 1 / 打卡 3 / 邀请有效注册 20 / 评价晒单 5 / 完善档案 10）
+          items: { $ref: "#/components/schemas/PointBehaviorView" }
+        exchange_options:
+          type: array
+          description: 兑换档位（**只兑平台补贴券**，ADR-0038 第四节）
+          items: { $ref: "#/components/schemas/PointExchangeOptionView" }
+
+    PointTaskProgressView:
+      type: object
+      description: 一个任务的进度（进度按行为流水聚合，任务表里不存进度——否则进度有两个来源，ADR-0046 第七节）
+      properties:
+        id: { type: integer, format: int64 }
+        code: { type: string, description: 任务编码（如 DAILY_CHECK_IN） }
+        name: { type: string }
+        period: { type: integer, description: 1 每日 / 2 每周 }
+        behavior_code: { type: string }
+        behavior_name: { type: string }
+        target_count: { type: integer, description: 达标所需次数 }
+        current_count: { type: integer, description: 当前周期内已完成的次数 }
+        completed: { type: boolean, description: 本周期是否已达标 }
+        points: { type: integer, description: 该行为的分值（任务本身不额外发分） }
+
+    PointBehaviorView:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        points: { type: integer, description: 单次分值（0 表示只记行为不发分，如查看 AI 建议） }
+        counts_toward_daily_cap: { type: integer, description: 1 占每日上限 / 0 不占（邀请与一次性项不占，ADR-0038 第四节） }
+        daily_count_limit: { type: integer, nullable: true, description: 每日次数上限；为空表示不限次 }
+        monthly_count_limit: { type: integer, nullable: true, description: 每月次数上限；为空表示不限次 }
+        once_only: { type: integer, description: 1 一次性（如完善档案） / 0 可重复 }
+        status: { type: integer, description: 1 启用 / 0 停用 }
+        sort_order: { type: integer }
+        updated_at: { type: string }
+
+    PointExchangeOptionView:
+      type: object
+      description: 兑换档位（只兑平台补贴券）
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        points_cost: { type: integer, description: 消耗积分 }
+        coupon_template_id: { type: integer, format: int64 }
+        coupon_template_name: { type: string }
+        coupon_face_value: { type: string, description: 券面额（展示用） }
+        sort_order: { type: integer }
+        status: { type: integer, description: 1 启用 / 0 停用 }
+        updated_at: { type: string }
+
+    PointExchangeRequest:
+      type: object
+      required: [option_id]
+      properties:
+        option_id: { type: integer, format: int64, description: 兑换档位 id（须启用）。**兑换没有别的参数**：兑什么由档位定，客户端不能指定券模板 }
+
+    PointExchangeView:
+      type: object
+      description: 兑换结果：扣分后的余额 + 发到手里的那张券（同一个事务，要么都成、要么都不成）
+      properties:
+        points_cost: { type: integer, description: 本次消耗的积分 }
+        balance_after: { type: integer, description: 扣分后的余额 }
+        coupon:
+          description: 发到手里的那张券（平台补贴券）
+          allOf:
+            - $ref: "#/components/schemas/CouponView"
+
+    # ------------------------------------------------------------------ 权益（切片 #112）
+
+    RightsEvaluationView:
+      type: object
+      description: 权益判定的出口：每个码是否生效 + 来源 + 到期（与 admin.yaml 的同名 schema 形状一致，对的是同一个后端 DTO）
+      properties:
+        user_id: { type: integer, format: int64 }
+        rights:
+          type: array
+          items: { $ref: "#/components/schemas/RightsItemView" }
+
+    RightsItemView:
+      type: object
+      properties:
+        code: { type: string, description: 权益码（如 ai.unlimited / report.full / community.post / quota.ai.bonus） }
+        name: { type: string }
+        effective: { type: boolean, description: 当前是否生效（实时判定，来源优先级 订阅 > 邀请（永久）> 打卡（当月）；不按到期时间比较） }
+        source: { type: integer, nullable: true, description: 生效那一条的来源；不生效时为空 }
+        source_name: { type: string, nullable: true, description: 来源的中文名（订阅 / 邀请 / 打卡 / 运营补偿） }
+        expire_at: { type: string, nullable: true, description: 生效那一条的到期时间；为空表示永久 }
+
+    # ------------------------------------------------------------------ 邀请（切片 #111）
+
+    InviteCodeRequest:
+      type: object
+      description: |
+        生成邀请码的参数。**（待澄清：`channel` 的语义——ADR-0046 待澄清第 6 条说这个字段
+        现在只做记录，不确定要不要用于分析。本契约按「生成时记下、归因时记的是真正发生的那一次」写。**）
+      properties:
+        channel: { type: integer, nullable: true, description: 渠道标签：1 分享链接 / 2 注册表单手工填 / 3 其他（线下等）；不传按 1 处理 }
+        device_id:
+          type: string
+          maxLength: 128
+          nullable: true
+          description: |
+            生成这条码的设备标识，**存下来只为反作弊**：它是 `SAME_DEVICE` 那一层判据的比较基准
+            （注册设备与建码设备相同时拦下，ADR-0046 第三节）。
+            **同一台设备上的一家人会被误伤**——这是刻意从严：误伤可以找客服，刷出来的券收不回来。
+            不传则这条判据不成立（与归因侧的 `device_id` 同源：都是本机生成一次、存本地）。
+
+    InviteCodeView:
+      type: object
+      description: 一条邀请码
+      properties:
+        id: { type: integer, format: int64 }
+        code: { type: string, description: 邀请码本身（可读串，不是安全凭证） }
+        channel: { type: integer, nullable: true, description: 生成时记下的渠道标签（只做记录，见 ADR-0046 待澄清第 6 条） }
+        invite_path:
+          type: string
+          description: 分享链接的相对路径（形如 `/register?invite=ABC123`），前端拼上域名后使用；「落地页记住 7 天」是前端行为（ADR-0039 第一节）
+        status: { type: integer, description: 1 启用 / 0 停用（停用的码不再接受归因，旧关系不受影响） }
+        created_at: { type: string }
+
+    InviteCenterView:
+      type: object
+      description: 我的邀请码与邀请进度。**进度按有效邀请数算**（被邀请人完成建档 + 24 小时内有行为），不按注册数（ADR-0046 第二节）
+      properties:
+        codes:
+          type: array
+          description: 我的邀请码（按生成时间倒序）。没有码时是空数组，前端引导去生成
+          items: { $ref: "#/components/schemas/InviteCodeView" }
+        registered_count: { type: integer, description: 通过我的码注册的人数（不含被反作弊拦下的） }
+        pending_count: { type: integer, description: 待生效（已注册、观察窗还没结束） }
+        effective_count: { type: integer, description: 有效邀请数（阶梯与积分都按它算） }
+        invalid_count: { type: integer, description: 无效（反作弊拦下，或观察窗内没有行为） }
+        ladder:
+          type: array
+          description: 阶梯进度（1 / 3 / 5 / 10 / 15，按门槛升序）。**奖励物没配也是有效状态**：档位照记达成，只是不发东西（ADR-0046 第五节）
+          items: { $ref: "#/components/schemas/InviteLadderProgressView" }
+        next_threshold: { type: integer, nullable: true, description: 下一档门槛；五档都达成时为空 }
+        next_remaining: { type: integer, nullable: true, description: 还差几个有效邀请到下一档；没有下一档时为空 }
+
+    InviteLadderProgressView:
+      type: object
+      properties:
+        threshold: { type: integer, description: 门槛（有效邀请数）：1 / 3 / 5 / 10 / 15 }
+        achieved: { type: boolean, description: 是否已达成 }
+        achieved_at: { type: string, nullable: true, description: 达成时间；未达成时为空 }
+        reward_desc: { type: string, nullable: true, description: 奖励说明（由服务端拼好）；**该档没配奖励时为空**——达成记录照记（ADR-0046 第五节） }
+
+    InviteAttributionRequest:
+      type: object
+      required: [invite_code, channel]
+      properties:
+        invite_code: { type: string, description: 用户填的邀请码（链接只做预填，以用户填的为准，ADR-0039 第一节） }
+        channel: { type: integer, description: 1 分享链接（预填） / 2 注册表单手工填——两者都算「用户填了码」（ADR-0046 第一节） }
+        device_id: { type: string, maxLength: 128, nullable: true, description: 注册设备标识。反作弊判据 SAME_DEVICE / SAME_IP_SEGMENT 要用它（ADR-0046 第三节）；不传则这两条判据不成立 }
+
+    InviteAttributionView:
+      type: object
+      description: |
+        归因结果。**`attributed=false` 不是报错**：注册照常成功，只是没建立邀请关系
+        （ADR-0046 第一节：不能因为邀请码可疑就不让用户注册）。
+
+        **给用户看的那句话是 `notice`**（前端直接展示这个字段）：它是本次调用**唯一的**用户可见文案，
+        三种结果各一句（已归因 / 码不存在或已失效 / 归因未成立），反作弊的判据细节不外露
+        （ADR-0046 第三节）。放在 `data` 里而不是信封的 `message` 里，是因为 `code=0` 时
+        前端拿到的是 `data`（信封的 `message` 在成功响应里不保证到达，见 common.yaml）。
+      properties:
+        attributed: { type: boolean, description: 是否建立了邀请关系 }
+        notice:
+          type: string
+          description: |
+            **给用户看的那句话，前端直接展示这个字段**（不要按 `reason` 自己拼文案——
+            那会让同一句话在服务端与前端各有一份实现）。三种取值：
+            「邀请关系已记录，待生效」（成功）/ 「该账号已绑定邀请关系」/
+            「邀请码不存在或已失效」/ 「邀请码不可用」（反作弊拦下，与判据无关的笼统一句）。
+        reason:
+          type: string
+          nullable: true
+          description: |
+            未建立时的原因，成功时为 null：
+            `ALREADY_ATTRIBUTED`（这个账号已经归因过 —— 归因只有一次机会）、
+            `CODE_NOT_FOUND`（码不存在或已停用）、
+            `SELF_INVITE`（自己邀自己）、
+            `SAME_DEVICE`（同设备）、
+            `SAME_IP_SEGMENT`（同出口 IP 且同手机号段）。
+            `NO_ACTIVITY_24H` 不会在这里出现：它由结算批算在观察窗结束后判（ADR-0046 第二、三节）。
+            **这是判据名，不是给用户看的文案**（文案见 `notice`）。
+        invite_code: { type: string, nullable: true, description: 回显本次提交的邀请码；未提交时为 null。**只回显，不代表关系已建立** }
+        relation_status: { type: integer, nullable: true, description: 关系状态：1 待生效（成功时） / 2 有效 / 3 无效；没建立关系时为空。刚归因完一定是「待生效」 }
+
+    # ------------------------------------------------------------------ 社区（切片 #84 / F020）
+
+    CommunityCardCreateRequest:
+      type: object
+      required: [pet_id, source_type, source_ref, title, content]
+      properties:
+        pet_id:
+          type: integer
+          format: int64
+          description: 来源记录所属的宠物（服务端校验它属于当前用户；不属于我 → 40400）
+        source_type:
+          type: integer
+          description: 来源记录类型：1 打卡 / 2 就医记录（**卡片与来源记录关联**的那一半）
+          enum: [1, 2]
+        source_ref:
+          type: string
+          maxLength: 64
+          description: 来源记录 id（打卡记录 / 档案记录的 id）。只做关联与追溯，服务端不解引用（见接口的待澄清）
+        title:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: 卡片标题
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: 卡片正文（前端从来源记录预填，用户可改；提交后进审核）
+        species:
+          type: integer
+          nullable: true
+          description: 物种快照：1 犬 / 2 猫（用于「同品种」聚合）；不传表示不参与物种聚合
+          enum: [1, 2]
+        breed:
+          type: string
+          maxLength: 32
+          nullable: true
+          description: 品种快照（用于「同品种」聚合），如「柯基」
+        disease_tag:
+          type: string
+          maxLength: 32
+          nullable: true
+          description: 慢病标签快照（用于「同病」聚合），如「慢性肾病」
+
+    CommunityCardView:
+      type: object
+      description: |
+        经验卡片（**恒匿名**：这里没有作者 id、昵称或宠物昵称——ADR-0041 第一节、
+        交付文档 F020「录入即生成卡片（匿名）」）。`liked` / `mine` 是**看的人**与这张卡片的关系，
+        不是作者的属性。
+      properties:
+        id: { type: integer, format: int64 }
+        source_type: { type: integer, description: 来源记录类型：1 打卡 / 2 就医记录 }
+        source_type_name: { type: string, description: 来源类型的中文名（打卡 / 就医记录） }
+        title: { type: string }
+        content: { type: string }
+        species: { type: integer, nullable: true, description: 物种快照：1 犬 / 2 猫；未带则为空 }
+        breed: { type: string, nullable: true }
+        disease_tag: { type: string, nullable: true, description: 慢病标签快照（按它做「同病」聚合） }
+        like_count: { type: integer, description: 点赞数（同一个人只算一次） }
+        liked: { type: boolean, description: 当前调用者点过赞没有（**与匿名无关**：说的是看的人自己） }
+        mine: { type: boolean, description: 当前调用者是不是作者（用于界面区分「我的卡片」） }
+        status: { type: integer, description: 审核状态：0 待审 / 1 已发布 / 2 已驳回或已下架 }
+        status_name: { type: string, description: 审核状态中文名（待审核 / 已发布 / 已驳回） }
+        reject_reason:
+          type: string
+          nullable: true
+          description: |
+            被驳回 / 下架的理由。**只有作者自己的那份能读到它**（公开列表里只会出现已发布的内容，
+            那些的这里恒为空）。机审命中时是「内容命中敏感词，未通过机审」，运营处置时是运营填的原文。
+        created_at: { type: string }
+
+    CommunityQuestionCreateRequest:
+      type: object
+      required: [title, content]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 64, description: 问题标题 }
+        content: { type: string, minLength: 1, maxLength: 2000, description: 问题正文（可补充症状、年龄、已做过的处理） }
+        disease_tag: { type: string, maxLength: 32, nullable: true, description: 慢病标签（按它聚合「同病」的问答） }
+
+    CommunityQuestionView:
+      type: object
+      description: |
+        一条提问。**`answers` 只在详情里有内容**，列表里是空数组——一屏十个问题带上全部回答，
+        既没人看，也让分页失去意义（见列表接口的说明）。
+      properties:
+        id: { type: integer, format: int64 }
+        title: { type: string }
+        content: { type: string }
+        disease_tag: { type: string, nullable: true }
+        answer_count: { type: integer, description: 已过审的回答条数（待审 / 被拒的不算） }
+        adopted_answer_id: { type: integer, format: int64, nullable: true, description: 被采纳的回答 id；没采纳时为空。**一条问题只会有一个** }
+        mine: { type: boolean, description: 当前调用者是不是提问者（采纳的唯一入口据此显示） }
+        status: { type: integer, description: 审核状态：0 待审 / 1 已发布 / 2 已驳回或已下架 }
+        status_name: { type: string }
+        reject_reason: { type: string, nullable: true, description: 被驳回 / 下架的理由；**只有提问者自己的那份能读到它**（同卡片的口径） }
+        created_at: { type: string }
+        answers:
+          type: array
+          description: 回答（仅详情接口下发生效内容；列表里是空数组）
+          items: { $ref: "#/components/schemas/CommunityAnswerView" }
+
+    CommunityAnswerCreateRequest:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1, maxLength: 2000, description: 回答正文（只说经验与建议，不下诊断结论） }
+
+    CommunityAnswerView:
+      type: object
+      description: 一条回答。**匿名**：不出现作者 id 与昵称，`mine` 只说明「这条是我写的」。
+      properties:
+        id: { type: integer, format: int64 }
+        question_id: { type: integer, format: int64 }
+        content: { type: string }
+        adopted: { type: boolean, description: 是否被提问者采纳（同一条问题只会有一条 true） }
+        mine: { type: boolean }
+        status: { type: integer, description: 审核状态：0 待审 / 1 已发布 / 2 已驳回或已下架 }
+        status_name: { type: string }
+        reject_reason: { type: string, nullable: true, description: 被驳回 / 下架的理由；**只有回答人自己的那份能读到它** }
+        created_at: { type: string }
+
+    # ------------------------------------------------------------ 服务者与目录的 C 端浏览（只读）
+
+    ProviderSummaryView:
+      type: object
+      description: |
+        服务者列表行（`GET /providers`）。**界面对外的可下单门店视图**：没有 `status` / `level` /
+        `monthly_score` 这些内部字段——能进列表就说明状态与资质都过了门槛（见接口的可见性口径），
+        再下发一个 `status` 只会让前端有机会把它当成「可以下单否」的第二个判据。
+
+        `phone` 是**脱敏值**（ADR-0049 第二节）：门店联系电话是加密存储的字段（ADR-0013），
+        C 端展示 `138****8888` 就够——打电话找店不需要完整号码。
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, description: 门店名称 }
+        type: { type: integer, description: 服务者分类（交付文档 5.2 的六大类）：1 医院 / 2 洗护 / 3 训犬 / 4 寄养上门 / 5 食品用品 / 6 间接服务 }
+        type_name: { type: string, description: 分类中文名（医院 / 洗护美容 / …），由服务端拼好 }
+        logo: { type: string, nullable: true }
+        intro: { type: string, nullable: true, description: 一句话简介 }
+        address: { type: string }
+        lng: { type: string, nullable: true }
+        lat: { type: string, nullable: true }
+        phone: { type: string, description: 门店联系电话（**脱敏**，如 138****8888） }
+        rating: { type: string, description: 评分（门店所有评价的**平均分**，一位小数；**没有评价时是数据库默认值**（5.0），不代表「满分好评」——界面上要与评价条数一起看。排序按它降序，见接口说明） }
+
+    ProviderDetailView:
+      type: object
+      description: |
+        服务者详情（`GET /providers/{provider_id}`）：C 端看一间店需要的全部——简介 / 地址 /
+        联系电话（脱敏）/ 营业时间 / 资质摘要 / **在架服务项与价格**。
+
+        三个刻意的取舍：
+
+        - **`qualifications` 没有证照编号**（连脱敏值都不给）：C 端用户没有核验证件号的需求，
+          而少一个字段就少一处泄漏面；运营审核走的仍是服务者侧的 `ProviderQualificationView`
+          （那里给脱敏值，因为审核要用）；
+        - **`services` 只有已上架的服务项**（`status=1`）：待审核 / 已下架 / 已驳回都不出现——
+          「在架」是用户唯一会下单的东西，把待审的项列出来等于给他一个点了会 40400 的按钮；
+        - `business_hours` 里**不出现的星期几就是休息**（与 provider.yaml 的同一约定），
+          空数组表示整周休息。
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        type: { type: integer, description: 1 医院 / 2 洗护 / 3 训犬 / 4 寄养上门 / 5 食品用品 / 6 间接服务 }
+        type_name: { type: string }
+        logo: { type: string, nullable: true }
+        intro: { type: string, nullable: true }
+        address: { type: string }
+        lng: { type: string, nullable: true }
+        lat: { type: string, nullable: true }
+        phone: { type: string, description: 门店联系电话（**脱敏**，ADR-0049 第二节） }
+        rating: { type: string, description: 评分（门店所有评价的平均分，一位小数；没有评价时是数据库默认值 5.0。评价条数见「某门店的评价列表」接口的 total，两个数一起看才是「N 分 / M 条」） }
+        business_hours:
+          type: array
+          description: 营业时间（只列营业的那几天；空数组 = 整周休息）
+          items: { $ref: "#/components/schemas/BusinessHour" }
+        qualifications:
+          type: array
+          description: 资质摘要（**只给已通过审核且未过期的材料**；证照编号不回显）
+          items: { $ref: "#/components/schemas/ProviderQualificationSummaryView" }
+        services:
+          type: array
+          description: 在架服务项与价格（已上架才算；排序按分类 + 服务项名称）。空数组 = 这家店此刻没有在架服务
+          items: { $ref: "#/components/schemas/ProviderServiceOfferView" }
+
+    ProviderQualificationSummaryView:
+      type: object
+      description: |
+        资质摘要（C 端）：只回答「这家店有什么材料、还在不在有效期内」。
+        **没有证照编号字段**——不是脱敏后为空，而是根本没有这个字段（不给出口就绕不开）。
+      properties:
+        type: { type: integer, description: 1 营业执照 / 2 执业许可证 / 3 法人身份证 / 4 训犬师认证 / 5 健康证 / 6 其他 }
+        type_name: { type: string, description: 材料类型中文名（营业执照 / 动物诊疗许可证 / …） }
+        name: { type: string, description: 材料名称（如「动物诊疗许可证」） }
+        valid_until: { type: string, nullable: true, description: 到期日（yyyy-MM-dd）；为空表示长期有效 }
+
+    ProviderServiceOfferView:
+      type: object
+      description: |
+        某家店的一个在架服务项（`GET /providers/{provider_id}` 的 `services`）。
+        与服务者侧的 `ProviderServiceView` **不是同一张 schema**：那张带 `status` / `reject_reason` /
+        `submitted_at`（审核流程的内部状态），C 端一个都不需要。
+
+        名称、单位都**来自标准目录现取**（不是快照，ADR-0034 决定 9）：平台给目录项改名，
+        这里立刻跟着变。
+      properties:
+        id: { type: integer, format: int64, description: 服务项 id（`provider_service.id`）——**下单要传的就是它**（OrderCreateRequest.service_id） }
+        service_code: { type: string, description: 目录项编码（形如 HE-001） }
+        service_name: { type: string, nullable: true, description: 目录项名称；目录项被删时为空 }
+        category_code: { type: string, nullable: true, description: 目录分类编码（HE / GR / …） }
+        category_name: { type: string, nullable: true, description: 目录分类中文名 }
+        price: { type: string, description: 这家店的定价（元，两位小数字符串；**在平台区间内**，ADR-0034 第三节） }
+        price_unit: { type: string, nullable: true, description: 计价单位（次 / 只 / 天 / 课时 / 件），来自目录侧 }
+        duration_minutes: { type: integer, nullable: true, description: 预计耗时（分钟），来自目录侧 }
+
+    KnowledgeEntryView:
+      type: object
+      description: |
+        一条知识条目（C 端）。三条与别处不同的地方：
+
+        - `review_status` 是**必填**：`pending_review`（工程起草、待兽医复核）/ `vetted`（已复核）。
+          C 端**必须**据此标出「未经兽医复核」——把待复核说成已复核是 ADR-0033 明令禁止的。
+        - `body` 只在**详情**里有值（列表为空串）：列表给标题与摘要，点进去才拿正文。
+        - `risk_level` 只在症状分诊 / 急救类有条目上出现（1 绿 / 2 黄 / 3 红，与 AI 咨询同一口径）；
+          它**不是诊断**，只表示就医紧迫程度。
+      properties:
+        code: { type: string, description: 条目编号（形如 K-0011） }
+        title: { type: string }
+        summary: { type: string }
+        body: { type: string, description: 正文；**列表为空串**，详情才有 }
+        category_code: { type: string, nullable: true }
+        category_name: { type: string, nullable: true, description: 分类中文名（由服务端给，C 端不认编码） }
+        risk_level: { type: integer, nullable: true, description: 1 绿 / 2 黄 / 3 红；为空表示这条不含就医紧迫程度 }
+        review_status: { type: string, description: pending_review / vetted——**必须原样展示**给用户 }
+        source_title: { type: string, nullable: true, description: 来源（可追溯，63 号调研 §4.5） }
+        source_url: { type: string, nullable: true }
+
+    HumanConsultView:
+      type: object
+      description: |
+        一条转人工工单（C 端看到的形状）：只给自己的那次咨询用，所以**没有用户与宠物的 id**
+        （路径里已经有了），也没有运营的处置信息。
+        `status`：0 待处理 / 1 已回复 / 2 已关闭——用户界面按它说「已受理 / 已回复 / 已关闭」。
+      properties:
+        id: { type: integer, format: int64 }
+        consult_id: { type: integer, format: int64, description: 关联的 AI 咨询 id }
+        risk_level: { type: integer, description: 转人工时那次咨询的风险等级：0 未知 / 1 绿 / 2 黄 / 3 红 }
+        status: { type: integer, description: 0 待处理 / 1 已回复 / 2 已关闭 }
+        created_at: { type: string }
+
+
+    ServiceRecommendationRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 2
+          maxLength: 500
+          description: 症状描述（用户自己的话，不需要专业术语——口识别名走受控词典的 alias）
+
+    ServiceRecommendationMatch:
+      type: object
+      description: |
+        一个被认出来的症状。`title` / `risk_level` 可能为空：词表命中而条目读不到时，
+        症状照样报出来——「你说的是腹泻」这件事成立，只是拿不到条目里的就医紧迫程度。
+        空值不要显示成「风险正常」。
+      properties:
+        symptom: { type: string, description: 症状规范名（如「腹泻」）——用户看到的推荐理由就用它 }
+        entry_code: { type: string, nullable: true, description: 分诊条目编号（如 K-0011），可追溯 }
+        title: { type: string, nullable: true, description: 分诊条目标题 }
+        risk_level: { type: integer, nullable: true, description: 该症状的就医紧迫程度：1 绿 / 2 黄 / 3 红；为空表示这次拿不到 }
+
+    ServiceRecommendationItem:
+      type: object
+      description: |
+        一条推荐：项目 + 理由 + 平台区间价。**区间价不是门店报价**——
+        某家店做这个项目多少钱，用 `GET /catalog/items/{item_code}/providers` 查。
+      properties:
+        item_code: { type: string, description: 目录项编码（形如 HE-012），可据此查可预约门店 }
+        category_code: { type: string }
+        category_name: { type: string, nullable: true }
+        name: { type: string }
+        price_min: { type: string, description: 平台区间下限（元，两位小数字符串） }
+        price_max: { type: string, description: 平台区间上限 }
+        price_unit: { type: string }
+        duration_minutes: { type: integer, nullable: true, description: 参考时长（分钟）；目录项没填时为空 }
+        reason: { type: string, description: 推荐理由（服务端拼好的整句，如「因为你说腹泻，建议先做常见病诊疗」） }
+
+    ServiceRecommendationView:
+      type: object
+      properties:
+        risk_level:
+          type: integer
+          nullable: true
+          description: 命中症状里最高的就医紧迫程度（1 绿 / 2 黄 / 3 红）；一个症状都没认出来时为空
+        matched:
+          type: array
+          description: 认出来的症状（按词典顺序）；**空数组是正常结果**，不是错误
+          items: { $ref: "#/components/schemas/ServiceRecommendationMatch" }
+        recommendations:
+          type: array
+          description: 推荐的项目（同一项目被多个症状命中时只出现一次，理由取第一条命中的）
+          items: { $ref: "#/components/schemas/ServiceRecommendationItem" }
+        notice:
+          type: string
+          description: 必须展示的那句话：免责声明；红色时含「立即就医」，认不出症状时给下一步
+        degraded:
+          type: boolean
+          description: true 表示 AI 侧这次没读出症状（知识层不可用），结果为空是降级而不是「没有症状」
+
+
+    CatalogCategoryView:
+      type: object
+      description: 标准目录的分类（C 端），对应 `GET /catalog/categories`。
+      properties:
+        code: { type: string, description: 分类编码（HOSPITAL / GROOMING / …） }
+        name: { type: string, description: 分类名（医院 / 洗护美容 / …），由服务端给——前端不抄常量 }
+        description: { type: string, nullable: true }
+        icon: { type: string, nullable: true, description: 图标标识（不是图形本身） }
+        item_count: { type: integer, description: 该分类下**启用中**的目录项数 }
+
+    CatalogItemView:
+      type: object
+      description: |
+        标准目录项（C 端），对应 `GET /catalog/items`。
+        `price_min` / `price_max` 是**平台允许的定价区间**，不是某家店的报价——某家店的价格在
+        `CatalogItemProviderView.price` 或门店详情里（ADR-0034 第三节）。
+      properties:
+        code: { type: string, description: 项目编码（形如 HE-004） }
+        category_code: { type: string }
+        category_name: { type: string, nullable: true }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        price_min: { type: string, description: 区间下限（元，两位小数字符串） }
+        price_max: { type: string, description: 区间上限 }
+        price_unit: { type: string, description: 计价单位（次 / 只 / 天 / 课时 / 件） }
+        duration_minutes: { type: integer, nullable: true, description: 参考时长（分钟）；目录项没填时为空 }
+        applicable_pets: { type: integer, description: 1 犬 / 2 猫 / 3 犬猫 }
+
+    CatalogItemProviderView:
+      type: object
+      description: |
+        做某个项目的门店，对应 `GET /catalog/items/{item_code}/providers`。
+        它是「按项目找店」的一行：门店对外的那些字段 + **这个项目在这家店的定价** + 下单要用的 `service_id`。
+
+        与 `ProviderSummaryView` **不是同一张 schema**，也不该合并：这张多了 `service_id` 与 `price`
+        （同一个项目在不同门店的价格不同），少了 `intro` / `lng` / `lat`（按项目找店时不需要）。
+      properties:
+        provider_id: { type: integer, format: int64 }
+        provider_name: { type: string }
+        type: { type: integer, description: 1 医院 / 2 洗护 / 3 训犬 / 4 寄养上门 / 5 食品用品 / 6 间接服务 }
+        type_name: { type: string }
+        rating: { type: string, description: 评分（门店所有评价的平均分，一位小数；没有评价时是数据库默认值 5.0） }
+        address: { type: string }
+        phone: { type: string, description: 门店联系电话（**脱敏**，ADR-0049 第二节） }
+        service_id: { type: integer, format: int64, description: 这家店这个服务项的 id——**下单要传的就是它** }
+        price: { type: string, description: 这家店的定价（元，两位小数字符串；在平台区间内） }
+        price_unit: { type: string, nullable: true, description: 计价单位，来自目录侧 }
+
+    BusinessHour:
+      type: object
+      description: |
+        一天营业时段。与服务者后台（provider.yaml）同一形状，**契约文件各写一份**——
+        与 `OrderCancelRequest` / `OrderPhotoWallView` 在 app.yaml 与 provider.yaml 各写一份的既有做法一致：
+        每份契约自足，改一份不影响另一份的生成物。
+        数组里没有的星期几就是休息；跨天的营业时段（22:00–02:00）本期不支持。
+      required: [day_of_week, open_time, close_time]
+      properties:
+        day_of_week: { type: integer, minimum: 1, maximum: 7, description: 1 周一 … 7 周日 }
+        open_time: { type: string, description: "HH:mm" }
+        close_time: { type: string, description: "HH:mm（必须晚于 open_time；跨天不支持）" }

@@ -2,6 +2,10 @@
  * C 端接口调用。类型全部来自 `contract/app.yaml` 的生成物——**不要手写接口类型**（ADR-0005）。
  *
  * 这一层只做两件事：拼路径、给返回类型。错误处理、鉴权、刷新都在 `http/client.ts` 里。
+ *
+ * **它刻意与契约一一对应**：契约 `app.yaml` 里已实现的接口在这里都有方法，哪怕当前 UI 还没用到
+ * （例如 `getPet`、`listComplianceDocuments`）。所以「某个方法没有调用点」不等于死代码——判断依据是
+ * 「契约里还有没有这个接口」。反过来，契约里删了接口，这里的方法要一起删。
  */
 import type { components } from "./app";
 import { http } from "../http/client";
@@ -10,7 +14,7 @@ type Schemas = components["schemas"];
 
 export type TokenPair = Schemas["TokenPair"];
 export type UserProfile = Schemas["UserProfile"];
-export type Pet = Schemas["Pet"];
+export type PetView = Schemas["PetView"];
 export type RegisterRequest = Schemas["RegisterRequest"];
 export type LoginRequest = Schemas["LoginRequest"];
 export type UpdateProfileRequest = Schemas["UpdateProfileRequest"];
@@ -18,27 +22,38 @@ export type PetCreateRequest = Schemas["PetCreateRequest"];
 export type PetUpdateRequest = Schemas["PetUpdateRequest"];
 export type CheckInDay = Schemas["CheckInDay"];
 export type CheckInItem = Schemas["CheckInItem"];
-export type CheckInItemInput = Schemas["CheckInItemInput"];
+export type CheckInItemRequest = Schemas["CheckInItemRequest"];
 export type CheckInSubmitRequest = Schemas["CheckInSubmitRequest"];
 export type CheckInStreak = Schemas["CheckInStreak"];
-export type HealthScore = Schemas["HealthScore"];
+export type HealthScoreView = Schemas["HealthScoreView"];
 export type HealthScoreDimension = Schemas["HealthScoreDimension"];
 export type MessageView = Schemas["MessageView"];
 /**
- * 消息列表的分页结构：信封用契约生成的 `PageResult`，只有 `list` 的元素类型在契约里是 unknown，
- * 这里收窄成 `MessageView`——**不手写整个分页类型**（AGENTS.md：前端不手写接口类型）。
+ * 分页结构：信封用契约生成的 `PageResult`，只把 `list` 的元素类型收窄
+ * ——**不手写整个分页类型**（AGENTS.md：前端不手写接口类型）。
  */
-export type MessagePage = Omit<Schemas["PageResult"], "list"> & { list: MessageView[] };
-export type ReminderSetting = Schemas["ReminderSetting"];
-export type EpidemicRecord = Schemas["EpidemicRecord"];
-export type EpidemicRecordInput = Schemas["EpidemicRecordInput"];
+export type Paged<T> = Omit<Schemas["PageResult"], "list"> & { list: T[] };
+export type MessagePage = Paged<MessageView>;
+export type ReminderSettingView = Schemas["ReminderSettingView"];
+export type EpidemicRecordView = Schemas["EpidemicRecordView"];
+export type EpidemicRecordRequest = Schemas["EpidemicRecordRequest"];
 export type AccountExportView = Schemas["AccountExportView"];
 export type ComplianceDocumentView = Schemas["ComplianceDocumentView"];
 export type AiConsultRequest = Schemas["AiConsultRequest"];
 export type AiConsultView = Schemas["AiConsultView"];
+export type HumanConsultView = Schemas["HumanConsultView"];
 export type FilePresignRequest = Schemas["FilePresignRequest"];
 export type FilePresignView = Schemas["FilePresignView"];
 export type FileView = Schemas["FileView"];
+export type ArchiveSectionView = Schemas["ArchiveSectionView"];
+export type ArchiveRecordView = Schemas["ArchiveRecordView"];
+export type ArchiveRecordRequest = Schemas["ArchiveRecordRequest"];
+export type TimelineEventView = Schemas["TimelineEventView"];
+export type CareModeView = Schemas["CareModeView"];
+export type HealthReportView = Schemas["HealthReportView"];
+export type HealthReportPayload = Schemas["HealthReportPayload"];
+export type HealthReportStats = Schemas["HealthReportStats"];
+export type KnowledgeEntryView = Schemas["KnowledgeEntryView"];
 
 const BASE = "/api/v1/app";
 
@@ -66,23 +81,23 @@ export const cApp = {
   },
 
   // ---- 宠物档案 ----
-  listPets(includeDeleted = false, signal?: AbortSignal): Promise<Pet[]> {
-    return http.get<Pet[]>(`${BASE}/pets`, includeDeleted ? { deleted: true } : undefined, { signal });
+  listPets(includeDeleted = false, signal?: AbortSignal): Promise<PetView[]> {
+    return http.get<PetView[]>(`${BASE}/pets`, includeDeleted ? { deleted: true } : undefined, { signal });
   },
-  createPet(body: PetCreateRequest): Promise<Pet> {
-    return http.post<Pet>(`${BASE}/pets`, body);
+  createPet(body: PetCreateRequest): Promise<PetView> {
+    return http.post<PetView>(`${BASE}/pets`, body);
   },
-  getPet(petId: number): Promise<Pet> {
-    return http.get<Pet>(`${BASE}/pets/${petId}`);
+  getPet(petId: number): Promise<PetView> {
+    return http.get<PetView>(`${BASE}/pets/${petId}`);
   },
-  updatePet(petId: number, body: PetUpdateRequest): Promise<Pet> {
-    return http.put<Pet>(`${BASE}/pets/${petId}`, body);
+  updatePet(petId: number, body: PetUpdateRequest): Promise<PetView> {
+    return http.put<PetView>(`${BASE}/pets/${petId}`, body);
   },
   deletePet(petId: number): Promise<void> {
     return http.delete<void>(`${BASE}/pets/${petId}`);
   },
-  restorePet(petId: number): Promise<Pet> {
-    return http.post<Pet>(`${BASE}/pets/${petId}/restore`);
+  restorePet(petId: number): Promise<PetView> {
+    return http.post<PetView>(`${BASE}/pets/${petId}/restore`);
   },
 
   // ---- 打卡（切片 #97，规则见 ADR-0018）----
@@ -101,16 +116,16 @@ export const cApp = {
   },
 
   // ---- 健康评分（切片 #97，算法见 ADR-0018）----
-  getHealthScore(petId: number, signal?: AbortSignal): Promise<HealthScore> {
-    return http.get<HealthScore>(`${BASE}/pets/${petId}/health-score`, undefined, { signal });
+  getHealthScore(petId: number, signal?: AbortSignal): Promise<HealthScoreView> {
+    return http.get<HealthScoreView>(`${BASE}/pets/${petId}/health-score`, undefined, { signal });
   },
 
   // ---- 防疫记录（切片 #99：疫苗/驱虫日期，疫苗提醒与评分「防疫」维度的数据源）----
-  listEpidemicRecords(petId: number, signal?: AbortSignal): Promise<EpidemicRecord[]> {
-    return http.get<EpidemicRecord[]>(`${BASE}/pets/${petId}/epidemic-records`, undefined, { signal });
+  listEpidemicRecords(petId: number, signal?: AbortSignal): Promise<EpidemicRecordView[]> {
+    return http.get<EpidemicRecordView[]>(`${BASE}/pets/${petId}/epidemic-records`, undefined, { signal });
   },
-  createEpidemicRecord(petId: number, body: EpidemicRecordInput): Promise<EpidemicRecord> {
-    return http.post<EpidemicRecord>(`${BASE}/pets/${petId}/epidemic-records`, body);
+  createEpidemicRecord(petId: number, body: EpidemicRecordRequest): Promise<EpidemicRecordView> {
+    return http.post<EpidemicRecordView>(`${BASE}/pets/${petId}/epidemic-records`, body);
   },
   deleteEpidemicRecord(petId: number, recordId: number): Promise<void> {
     return http.delete<void>(`${BASE}/pets/${petId}/epidemic-records/${recordId}`);
@@ -143,11 +158,11 @@ export const cApp = {
   markAllMessagesRead(): Promise<{ unread: number }> {
     return http.put<{ unread: number }>(`${BASE}/messages/read-all`);
   },
-  listReminderSettings(signal?: AbortSignal): Promise<ReminderSetting[]> {
-    return http.get<ReminderSetting[]>(`${BASE}/messages/settings`, undefined, { signal });
+  listReminderSettings(signal?: AbortSignal): Promise<ReminderSettingView[]> {
+    return http.get<ReminderSettingView[]>(`${BASE}/messages/settings`, undefined, { signal });
   },
-  updateReminderSetting(type: number, enabled: boolean): Promise<ReminderSetting[]> {
-    return http.put<ReminderSetting[]>(`${BASE}/messages/settings`, { type, enabled });
+  updateReminderSetting(type: number, enabled: boolean): Promise<ReminderSettingView[]> {
+    return http.put<ReminderSettingView[]>(`${BASE}/messages/settings`, { type, enabled });
   },
 
   // ---- 合规（切片 #74，决策见 ADR-0025）----
@@ -172,6 +187,101 @@ export const cApp = {
   // 到量只是提示，接口照常返回 —— 见 remaining_today 的说明。
   consultAi(petId: number, body: AiConsultRequest, signal?: AbortSignal): Promise<AiConsultView> {
     return http.post<AiConsultView>(`${BASE}/pets/${petId}/ai-consults`, body, { signal });
+  },
+
+  /**
+   * 转人工：把这次咨询交给平台人工跟进（F006 的出口）。
+   *
+   * **幂等**：一次咨询只能转一次，重复调用返回同一条工单（后端在 `consult_id` 上有唯一键）。
+   * 所以连点两下、或网络抖动后重试，都不会给用户造出两张单子。
+   */
+  transferToHuman(petId: number, consultId: number): Promise<HumanConsultView> {
+    return http.post<HumanConsultView>(`${BASE}/pets/${petId}/ai-consults/${consultId}/transfer`, {});
+  },
+
+  // ---- 档案分项与时间轴（切片 #102，规则见 ADR-0030）----
+  // 分项是原始记录；写接口只收「列表语义」的四个分项，体重/排泄/防疫各有自己的入口。
+  listArchiveSections(petId: number, signal?: AbortSignal): Promise<ArchiveSectionView[]> {
+    return http.get<ArchiveSectionView[]>(`${BASE}/pets/${petId}/archive-sections`, undefined, { signal });
+  },
+  listArchiveRecords(
+    petId: number,
+    params?: { section?: string; from?: string; to?: string; page?: number; pageSize?: number },
+    signal?: AbortSignal,
+  ): Promise<Paged<ArchiveRecordView>> {
+    return http.get<Paged<ArchiveRecordView>>(`${BASE}/pets/${petId}/archive-records`, {
+      section: params?.section,
+      from: params?.from,
+      to: params?.to,
+      page: params?.page,
+      page_size: params?.pageSize,
+    }, { signal });
+  },
+  createArchiveRecord(petId: number, body: ArchiveRecordRequest): Promise<ArchiveRecordView> {
+    return http.post<ArchiveRecordView>(`${BASE}/pets/${petId}/archive-records`, body);
+  },
+  updateArchiveRecord(petId: number, recordId: number, body: ArchiveRecordRequest): Promise<ArchiveRecordView> {
+    return http.put<ArchiveRecordView>(`${BASE}/pets/${petId}/archive-records/${recordId}`, body);
+  },
+  deleteArchiveRecord(petId: number, recordId: number): Promise<void> {
+    return http.delete<void>(`${BASE}/pets/${petId}/archive-records/${recordId}`);
+  },
+  // 时间轴只收四类事件（就医 / 疫苗驱虫 / 异常打卡 / 服务者报工），正常打卡不在里面
+  listTimeline(
+    petId: number,
+    params?: { type?: string; from?: string; to?: string; page?: number; pageSize?: number },
+    signal?: AbortSignal,
+  ): Promise<Paged<TimelineEventView>> {
+    return http.get<Paged<TimelineEventView>>(`${BASE}/pets/${petId}/timeline`, {
+      type: params?.type,
+      from: params?.from,
+      to: params?.to,
+      page: params?.page,
+      page_size: params?.pageSize,
+    }, { signal });
+  },
+
+  // ---- 健康报告（切片 #115，决策见 ADR-0031）----
+  // 读取会惰性生成当期报告（幂等）；报告由规则模板拼装，不经过模型
+  listHealthReports(
+    petId: number,
+    params?: { type?: number; page?: number; pageSize?: number },
+    signal?: AbortSignal,
+  ): Promise<Paged<HealthReportView>> {
+    return http.get<Paged<HealthReportView>>(`${BASE}/pets/${petId}/health-reports`, {
+      type: params?.type,
+      page: params?.page,
+      page_size: params?.pageSize,
+    }, { signal });
+  },
+
+  // ---- 专项照护模式（切片 #116，决策见 ADR-0032）----
+  // 它是派生结果：GET 只读；PUT 用于「用户手动关闭 / 重新交还给自动判定」
+  getCareMode(petId: number, signal?: AbortSignal): Promise<CareModeView> {
+    return http.get<CareModeView>(`${BASE}/pets/${petId}/care-mode`, undefined, { signal });
+  },
+  setCareMode(petId: number, enabled: boolean): Promise<CareModeView> {
+    return http.put<CareModeView>(`${BASE}/pets/${petId}/care-mode`, { enabled });
+  },
+
+  // ---- 知识库（F024 / F025，决策见 ADR-0033）----
+  // 只读出口：列表不带正文（`body` 是空串）、详情才有；两条都**需要登录**。
+  // `review_status` 是必填字段且**必须原样展示**——条目多数是待复核（ADR-0025 第二节），
+  // 界面不许把未复核说成已复核（ADR-0033）。
+  listKnowledgeEntries(
+    params?: { categoryCode?: string; keyword?: string; page?: number; pageSize?: number },
+    signal?: AbortSignal,
+  ): Promise<Paged<KnowledgeEntryView>> {
+    return http.get<Paged<KnowledgeEntryView>>(`${BASE}/knowledge/entries`, {
+      category_code: params?.categoryCode,
+      keyword: params?.keyword,
+      page: params?.page,
+      page_size: params?.pageSize,
+    }, { signal });
+  },
+  // 不可读的编号（不存在 / 已删除 / 复核状态不可读）一律 40400——与「看不到」同码
+  getKnowledgeEntry(code: string, signal?: AbortSignal): Promise<KnowledgeEntryView> {
+    return http.get<KnowledgeEntryView>(`${BASE}/knowledge/entries/${code}`, undefined, { signal });
   },
 
   // ---- 文件（切片 #95，决策见 ADR-0020）----

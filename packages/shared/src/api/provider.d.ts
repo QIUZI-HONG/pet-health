@@ -3,12 +3,3238 @@
  * Do not make direct changes to the file.
  */
 
-export type paths = Record<string, never>;
+export interface paths {
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 服务者后台登录
+         * @description 手机号 + 密码，与 C 端同一批账号。**本端不设准入**：BPM-4 的第一步就是「申请入驻」，
+         *     而申请要先能进这个控制台——若要求「已有服务者绑定」才能登录，就永远没人能提交第一份申请。
+         *
+         *     进来以后**看得到什么**由各接口已有的绑定校验决定：未绑定 / 审核中 / 已驳回的账号
+         *     读门店类接口 40400、写 40300（ADR-0035 的 Consequences 写明过这条）。
+         *     运营后台不同：它能看到全平台数据且没有「先登录才能申请」的流程，所以那边是名单制
+         *     （`app.console.admin-user-ids`，fail-closed）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LoginRequest"];
+                };
+            };
+            responses: {
+                /** @description 登录成功；`data` 里的令牌登录域是 provider */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["TokenPair"];
+                        };
+                    };
+                };
+                /** @description 手机号或口令不正确（40100） */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 账号被禁用（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 尝试过于频繁（42900） */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 换发令牌（provider 域）
+         * @description 与 C 端同一条规则：Refresh 一次性使用，旧的在换发时作废（ADR-0012）。
+         *     **旧 Refresh 的登录域必须也是 provider**——拿 C 端的 Refresh 打这里换不到 provider 令牌，
+         *     否则「三个登录域互不通用」就只剩一句话。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RefreshRequest"];
+                };
+            };
+            responses: {
+                /** @description 新的一对令牌 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["TokenPair"];
+                        };
+                    };
+                };
+                /** @description Refresh 过期、已作废、或登录域不匹配（40101 / 40100） */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 退出（吊销 Refresh）
+         * @description 已签发的 Access 在剩余有效期（≤2 小时）内仍有效，这是不引黑名单的必然代价（ADR-0012）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LogoutRequest"];
+                };
+            };
+            responses: {
+                /** @description 已退出（重复调用同样返回成功） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/onboarding/applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的入驻申请列表
+         * @description 只返回当前账号提交过的申请（按提交时间倒序）。**驳回原因在列表里就给出来**——
+         *     服务者最关心的是「卡在哪」，要先点进详情才能看到原因会多一步。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 0 待审核 / 1 通过 / 2 驳回；不传表示全部 */
+                    status?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["OnboardingApplicationSummary"][];
+                            };
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        /**
+         * 提交入驻申请（含资质材料）
+         * @description 申请即建一条**待审核**的服务者记录；审核通过后申请人成为该服务者的管理员。
+         *
+         *     三条会被拒绝的业务规则：
+         *     - 当前账号已关联服务者 → 40900；
+         *     - 已有一份待审核的申请 → 40900（可先用 `PUT` 改「已驳回」的那份）；
+         *     - 营业执照 / 身份证已被另一个**有效状态**（待审核或正常）的服务者占用 → 40900。
+         *       被驳回或已冻结的记录不占名额——否则一次误拒就再也开不了店。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OnboardingApplicationRequest"];
+                };
+            };
+            responses: {
+                /** @description 已提交，返回申请详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["OnboardingApplicationView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 已有申请 / 已关联服务者 / 证件号重复（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/onboarding/applications/{application_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 申请详情（含资质材料与审核流水） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    application_id: components["parameters"]["ApplicationId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["OnboardingApplicationView"];
+                        };
+                    };
+                };
+                /** @description 申请不存在，或不是当前账号提交的（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        /**
+         * 驳回后修改重提
+         * @description **同一份申请单**改完回到待审核，不新建服务者记录（`submit_count` 加一，
+         *     于是「被退回过几次」查得到）。
+         *
+         *     只有「已驳回」的申请能这样改：待审核时直接改会绕过审核员手里的那一版材料——
+         *     他看到的和最终入库的就不是同一份了。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    application_id: components["parameters"]["ApplicationId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OnboardingApplicationRequest"];
+                };
+            };
+            responses: {
+                /** @description 已重新提交 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["OnboardingApplicationView"];
+                        };
+                    };
+                };
+                /** @description 申请不存在，或不属于当前账号（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 申请正在审核中 / 已通过（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的门店信息
+         * @description **还没通过审核时返回 40400**：门店这个资源此时还不存在——审核进度与门店快照走
+         *     `/onboarding/applications/{application_id}`（申请详情里带着 `provider`）。
+         *
+         *     已通过但被冻结 / 资质过期的服务者读得到（界面要展示状态），写（`PUT`）被 40300 拦住。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderProfileView"];
+                        };
+                    };
+                };
+                /** @description 当前账号还没有关联的服务者（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        /**
+         * 维护门店信息（审核通过后）
+         * @description 整体覆盖。**改了不需要重新审核**——交付文档没要求门店信息变更走审核，
+         *     本切片不自行加一道（取舍见 ADR-0035）。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProviderProfileRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的门店信息 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderProfileView"];
+                        };
+                    };
+                };
+                /** @description 审核中 / 已被驳回 / 已被冻结（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 还没通过审核，门店还不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/business-hours": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 维护营业时间（整体替换）
+         * @description 只列**营业的那几天**：数组里没有的星期几就是休息（用「不出现 = 不营业」而不是
+         *     `closed: true` 标记——后者会出现「既有时段又标了休息」这种自相矛盾的行）。
+         *     空数组表示整周休息，**不是**「不改」。
+         *
+         *     跨天的营业时段（22:00–02:00）本期不支持：预约时段校验在下单链路（#77），
+         *     到那时再决定要不要跨天。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BusinessHoursRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的门店信息 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderProfileView"];
+                        };
+                    };
+                };
+                /** @description 同一天重复 / 开始时间不早于结束时间（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 服务者未通过审核或已被冻结（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/qualifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 补交 / 更新资质材料（整体替换）
+         * @description **补交即可恢复上架**：资质全部过期后系统会自动下架该服务者的全部服务项
+         *     （但不注销服务者，历史订单与客户关系都留着），补交新材料后即可再上架。
+         *
+         *     新材料回到「待审核」；材料本身的复核流程（谁看、多久看、驳回后怎么办）
+         *     尚未定，见 ADR-0035 的待澄清——在那之前，上架门禁只看「有没有一份没过期的材料」。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProviderQualificationsRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的门店信息 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderProfileView"];
+                        };
+                    };
+                };
+                /** @description 材料为空 / 证件号格式不对（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 服务者未通过审核或已被冻结（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 营业执照 / 身份证已被另一个有效服务者占用（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 标准目录分类（只给启用的）
+         * @description 停用的分类对服务者等于不存在——不能选、不能在其下提案。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按 sort_order 升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ServiceCategoryView"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 标准目录项（含价格区间，只给启用的）
+         * @description 选品页据此渲染：**区间与名称一起给出**，服务者不必先试一次才知道边界在哪。
+         *     目录项编码（`code`）一旦发布不可改、不可复用（订单项与券适用范围挂在它上面）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    category_code?: string;
+                    /** @description 按项目名称模糊匹配，最长 64 字符 */
+                    keyword?: string;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按 sort_order 升序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["ServiceItemView"][];
+                            };
+                        };
+                    };
+                };
+                /** @description 关键字超长 / 页码越界（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/item-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的目录外服务提案列表 */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 0 待审核 / 1 通过 / 2 驳回；不传表示全部 */
+                    status?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["CatalogItemProposalSummary"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 提交目录外服务提案
+         * @description 目录是平台的资产（F010），**服务者不能自由建项**：只能提案，运营审核通过后
+         *     平台才建正式目录项（交付文档 F012 / 2.5「目录外服务须经平台审核」）。
+         *
+         *     建议区间只是**参考**：最终区间由运营在审核通过时给出——
+         *     让申请方定义规则，等于让区间校验自己批自己。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CatalogItemProposalRequest"];
+                };
+            };
+            responses: {
+                /** @description 已提交，返回提案详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CatalogItemProposalView"];
+                        };
+                    };
+                };
+                /** @description 分类不存在或已停用 / 区间下限高于上限（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 入驻审核未通过或已被冻结（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/item-requests/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 提案详情（含审核流水） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 提案 id */
+                    request_id: components["parameters"]["RequestId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CatalogItemProposalView"];
+                        };
+                    };
+                };
+                /** @description 提案不存在，或不属于当前服务者（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的服务项（含待审核与已驳回）
+         * @description 服务者要看得见自己的全部动作，所以列表**不默认过滤状态**。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 0 待审核 / 1 已上架 / 2 已下架 / 3 已驳回；不传表示全部 */
+                    status?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["ProviderServiceView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 从标准目录勾选服务项并定价
+         * @description 提交后进入**待审核**；运营审核通过即上架。
+         *
+         *     两条会被拒绝的规则：
+         *     - **价格必须落在目录项的区间内**，越界返回 90001，`message` 是
+         *       「价格须在¥X-¥Y之间」这句给用户看的话；
+         *     - 该服务项已在列表里 → 40900（**不静默改价**：一次误点的提交不该悄悄改掉线上价格，
+         *       改价有独立接口）。
+         *
+         *     未通过入驻审核、被冻结、或资质已全部过期时都不能新增选品（40300）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProviderServiceRequest"];
+                };
+            };
+            responses: {
+                /** @description 已提交审核 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderServiceView"];
+                        };
+                    };
+                };
+                /** @description 价格格式不对 / 多于两位小数（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 未通过入驻审核 / 已冻结 / 资质过期（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 目录项不存在或已停用（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 该服务项已在你的服务列表里（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/services/{service_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 改价（回到待审核）
+         * @description 价格是对外承诺，改了要有人再看一眼：**已上架的服务项改价后立即从前台撤下**，
+         *     直到再审通过。
+         *
+         *     服务项不属于当前服务者时返回 40400（与「不存在」同码）。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 服务者服务项 id */
+                    service_id: components["parameters"]["ServiceId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ServicePriceRequest"];
+                };
+            };
+            responses: {
+                /** @description 已回到待审核 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderServiceView"];
+                        };
+                    };
+                };
+                /** @description 未通过入驻审核 / 已冻结 / 资质过期（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 服务项不存在，或不属于当前服务者（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/services/{service_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 上架 / 下架
+         * @description 上架 **1**、下架 **2**；0（待审核）与 3（已驳回）是审核流程的结果，服务者设不了（40001）。
+         *
+         *     上架的前提是**上次审核已通过**（当前状态为「已下架」）：
+         *     - 待审核 → 40300「服务项正在审核中，通过后才能上架」
+         *     - 已驳回 → 40300「服务项已被驳回，请改价后重新提交审核」
+         *     - 已在架 → 40900
+         *
+         *     价格没变的「再上架」不需要重审——审核通过之后再走一遍只是把审核员当橡皮图章。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 服务者服务项 id */
+                    service_id: components["parameters"]["ServiceId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProviderServiceStatusRequest"];
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderServiceView"];
+                        };
+                    };
+                };
+                /** @description 状态不是 1 或 2（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 未审核通过就想上架 / 资质过期（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 服务项不存在，或不属于当前服务者（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 已在架上 / 当前不在架上（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 本店订单列表（分页 + 筛选 + 核销定位）
+         * @description 只返回**本店**的订单（资源归属校验，别人的一律 40400）。按预约时间 / 下单时间倒序。
+         *
+         *     `keyword` 是核销的三个入口之一（ADR-0038 第二节）——门店**不需要扫码枪之类的硬件**，
+         *     输入核销码 / 手机号 / 订单号都能定位订单：
+         *     - **订单号**按包含匹配（用户报单号时常常只报后几位）；
+         *     - **手机号**与 **6 位核销码**按精确匹配（手机号是加密存储 + 等值查询，ADR-0013）。
+         *
+         *     **核销码不回给服务者**（列表与详情里都没有 `redeem_code`）：门店凭用户出示的码定位订单，
+         *     不需要知道码本身，这样它更不可能被门店记下来复用。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 0 待接单 / 1 已预约 / 2 履约中 / 3 已完成 / 4 已取消；不传表示全部 */
+                    status?: number;
+                    /** @description 只看某天要履约的订单（YYYY-MM-DD）；不传表示全部 */
+                    appointment_date?: string;
+                    /** @description 核销码 / 完整手机号 / 订单号 */
+                    keyword?: string;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["ProviderOrderSummaryView"][];
+                            };
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{order_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 订单 id */
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 订单详情（含照片墙与取消申请）
+         * @description 本店订单的完整视图：预约人与宠物（手机号脱敏）、服务项、金额、所用券、照片墙、
+         *     取消申请，以及状态迁移的时间点（接单 / 核销 / 报工 / 取消）。
+         *
+         *     **金额是到店收款的口径**：`estimated_pay_amount`（预估实付）就是用户到店时该收的金额
+         *     （券在门店抵扣），但它**不是平台的收款事实**——平台不经手资金（ADR-0036）。
+         *     界面必须写明「费用在门店直接付给服务者」（ADR-0038 第二节）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 订单 id */
+                    order_id: components["parameters"]["OrderId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderOrderView"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{order_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 订单 id */
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 接单（待接单 → 已预约）
+         * @description 把订单推进到「已预约」（ADR-0038 第一节）。**只对「待接单」有效**，其他状态一律 40900。
+         *
+         *     两条后果要清楚：
+         *     - **接单即承诺**：这个号源被这一单占住，而且**接单之后用户再取消需要门店同意**
+         *       （ADR-0038 第一节的取消规则按阶段分）；
+         *     - 运营的接单干预走运营后台，不占本接口（ADR-0037 第一节的权限矩阵说明）。
+         *
+         *     谁能调：服务者管理员 / 技师（ADR-0037 第一节：「接单与派工」）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 订单 id */
+                    order_id: components["parameters"]["OrderId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已接单（返回订单详情） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderOrderView"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description 订单不在「待接单」（含重复接单）（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{order_id}/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 订单 id */
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 核销（履约确认；已预约 → 履约中）
+         * @description 用户到店后确认本次预约已被使用（ADR-0038 第二节）：订单从「已预约」推进到「履约中」，
+         *     本单锁定的券同时转「已核销」。
+         *
+         *     **核销 ≠ 收款**（ADR-0036）：核销只是履约确认，费用在门店直接付给服务者；
+         *     信封的 `message` 会带上「本次服务费用请在门店直接付给服务者」这句话，界面必须写明。
+         *
+         *     四条不变量：
+         *     - 核销是**原子的条件更新**：并发双击只有一个成功（ADR-0038 第二节）；
+         *     - **订单重复核销 → 40900**（不是幂等成功——第二次核销是状态冲突）；
+         *     - **券的问题按券的码回**（都是 HTTP 200）：本单锁定的券不满足门槛 / 适用范围 / 已过期 →
+         *       业务码 **80001**；券已被核销 → 业务码 **80002**（ADR-0038 第二节给了这两个码真实产出路径）；
+         *     - 订单状态与券的核销在**同一个事务**里：要么都成、要么都不成。
+         *
+         *     **核销后不可撤销**：进入「履约中」后既不能取消也不能退回，只能报工完成或由运营干预
+         *     （ADR-0038 第一节：履约中不可取消）。
+         *
+         *     谁能调：服务者管理员 / 技师（ADR-0037 第一节：「核销」）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 订单 id */
+                    order_id: components["parameters"]["OrderId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已核销（返回订单详情） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderOrderView"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description 订单不在「已预约」（含重复核销）（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{order_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 订单 id */
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 门店取消订单（含无法履约）
+         * @description 门店侧取消：订单进入「已取消」（ADR-0038 第一节的「已取消」可由用户 / 服务者 / 运营推进），
+         *     号源与锁定的券一并释放。
+         *
+         *     `reason` 会展示给用户——**ADR 只对「拒绝用户的取消申请」强制要求理由**（见
+         *     `/orders/{order_id}/cancel/reject`），所以这里是可选的；但用户白跑一趟时，
+         *     他至少该看到为什么。
+         *
+         *     阶段限制（ADR-0038 第一节）：**履约中不可取消**（只能报工完成，或由运营干预）→ 40900；
+         *     已完成 / 已取消 → 40900。
+         *     **没有自动取消**：预约时间过了没核销不会自动取消，只给门店发提醒、超 24 小时标记异常
+         *     （自动取消会让用户白跑一趟店）。
+         *     **没有退款单**：钱在门店付，取消不产生任何资金动作（ADR-0036）。
+         *
+         *     谁能调：服务者管理员 / 技师。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 订单 id */
+                    order_id: components["parameters"]["OrderId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ProviderOrderCancelRequest"];
+                };
+            };
+            responses: {
+                /** @description 已取消（返回订单详情） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderOrderView"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description 订单已到不可取消的阶段，或已是终态（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{order_id}/cancel/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 订单 id */
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 同意用户的取消申请
+         * @description 「已预约」阶段用户发起的取消**需要门店同意**（ADR-0038 第一节）——这一条是同意：
+         *     订单转「已取消」，号源与锁定的券释放。
+         *
+         *     只有存在**待处理**的取消申请时才有效：没有申请、或已经处理过 → 40900。
+         *     谁能调：服务者管理员 / 技师。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 订单 id */
+                    order_id: components["parameters"]["OrderId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已同意（返回订单详情） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderOrderView"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description 没有待处理的取消申请 / 已处理过（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{order_id}/cancel/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 订单 id */
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 拒绝用户的取消申请（**必须填理由**）
+         * @description ADR-0038 第一节点名要求这条：「已预约」阶段用户发起取消需服务者同意，**拒绝要填理由**。
+         *     所以 `reason` **必填**（不填 → 40001），内容会展示给用户。
+         *
+         *     拒绝之后订单仍是「已预约」：门店要按约履约。
+         *     只有存在**待处理**的取消申请时才有效：没有申请、或已经处理过 → 40900。
+         *     谁能调：服务者管理员 / 技师。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 订单 id */
+                    order_id: components["parameters"]["OrderId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderCancelRejectRequest"];
+                };
+            };
+            responses: {
+                /** @description 已拒绝（返回订单详情） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderOrderView"];
+                        };
+                    };
+                };
+                /** @description 没填拒绝理由（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                404: components["responses"]["NotFound"];
+                /** @description 没有待处理的取消申请 / 已处理过（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{order_id}/photo-slots/{slot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 订单 id */
+                order_id: components["parameters"]["OrderId"];
+                /** @description 照片槽位：1 接宠检查 / 2 服务防护 / 3 取宠对比（ADR-0040 第四节） */
+                slot: components["parameters"]["OrderPhotoSlot"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 保存一个照片槽位（照片 + 备注）
+         * @description 三道照片墙（ADR-0040 第四节）：**接宠检查 / 服务防护 / 取宠对比**，每槽位可多图 + 备注。
+         *     照片先经 `POST /api/v1/app/files/presign`（`biz_type=care`）拿凭证直传，
+         *     再把 `file_id` 挂到订单上——**字节不经业务接口**（ADR-0020）。
+         *
+         *     三条不变量：
+         *     - **整体替换**：`file_ids` 是这一槽位的**全量集合**（传空数组 = 清空该槽位；
+         *       清空之后就不能报工了，`photo_wall.reportable` 会变回 false）；
+         *     - **只在「履约中」可写**（ADR-0040：订单进入履约中后开放）：待接单 / 已预约 / 已完成 /
+         *       已取消 → 40900；
+         *     - **照片归属订单**：`file_id` 不存在、不属于本店与本订单 → 40400。服务留痕照片
+         *       **不进用户的档案照片墙**（ADR-0040 第四节 / ADR-0030）。
+         *
+         *     取宠对比（`slot=3`）只做**左右并排展示**，不做自动图像对比——我们没有那个能力，不假装有（ADR-0040）。
+         *     单槽位最多 9 张（docs/conventions.md 的图片规格）。
+         *
+         *     **（待澄清：报工之后能否再改照片 / 备注——ADR 未定。本契约按「已完成不可改」的最保守形态写，
+         *     要改只能走运营干预。）**
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 订单 id */
+                    order_id: components["parameters"]["OrderId"];
+                    /** @description 照片槽位：1 接宠检查 / 2 服务防护 / 3 取宠对比（ADR-0040 第四节） */
+                    slot: components["parameters"]["OrderPhotoSlot"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderPhotoSlotRequest"];
+                };
+            };
+            responses: {
+                /** @description 保存成功（返回更新后的整个照片墙） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["OrderPhotoWallView"];
+                        };
+                    };
+                };
+                /** @description 照片超过 9 张 / 同一个 file_id 传了两次（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 订单不属于本店 / file_id 不存在或不属于本订单（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 订单不在「履约中」（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{order_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 订单 id */
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 报工提交（履约中 → 已完成）
+         * @description 提交即完成服务：订单从「履约中」推进到「已完成」（ADR-0038 第一节）。
+         *
+         *     **三道照片墙是硬约束**（ADR-0040 第四节 / 交付文档 2.5 的验收标准「缺一道则系统拒绝报工」）：
+         *     三个槽位各至少一张照片才允许提交，而且**由服务端拒绝**——前端把按钮禁掉不算数。
+         *     被拒时必须说清**缺哪一道**（不能只说「报工失败」）：客户端从订单详情的
+         *     `photo_wall.missing_slots` 取，`message` 里也会点名。
+         *
+         *     谁能调：服务者管理员 / 技师（ADR-0037 第一节：「报工（三道照片墙）」）。
+         *
+         *     **（待澄清：报工的时间戳来源——「平均服务时长」要由报工的时间戳算出来（ADR-0039 第二节），
+         *     但 ADR 没说这两个时间戳是服务者手填、还是由核销与报工两个时刻自动记，所以本契约只收 `remark`。
+         *     另：报工后能否修改照片 / 备注，见照片槽位接口的待澄清。）**
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 订单 id */
+                    order_id: components["parameters"]["OrderId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderReportRequest"];
+                };
+            };
+            responses: {
+                /** @description 已报工（订单转「已完成」，返回订单详情） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["ProviderOrderView"];
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /**
+                 * @description 订单不在「履约中」，或**三个槽位没有各至少一张照片**（40900）。
+                 *     后者要在 `message` 里点名缺哪一道
+                 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/presign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 申请上传凭证（服务留痕照片）
+         * @description 三道照片墙（ADR-0040 第四节）的照片由**门店**拍、门店传：一次最多 9 张，返回每个文件的
+         *     直传地址（含签名与有效期），浏览器把字节直接 PUT 到那里（`/api/v1/open/files/{id}/content`），
+         *     **不经业务接口**。上传完成后用返回的 `file_id` 挂到订单的照片槽位上
+         *     （`PUT /orders/{order_id}/photo-slots/{slot}`）。
+         *
+         *     与 C 端的区别只有一处：这里的 `biz_type` **只收 `care`**（服务留痕）。
+         *     打卡 / 防疫 / 档案照片 / 咨询图都是用户自己的照片，不该由门店的手上传；
+         *     契约收窄，服务端照此拒绝（非 `care` → 40001）。
+         *
+         *     `pet_id` 传订单里的宠物 id：照片墙要求「照片是这只宠物的」，而文件域自己判不了这件事
+         *     （宠物不是文件模块的表）——它由订单侧在挂载时校验（ADR-0040 / ADR-0048）。
+         *     声明的 `mime` 与 `size_bytes` 只用于提前拦截；落库以魔数判定与实际字节数为准（ADR-0020）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FilePresignRequest"];
+                };
+            };
+            responses: {
+                /** @description 每个文件一条凭证 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["FilePresignView"][];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coupon-pool/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 券池里可以贡献的券模板（只有服务者成本的券）
+         * @description **服务者不能自建券**：券模板由平台创建（[ADR-0037](../docs/adr/0037-roles-console-boundary-coupon-pool.md)），
+         *     服务者只能从池子里挑一个并承诺「我店愿意接多少张」。
+         *
+         *     这里**只列 `cost_bearer = 1`（服务者成本）且启用中的模板**：平台补贴券的成本归平台，
+         *     服务者既不需要、也不允许为它承诺额度（否则等于把平台的补贴记在服务者账上）。
+         *     模板的适用范围与面额都随模板一起给出——服务者承诺之前要先看得见自己承诺的是什么。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 按券名模糊匹配，最长 64 字符 */
+                    keyword?: string;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按更新时间倒序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["CouponTemplateView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coupon-contributions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的券贡献（含核销统计）
+         * @description 每一行都带着额度账：`total_count`（承诺额度）、`issued_count`（已发放）、
+         *     `redeemed_count`（已核销）、`reserved_count`（占用中：已发放未核销未过期）、
+         *     `expired_count`（已过期未核销）、`available_count`（还可发放）。
+         *
+         *     口径（ADR-0037 第三节）：**可发放 = 承诺额度 − 已核销 − 占用中**；
+         *     过期未核销的券**释放额度回池**（`available_count` 因此回升），已核销不释放。
+         *     对账恒等式：`issued_count = redeemed_count + reserved_count + expired_count`。
+         *
+         *     `completion_rate`（已核销 ÷ 承诺额度）是考核「券」那一项要用的数据口径
+         *     （[ADR-0039](../docs/adr/0039-invite-review-assessment-analytics.md) 第三节），
+         *     **考核本身不在本切片**——这里只提供数。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 1 生效中 / 2 已停止发放；不传表示全部 */
+                    status?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按更新时间倒序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["CouponContributionView"][];
+                            };
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        /**
+         * 从券池选券并承诺可核销额度
+         * @description **这是承诺不是发放**：承诺的是「我店愿意接多少张」（ADR-0037 第三节），
+         *     券什么时候发给谁是平台的事（任务 / 邀请 / 积分兑换 / 平台补贴定向触发，不做抢券）。
+         *
+         *     三条会被拒绝的规则：
+         *     - 模板不存在、已停用、或是平台补贴券 → 40400（**平台补贴券不能贡献**，
+         *       对服务者来说它等于不存在）；
+         *     - 该模板已有贡献记录（含已停止发放的）→ 40900，调整用 `PUT`、重新启用用 `PUT`
+         *       把 `status` 写回 1，**不新建第二条**：一个服务者对一个模板只留一条额度账；
+         *     - `total_count` 不是正整数 → 40001。
+         *
+         *     承诺之后可发放额度立刻可用（`available_count = total_count`）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CouponContributionRequest"];
+                };
+            };
+            responses: {
+                /** @description 已承诺，返回该条贡献的额度账 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CouponContributionView"];
+                        };
+                    };
+                };
+                /** @description 额度不是正整数（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 入驻未通过 / 已冻结（40300） */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 模板不存在、已停用、或不是服务者成本券（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 该模板已有贡献记录（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coupon-contributions/{contribution_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 券贡献详情（含额度流水）
+         * @description 比列表多出 `remark` 与 `logs`（额度流水，append-only：承诺 / 调整额度 / 撤回 /
+         *     过期释放，每条带操作者与原因）。**额度是怎么变的必须查得出来**——
+         *     服务者问「我的额度去哪了」时，答案在流水里而不是在结果数里。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 券贡献 id（服务者选券并承诺额度后产生的那一条额度账） */
+                    contribution_id: components["parameters"]["ContributionId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CouponContributionView"];
+                        };
+                    };
+                };
+                /** @description 贡献不存在，或不属于当前服务者（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        /**
+         * 调整承诺额度（或重新启用已停止的那条）
+         * @description **调不下去的部分不能收回**：`total_count` 必须 ≥ 已核销 + 占用中。
+         *     「占用中」是已经发到用户手里的券——服务者反悔不能让用户的券失效，
+         *     平台已经答应过用户的事不能再改。
+         *
+         *     `status` 传 1 可以让「已停止发放」的那条重新生效（配合新的额度），
+         *     传 2 等于撤回（等价于 `DELETE`），不传则只改额度、保持不变。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 券贡献 id（服务者选券并承诺额度后产生的那一条额度账） */
+                    contribution_id: components["parameters"]["ContributionId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CouponContributionRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的额度账 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CouponContributionView"];
+                        };
+                    };
+                };
+                /** @description 额度不是正整数 / 低于已核销加占用中 / status 不是 1 或 2（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 贡献不存在，或不属于当前服务者（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        /**
+         * 撤回未发放的额度
+         * @description **只收回还没发出去的那部分**：`total_count` 夹到「已核销 + 占用中」，即
+         *     可发放额度归零；已经发到用户手里的券照常有效、照常能核销（用户的券不是服务者的
+         *     可撤销承诺）。该条状态转为「已停止发放」，之后可以用 `PUT` 重新启用。
+         *
+         *     属于「自带状态」的幂等：重复撤回返回同样的结果（已是 0 就再夹一次 0），
+         *     **不返回 404** —— 撤回的目标是这个服务者自己的那条记录，重复点两下不该报错。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 券贡献 id（服务者选券并承诺额度后产生的那一条额度账） */
+                    contribution_id: components["parameters"]["ContributionId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 撤回后的额度账（status=2 已停止发放） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["CouponContributionView"];
+                        };
+                    };
+                };
+                /** @description 贡献不存在，或不属于当前服务者（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coupon-contributions/{contribution_id}/coupons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 本店贡献券的发放与核销明细
+         * @description 服务者的「对账视图」（ADR-0036 之后没有余额与提现，结算中心退化为流水与核销明细）：
+         *     哪些券发出去了、哪张已经在本店核销、哪张过期作废。
+         *
+         *     **不返回领券人的身份信息**（只有 `user_id`）：服务者需要知道「有多少券核销了」，
+         *     不需要知道「谁领的」——用户身份不在服务者的可见范围内。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 1 待使用 / 2 已锁定 / 3 已核销 / 4 已过期；不传表示全部 */
+                    status?: number;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path: {
+                    /** @description 券贡献 id（服务者选券并承诺额度后产生的那一条额度账） */
+                    contribution_id: components["parameters"]["ContributionId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按发放时间倒序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["CouponView"][];
+                            };
+                        };
+                    };
+                };
+                /** @description 贡献不存在，或不属于当前服务者（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的月度考核列表
+         * @description 每月 1 日算上月（ADR-0039 第三节），按账期倒序。还没算到的账期不会出现在列表里。
+         *
+         *     服务者可以按账期查某一期（`period` 形如 `2026-08`），也可以翻全部历史做跨月对比。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 只查某一个账期（yyyy-MM）；不传表示全部 */
+                    period?: string;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（按账期倒序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["AssessmentSummaryView"][];
+                            };
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{period}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 某月考核明细（每项得分、是否参与、数据来源）
+         * @description 一期一条：总分、等级、AI 推荐优先级，加上 `items`（三项 + 过程子项，每项带
+         *     `score` / `participated` / `data_source` / `note`）与 `overrides`（被覆盖过的留痕）。
+         *
+         *     **覆盖留痕对服务者可见**（谁、何时、改成多少、为什么）：ADR-0039 第三节说得很直白——
+         *     覆盖必须留痕，否则算法是黑箱、服务者无法申诉。`calculated_score` 是算法算出来的原值，
+         *     `score` 是当前生效值（没被覆盖时两者相同）。
+         *
+         *     该账期还没有考核记录 → 40400（与「不是你的账期」同码）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 考核账期（yyyy-MM，如 2026-08） */
+                    period: components["parameters"]["Period"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AssessmentView"];
+                        };
+                    };
+                };
+                /** @description 该账期没有考核记录，或不属于当前服务者（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+}
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
-    responses: never;
-    parameters: never;
+    schemas: {
+        /** @description 标准目录分类（一级） */
+        ServiceCategoryView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 分类编码（HOSPITAL / GROOMING / …） */
+            code?: string;
+            /** @description 该项目编码的前两位（HE / GR / SP …） */
+            item_code_prefix?: string;
+            name?: string;
+            /** @description 图标标识；配色与形状以视觉稿为准（ADR-0008） */
+            icon?: string;
+            description?: string;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+            /** @description 该分类下**启用**的目录项数 */
+            item_count?: number;
+            /** @description yyyy-MM-dd HH:mm:ss（东八区） */
+            updated_at?: string;
+        };
+        /** @description 标准目录项（二级，含价格区间） */
+        ServiceItemView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 目录项编码（形如 HE-001）；**发布后不可改、不可复用** */
+            code?: string;
+            category_code?: string;
+            category_name?: string;
+            name?: string;
+            /** @description 价格区间下限（元，两位小数字符串） */
+            price_min?: string;
+            /** @description 价格区间上限（元，两位小数字符串） */
+            price_max?: string;
+            /** @description 计价单位（次 / 只 / 天 / 课时 / 件） */
+            price_unit?: string;
+            duration_minutes?: number | null;
+            /** @description 1 犬 / 2 猫 / 3 犬猫 */
+            applicable_pets?: number;
+            description?: string;
+            sort_order?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+            /** @description yyyy-MM-dd HH:mm:ss */
+            updated_at?: string;
+        };
+        /** @description 服务者（门店）信息；`phone` 是脱敏值（ADR-0013） */
+        ProviderProfileView: {
+            /** Format: int64 */
+            id?: number;
+            name?: string;
+            /** @description 1 医院 / 2 洗护 / 3 训犬 / 4 寄养上门 / 5 食品用品 / 6 间接服务 */
+            type?: number;
+            /** @description 1 直接同业 / 2 直接异业 / 3 间接异业 */
+            category?: number;
+            logo?: string | null;
+            intro?: string | null;
+            address?: string;
+            lng?: string | null;
+            lat?: string | null;
+            /** @description 门店联系电话（脱敏） */
+            phone?: string;
+            business_hours?: components["schemas"]["BusinessHour"][];
+            /** @description 0 待审核 / 1 正常 / 2 驳回 / 3 冻结 */
+            status?: number;
+            /** @description 1 基础 / 2 优选 / 3 战略合作。**月度考核（F022）算完会写回这里**（最近一期的等级）；还没算过则是 1 */
+            level?: number;
+            /** @description 区域编码（**区域保护规则留白待定**，见 ADR-0039 第三节与 ADR-0052 的待澄清，现恒为空） */
+            region_code?: string | null;
+            /** @description 月度考核分（最近一期的总分，两位小数字符串）；还没算过则是 "0.00" */
+            monthly_score?: string;
+            /** @description 评分（门店所有评价的**平均分**，一位小数）。评价由 C 端用户在订单完成后提交（C 端的「评价晒单」接口），**没有评价的店是数据库默认值 5.0**——它不代表「满分好评」，服务者后台展示时要与评价条数一起看（评价条数在 C 端的「某门店的评价列表」接口里） */
+            rating?: string;
+            approved_at?: string | null;
+            created_at?: string;
+            updated_at?: string;
+        };
+        ProviderProfileRequest: {
+            name: string;
+            logo?: string | null;
+            intro?: string | null;
+            address: string;
+            lng?: string | null;
+            lat?: string | null;
+            /** @description 手机号或带区号的固定电话 */
+            phone: string;
+        };
+        /** @description 一天营业时段；数组里没有的星期几就是休息 */
+        BusinessHour: {
+            /** @description 1 周一 … 7 周日 */
+            day_of_week: number;
+            /** @description HH:mm */
+            open_time: string;
+            /** @description HH:mm（必须晚于 open_time；跨天不支持） */
+            close_time: string;
+        };
+        BusinessHoursRequest: {
+            /** @description 空数组表示整周休息（不是「不改」） */
+            hours?: components["schemas"]["BusinessHour"][];
+        };
+        /** @description 资质材料（`cert_no` 是脱敏值） */
+        ProviderQualificationView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 1 营业执照 / 2 执业许可证 / 3 法人身份证 / 4 训犬师认证 / 5 健康证 / 6 其他 */
+            type?: number;
+            name?: string;
+            /** @description 证件号（脱敏，如 9133**********1234） */
+            cert_no?: string | null;
+            /** @description 材料图片 URL（走 ph-file 上传，ADR-0020） */
+            file_url?: string | null;
+            /** @description yyyy-MM-dd */
+            valid_from?: string | null;
+            /** @description 到期日；为空表示长期有效 */
+            valid_until?: string | null;
+            /** @description 0 待审 / 1 通过 / 2 驳回 */
+            status?: number;
+            review_remark?: string | null;
+        };
+        ProviderQualificationRequest: {
+            /** @description 1 营业执照 / 2 执业许可证 / 3 法人身份证 / 4 训犬师认证 / 5 健康证 / 6 其他 */
+            type: number;
+            /** @description 材料名称，如「动物诊疗许可证」 */
+            name?: string;
+            /** @description 证件号明文（服务端加密存密文 + HMAC 查找列） */
+            cert_no?: string | null;
+            file_url?: string | null;
+            /** @description yyyy-MM-dd */
+            valid_from?: string | null;
+            /** @description yyyy-MM-dd；为空表示长期有效 */
+            valid_until?: string | null;
+        };
+        ProviderQualificationsRequest: {
+            qualifications: components["schemas"]["ProviderQualificationRequest"][];
+        };
+        /** @description 提交 / 重提入驻申请（整体覆盖） */
+        OnboardingApplicationRequest: {
+            name: string;
+            /** @description 1 医院 / 2 洗护 / 3 训犬 / 4 寄养上门 / 5 食品用品 / 6 间接服务 */
+            type: number;
+            /** @description 1 直接同业 / 2 直接异业 / 3 间接异业（默认 1） */
+            category?: number;
+            logo?: string | null;
+            intro?: string | null;
+            address: string;
+            /** @description 经度；与 lat 要么都给要么都不给 */
+            lng?: string | null;
+            /** @description 纬度 */
+            lat?: string | null;
+            /** @description 联系电话（手机号或带区号固定电话） */
+            contact_phone: string;
+            applicant_name: string;
+            qualifications: components["schemas"]["ProviderQualificationRequest"][];
+        };
+        OnboardingApplicationSummary: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            provider_id?: number;
+            provider_name?: string;
+            provider_type?: number;
+            /** Format: int64 */
+            applicant_user_id?: number;
+            applicant_name?: string;
+            /** @description 脱敏 */
+            contact_phone?: string;
+            /** @description 0 待审核 / 1 通过 / 2 驳回 */
+            status?: number;
+            reject_reason?: string | null;
+            /** @description 提交次数（驳回后每次重提 +1） */
+            submit_count?: number;
+            submitted_at?: string;
+            reviewed_at?: string | null;
+        };
+        /** @description 申请详情：比列表行多出门店全貌、资质材料与审核流水 */
+        OnboardingApplicationView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 0 待审核 / 1 通过 / 2 驳回 */
+            status?: number;
+            reject_reason?: string | null;
+            review_remark?: string | null;
+            submit_count?: number;
+            submitted_at?: string;
+            reviewed_at?: string | null;
+            /** Format: int64 */
+            reviewer_id?: number | null;
+            /** Format: int64 */
+            applicant_user_id?: number;
+            applicant_name?: string;
+            /** @description 脱敏 */
+            contact_phone?: string;
+            provider?: components["schemas"]["ProviderProfileView"];
+            qualifications?: components["schemas"]["ProviderQualificationView"][];
+            /** @description 审核流水（append-only，含每一次重提） */
+            review_logs?: components["schemas"]["ReviewLogView"][];
+        };
+        ReviewLogView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 1 入驻申请 / 2 服务上架审核 / 3 目录外提案 / 4 服务者状态变更 */
+            target_type?: number;
+            /** @description 1 提交 / 2 重提 / 3 通过 / 4 驳回 / 5 上架 / 6 下架 / 7 冻结 / 8 解冻 */
+            action?: number;
+            /**
+             * Format: int64
+             * @description 操作者 id；0 表示系统写入
+             */
+            actor_id?: number;
+            /** @description provider / admin；定时任务留空 */
+            actor_domain?: string;
+            /** @description 驳回原因或审核意见 */
+            remark?: string | null;
+            created_at?: string;
+        };
+        /** @description 服务者上架的服务项；名称与区间来自标准目录（现取，不是快照） */
+        ProviderServiceView: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            provider_id?: number;
+            /** @description 只在运营审核队列里有值 */
+            provider_name?: string | null;
+            service_code?: string;
+            /** @description 目录项名称；目录项被删时为空 */
+            service_name?: string | null;
+            category_code?: string | null;
+            category_name?: string | null;
+            /** @description 服务者定价（元，两位小数字符串） */
+            price?: string;
+            price_unit?: string | null;
+            /** @description 目录项当前区间下限 */
+            price_min?: string | null;
+            /** @description 目录项当前区间上限 */
+            price_max?: string | null;
+            /** @description 0 待审核 / 1 已上架 / 2 已下架 / 3 已驳回 */
+            status?: number;
+            reject_reason?: string | null;
+            submitted_at?: string | null;
+            reviewed_at?: string | null;
+            updated_at?: string;
+        };
+        ProviderServiceRequest: {
+            /** @description 目录项编码（形如 HE-001） */
+            service_code: string;
+            /** @description 定价，最多两位小数且必须大于 0（免费体验用券表达） */
+            price: string;
+        };
+        ServicePriceRequest: {
+            price: string;
+        };
+        ProviderServiceStatusRequest: {
+            /** @description 1 上架 / 2 下架 */
+            status: number;
+        };
+        CatalogItemProposalRequest: {
+            category_code: string;
+            name: string;
+            description?: string | null;
+            /** @description 建议区间下限（运营可改） */
+            price_min: string;
+            /** @description 建议区间上限（运营可改） */
+            price_max: string;
+            /** @description 计价单位，默认「次」 */
+            price_unit?: string;
+        };
+        CatalogItemProposalSummary: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            provider_id?: number;
+            provider_name?: string;
+            category_code?: string;
+            category_name?: string | null;
+            name?: string;
+            suggested_price_min?: string;
+            suggested_price_max?: string;
+            suggested_price_unit?: string;
+            /** @description 0 待审核 / 1 通过 / 2 驳回 */
+            status?: number;
+            reject_reason?: string | null;
+            /** @description 通过后生成的正式目录项编码 */
+            item_code?: string | null;
+            submitted_at?: string;
+            reviewed_at?: string | null;
+        };
+        CatalogItemProposalView: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            provider_id?: number;
+            provider_name?: string;
+            category_code?: string;
+            category_name?: string | null;
+            name?: string;
+            description?: string | null;
+            suggested_price_min?: string;
+            suggested_price_max?: string;
+            suggested_price_unit?: string;
+            status?: number;
+            reject_reason?: string | null;
+            item_code?: string | null;
+            review_remark?: string | null;
+            submitted_at?: string;
+            reviewed_at?: string | null;
+            /** Format: int64 */
+            reviewer_id?: number | null;
+            review_logs?: components["schemas"]["ReviewLogView"][];
+        };
+        /** @description 券模板（平台定义的那一种券）；服务者侧只出现服务者成本券 */
+        CouponTemplateView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 模板编码（形如 CP-001）；**创建后不可改** */
+            code?: string;
+            /** @description 券名，如「基础体检立减 30 元」 */
+            name?: string;
+            /** @description 抵扣面额（元，两位小数字符串） */
+            face_value?: string;
+            /** @description 使用门槛：订单总额不低于它才可用（0.00 表示无门槛） */
+            min_amount?: string;
+            /** @description 有效期：自发放之日起 N 天内有效（到期未用即失效） */
+            valid_days?: number;
+            /** @description 1 服务者成本 / 2 平台补贴；**只影响核销统计与考核，不产生资金**（ADR-0036） */
+            cost_bearer?: number;
+            /** @description 0 不限 / 1 限服务分类 / 2 限目录项 */
+            scope_type?: number;
+            /** @description 适用范围编码（分类编码或目录项编码）；scope_type=0 时为空 */
+            scope_codes?: string[];
+            /** @description 适用范围的现成文案（如「限分类：医院、洗护美容」），由服务端拼好 */
+            scope_desc?: string;
+            /** @description 平台补贴券的发放上限；为空表示不限（服务者成本券恒为空） */
+            issue_limit?: number | null;
+            /** @description 该模板**全平台**已发放张数（券池里的热度，不是本店的数） */
+            issued_count?: number;
+            /** @description 1 启用 / 0 停用 */
+            status?: number;
+            description?: string | null;
+            created_at?: string;
+            updated_at?: string;
+        };
+        /**
+         * @description 服务者的券贡献：从券池选一个模板并承诺可核销额度。**列表与详情共用同一形状**，
+         *     `logs` 只在详情里有值（列表不点开就看不到流水）。
+         */
+        CouponContributionView: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            provider_id?: number;
+            /** @description 只在运营侧有值 */
+            provider_name?: string | null;
+            /** Format: int64 */
+            template_id?: number;
+            template_code?: string;
+            template_name?: string;
+            face_value?: string;
+            min_amount?: string;
+            scope_desc?: string;
+            /** @description 承诺的可核销额度 */
+            total_count?: number;
+            /** @description 已发放（= 已核销 + 占用中 + 已过期未核销） */
+            issued_count?: number;
+            /** @description 已核销 */
+            redeemed_count?: number;
+            /** @description 占用中：已发放、未核销、未过期 */
+            reserved_count?: number;
+            /** @description 已过期未核销（额度已释放回池） */
+            expired_count?: number;
+            /** @description 还可发放 = 承诺额度 − 已核销 − 占用中 */
+            available_count?: number;
+            /** @description 完成率 = 已核销 ÷ 承诺额度（两位小数字符串）；考核「券」那一项的数据口径 */
+            completion_rate?: string;
+            /** @description 1 生效中 / 2 已停止发放 */
+            status?: number;
+            remark?: string | null;
+            /** @description 额度流水（只在详情里返回） */
+            logs?: components["schemas"]["CouponContributionLogView"][] | null;
+            created_at?: string;
+            updated_at?: string;
+        };
+        CouponContributionRequest: {
+            /**
+             * Format: int64
+             * @description 券模板 id（须是启用中的服务者成本券）
+             */
+            template_id: number;
+            /** @description 承诺的可核销额度（正整数；调整时不得低于已核销加占用中） */
+            total_count: number;
+            /** @description 1 生效中 / 2 已停止发放；不传则保持不变（`POST` 时按 1 处理） */
+            status?: number;
+            /** @description 承诺或调整的说明，进额度流水 */
+            remark?: string | null;
+        };
+        /** @description 额度流水（append-only） */
+        CouponContributionLogView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 1 承诺 / 2 调整额度 / 3 撤回 / 4 过期释放 */
+            action?: number;
+            /** @description 本次动作后的承诺额度 */
+            total_count?: number;
+            remark?: string | null;
+            /**
+             * Format: int64
+             * @description 操作者 id；0 表示系统写入（如过期释放）
+             */
+            operator_id?: number;
+            created_at?: string;
+        };
+        /** @description 券实例（发给某个用户的那一张）；**服务者侧不返回领券人身份，只有 user_id** */
+        CouponView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 券码（运营与客服排查用，不是安全凭证） */
+            code?: string;
+            /** Format: int64 */
+            user_id?: number;
+            /**
+             * Format: int64
+             * @description 服务者贡献券的核销门店；平台补贴券为空（按模板适用范围核销）
+             */
+            provider_id?: number | null;
+            /** @description 核销门店名称；**只在运营侧有值**（服务者看自己的券不需要自己的名字） */
+            provider_name?: string | null;
+            /** Format: int64 */
+            template_id?: number;
+            template_code?: string;
+            template_name?: string;
+            /** @description 面额快照：模板后来改了面额，已发的券不受影响 */
+            face_value?: string;
+            min_amount?: string;
+            /** @description 1 邀请 / 2 打卡任务 / 3 积分兑换 / 4 平台补贴 / 5 月度阶梯 */
+            source?: number;
+            /**
+             * Format: int64
+             * @description 占用了哪条服务者贡献；平台补贴券为空
+             */
+            contribution_id?: number | null;
+            /** @description 1 待使用 / 2 已锁定（下单占用）/ 3 已核销 / 4 已过期 */
+            status?: number;
+            valid_from?: string;
+            valid_until?: string;
+            issued_at?: string;
+            redeemed_at?: string | null;
+            created_at?: string;
+        };
+        /** @description 服务者侧的订单列表行。**不含核销码**（门店凭用户出示的码，或按手机号 / 订单号定位订单） */
+        ProviderOrderSummaryView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 订单号（**（待澄清：订单号的格式与生成规则）**），也是搜索关键字之一 */
+            order_no?: string;
+            /** @description 0 待接单 / 1 已预约 / 2 履约中 / 3 已完成 / 4 已取消（ADR-0038 第一节） */
+            status?: number;
+            /** Format: int64 */
+            user_id?: number;
+            /** @description 预约人昵称（脱敏姓名，如「张*三」） */
+            user_nickname?: string;
+            /** @description 预约人手机号，**脱敏展示**（`138****8888`，ADR-0013 / docs/conventions.md 的脱敏口径）。**（待澄清：门店联系用户要不要完整号码——核销按手机号搜索用的是完整号的等值查询，展示却脱敏，两者的张力 ADR 没裁决）** */
+            user_phone?: string;
+            /** Format: int64 */
+            pet_id?: number;
+            pet_name?: string;
+            /** @description 1 犬 / 2 猫（与 PetView.species 同码）：门店要按它准备工位与耗材 */
+            pet_species?: number;
+            /** Format: int64 */
+            service_id?: number;
+            service_name?: string;
+            /** @description 预约日期（YYYY-MM-DD） */
+            appointment_date?: string;
+            /** @description 预约时段开始（HH:mm） */
+            start_time?: string;
+            /** @description 预约时段结束（HH:mm） */
+            end_time?: string;
+            /** @description 服务总额（元，两位小数字符串） */
+            total_amount?: string;
+            /** @description 券面额抵扣（元）；没用券时是 "0.00" */
+            coupon_discount?: string;
+            /** @description 预估实付 = 总额 − 券面额。**到店按它收款**（券在门店抵扣），但它不是平台的收款事实（ADR-0036） */
+            estimated_pay_amount?: string;
+            /**
+             * Format: int64
+             * @description 本单锁定的券实例 id；不用券时为空。服务者成本券**只能在本店核销**（ADR-0037 第三节）
+             */
+            coupon_id?: number | null;
+            /** @description 1 待门店处理 / 2 已同意 / 3 已拒绝；为空表示没有取消申请——**1 是要门店行动的**（ADR-0038 第一节） */
+            cancel_request_status?: number | null;
+            created_at?: string;
+        };
+        /**
+         * @description 服务者侧的订单详情。比列表多出券实例、照片墙、取消申请与状态迁移的时间点。
+         *     **核销码不在里面**：门店不需要知道码本身。
+         */
+        ProviderOrderView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 订单号（**（待澄清：订单号的格式与生成规则）**） */
+            order_no?: string;
+            /** @description 0 待接单 / 1 已预约 / 2 履约中 / 3 已完成 / 4 已取消 */
+            status?: number;
+            /** Format: int64 */
+            user_id?: number;
+            /** @description 预约人昵称（脱敏） */
+            user_nickname?: string;
+            /** @description 预约人手机号（脱敏 `138****8888`） */
+            user_phone?: string;
+            /** Format: int64 */
+            pet_id?: number;
+            pet_name?: string;
+            /** @description 1 犬 / 2 猫（与 PetView.species 同码） */
+            pet_species?: number;
+            /** Format: int64 */
+            service_id?: number;
+            service_name?: string;
+            appointment_date?: string;
+            start_time?: string;
+            end_time?: string;
+            total_amount?: string;
+            coupon_discount?: string;
+            /** @description 预估实付：**到店按它收款**，不是平台的收款事实（ADR-0036） */
+            estimated_pay_amount?: string;
+            /** @description 本单锁定的券；不用券时为 null。**锁定 ≠ 消耗**：核销时券才转「已核销」，取消订单时释放回「待使用」（ADR-0038 第一节） */
+            coupon?: components["schemas"]["CouponView"] | null;
+            /** @description 用户下单时给门店的备注（如宠物的特殊注意事项） */
+            remark?: string | null;
+            /** @description 接单时间 */
+            accepted_at?: string | null;
+            /** @description 核销时间（履约确认，**与收款无关**） */
+            redeemed_at?: string | null;
+            /** @description 报工完成时间 */
+            reported_at?: string | null;
+            /** @description 报工时留下的说明 */
+            report_remark?: string | null;
+            photo_wall?: components["schemas"]["OrderPhotoWallView"];
+            /** @description 1 待门店处理 / 2 已同意 / 3 已拒绝；为空表示没有取消申请 */
+            cancel_request_status?: number | null;
+            /** @description 用户发起取消申请的时间 */
+            cancel_requested_at?: string | null;
+            /** @description 取消 / 申请取消的理由 */
+            cancel_reason?: string | null;
+            /** @description 门店拒绝取消的理由（拒绝必填，ADR-0038 第一节） */
+            cancel_rejected_reason?: string | null;
+            /** @description 进入「已取消」的时间 */
+            cancelled_at?: string | null;
+            /** @description 1 用户 / 2 服务者 / 3 运营 */
+            cancelled_by?: number | null;
+            created_at?: string;
+        };
+        /**
+         * @description 三道照片墙（ADR-0040 第四节）：接宠检查 / 服务防护 / 取宠对比，**三者缺一不可**。
+         *     订单进入「履约中」后开放；**三个槽位各至少一张照片才允许报工**——这条硬约束在服务端
+         *     （交付文档 2.5 的验收标准「缺一道则系统拒绝报工」，前端禁用按钮不算数）。
+         *     照片 `biz_type=care`、**归属订单**，不进用户的档案照片墙（ADR-0040 / ADR-0030）。
+         */
+        OrderPhotoWallView: {
+            /** @description 固定三个槽位（未上传的槽位也在，`satisfied=false`） */
+            slots?: components["schemas"]["OrderPhotoSlotView"][];
+            /** @description 是否已满足报工条件（三个槽位各至少一张）。**服务端算出来的**，前端不要自己判 */
+            reportable?: boolean;
+            /** @description 还缺哪几个槽位（1 接宠检查 / 2 服务防护 / 3 取宠对比）。报工被拒时界面要能说清「缺哪一道」，不能只说「报工失败」 */
+            missing_slots?: number[];
+        };
+        OrderPhotoSlotView: {
+            /**
+             * @description 1 接宠检查 / 2 服务防护 / 3 取宠对比
+             * @enum {integer}
+             */
+            slot?: 1 | 2 | 3;
+            /** @description 槽位名（接宠检查 / 服务防护 / 取宠对比），由服务端给出 */
+            slot_name?: string;
+            /** @description 该槽位的照片（**判断依据是服务端的计数，不是前端数数组长度**） */
+            photos?: components["schemas"]["FileView"][];
+            /** @description 该槽位的备注 */
+            remark?: string | null;
+            /** @description 该槽位是否已至少有一张照片 */
+            satisfied?: boolean;
+            updated_at?: string | null;
+        };
+        /**
+         * @description 文件元数据（与 app.yaml 的同名 schema 各写一遍，形状一致）。
+         *     照片先直传再挂业务（ADR-0020）；`url` 是签名读地址，有有效期。
+         */
+        FileView: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            pet_id?: number | null;
+            biz_type: string;
+            /** @enum {string} */
+            role: "original" | "closeup" | "thumb";
+            /** @enum {string} */
+            mime: "image/jpeg" | "image/png";
+            /** Format: int64 */
+            size_bytes: number;
+            width?: number | null;
+            height?: number | null;
+            /** @description 原图的签名读地址（相对地址，有有效期） */
+            url?: string;
+            /** @description 缩略图签名读地址；缩略图生成失败时回落到原图地址 */
+            thumb_url?: string;
+        };
+        FilePresignRequest: {
+            /**
+             * @description 业务用途。服务者侧**只收 `care`**（服务留痕）——别的用途都是用户自己的照片
+             * @enum {string}
+             */
+            biz_type: "care";
+            /**
+             * Format: int64
+             * @description 订单里的宠物 id（照片墙要求照片是这只宠物的，校验在订单侧）
+             */
+            pet_id?: number;
+            items: {
+                /**
+                 * @description 客户端声明的类型，**只用于提前拦截**；落库以魔数判定为准
+                 * @enum {string}
+                 */
+                mime: "image/jpeg" | "image/png";
+                /**
+                 * Format: int64
+                 * @description 客户端声明的体积，同上
+                 */
+                size_bytes?: number;
+                /**
+                 * @description 原图 original / 局部特写 closeup（不传即 original）
+                 * @enum {string}
+                 */
+                role?: "original" | "closeup";
+            }[];
+        };
+        FilePresignView: {
+            /** Format: int64 */
+            file_id: number;
+            /**
+             * @description 直传地址（相对地址，含签名与有效期）。PUT 到这个地址送字节
+             * @example /api/v1/open/files/12/content?token=up.1790600000.9f2c...
+             */
+            upload_url: string;
+            /** @example 2026-09-28 21:30:00 */
+            expires_at: string;
+            /**
+             * Format: int64
+             * @description 单文件上限（字节）。前端可在选择阶段先拦一道
+             */
+            max_bytes: number;
+            role?: string;
+        };
+        /**
+         * @description 一个槽位的全量内容。**整体替换**：`file_ids` 是这一槽位照片的全量集合
+         *     （传 `[]` = 清空该槽位，之后就报不了工了）。
+         */
+        OrderPhotoSlotRequest: {
+            /** @description 该槽位的照片（`file_id` 来自文件域的上传凭证，`biz_type=care`，ADR-0020）。空数组表示清空 */
+            file_ids?: number[];
+            /** @description 该槽位的备注（如「皮肤有红点，已拍照留痕」） */
+            remark?: string | null;
+        };
+        /** @description 报工提交。**（待澄清：服务时段的时间戳从哪来——见报工接口的说明。）** */
+        OrderReportRequest: {
+            /** @description 给用户看的说明（会展现在订单详情里） */
+            remark?: string | null;
+        };
+        /**
+         * @description 一次到店服务的事实（`ProviderReportArchiveApi.ServiceReport`）——**不是 HTTP 请求体**：
+         *     报工成功后 ph-order 经这个 ph-api 接口把这次服务交给 ph-record 写进健康档案
+         *     （F004 的「服务者报工」那一源，ADR-0030 第四条），ph-record 自己不去读订单表（ADR-0006）。
+         *     在这里立条目是为了让「schema 名 ↔ DTO 类名」保持一一对应（与 admin.yaml 的 `ConsultStats`
+         *     同一条口径：跨模块接口的形状也在契约里声明）。
+         */
+        ServiceReport: {
+            /**
+             * Format: int64
+             * @description 被服务的宠物
+             */
+            pet_id?: number;
+            /**
+             * Format: int64
+             * @description 这条档案记录的主人（下单人 = 宠物主人）
+             */
+            user_id?: number;
+            /** @description 服务项名（订单下单时的快照，如「基础洗护（小型犬）」） */
+            service_name?: string;
+            /** @description 门店报工时的说明（可空） */
+            remark?: string | null;
+        };
+        /**
+         * @description **与用户侧的 `OrderCancelRequest` 是两个不同的对象**（同名会让两份契约互相矛盾：
+         *     用户取消不必给理由，服务者取消必须给——见 ADR-0049 §七）。
+         *
+         *     门店取消订单。**`reason` 必填**——服务者单方取消对用户是实打实的伤害（可能白跑一趟），
+         *     所以理由与扣分都要留痕（ADR-0049 §七：允许取消、必填理由、计入考核过程分的「服务者取消率」）。
+         *     不填 → 40001。
+         */
+        ProviderOrderCancelRequest: {
+            /** @description 取消理由（会展示给用户、进审计与考核） */
+            reason: string;
+        };
+        /** @description 拒绝用户的取消申请。**ADR-0038 第一节点名要求：拒绝要填理由**——所以 `reason` 必填。 */
+        OrderCancelRejectRequest: {
+            /** @description 拒绝的理由（展示给用户）。不填 → 40001 */
+            reason: string;
+        };
+        /** @description 一个账期的考核结果（列表行）。明细见 `AssessmentView` */
+        AssessmentSummaryView: {
+            /** Format: int64 */
+            id?: number;
+            /**
+             * Format: int64
+             * @description 服务者 id；**只在运营侧有值**（服务者看自己的列表不需要它）
+             */
+            provider_id?: number;
+            /** @description 门店名称；**只在运营侧有值** */
+            provider_name?: string | null;
+            /** @description 考核账期（yyyy-MM）；每月 1 日算上月（ADR-0039 第三节） */
+            period?: string;
+            /** @description 总分（0.00–100.00 的两位小数字符串）。**分数是字符串不是浮点**（ADR-0011 的精度纪律） */
+            total_score?: string;
+            /** @description 1 基础 / 2 优选 / 3 战略合作（分档阈值在运营后台配置） */
+            level?: number;
+            /** @description 等级中文名（基础 / 优选 / 战略合作），由服务端给出 */
+            level_name?: string;
+            /** @description AI 推荐优先级：1 最高 / 2 较高 / 3 普通。**只存映射结果，不改推荐逻辑**（那属别的切片） */
+            recommend_priority?: number;
+            /** @description 参与计分的权重合计（100 = 三项全参与；缺项按 ADR-0050 第四节重算后会小于 100） */
+            participated_weight?: number;
+            /** @description 本期是否有单项分被超级管理员覆盖（留痕在明细的 `overrides` 里） */
+            overridden?: boolean;
+            /** @description 计算时间（yyyy-MM-dd HH:mm:ss，东八区） */
+            calculated_at?: string;
+        };
+        /**
+         * @description 一项考核明细。**三项主项**的 `item_code` 是 INVITE（拉新）/ COUPON（券）/ PROCESS（过程）；
+         *     过程分的五个子项挂在 PROCESS 下（`parent_code` = PROCESS）：
+         *     PROCESS_RESPONSE（接单响应）/ PROCESS_REDEEM_RATE（核销率）/ PROCESS_REPORT_RATE（报工完整率）/
+         *     PROCESS_REVIEW（评价分）/ PROCESS_CANCEL_RATE（服务者取消率）。
+         *
+         *     **未参与（`participated=false`）的项照样下发**：它们是「这个分为什么是这么算出来的」的答案，
+         *     藏起来就只剩一个说不清的总分（ADR-0050 第四节点名要「明细里注明未参与」）。
+         */
+        AssessmentItemView: {
+            /** @description 项目编码（见上面的枚举） */
+            item_code?: string;
+            /** @description 中文名，由服务端给出 */
+            item_name?: string;
+            /** @description 父项：过程子项为 PROCESS；三项主项为空 */
+            parent_code?: string | null;
+            /** @description 该项在主项层级的权重（百分比）；过程子项为空（子项之间等权，ADR-0039 第二节） */
+            weight?: number;
+            /** @description 是否参与计分。false = 平台侧无该维度要求（ADR-0050 第四节），权重按参与项重算 */
+            participated?: boolean;
+            /** @description 当前生效得分（0.00–100.00 的两位小数字符串）；未参与时为空 */
+            score?: string | null;
+            /** @description 算法算出来的原始得分；没被覆盖时与 `score` 相同（被覆盖后仍保留在它上面） */
+            calculated_score?: string | null;
+            /** @description 原始指标值（人话，如「有效邀请 3 人」「完成率 0.60 × 核销 8 张」）；未参与时为空 */
+            raw_value?: string | null;
+            /** @description 该项当时的达标线快照（规则改了不影响已算出的历史） */
+            target_value?: string | null;
+            /** @description 数据来源（如「ph-order 订单统计」）；未参与时这里写清是哪条事实缺了 */
+            data_source?: string;
+            /** @description 说明：未参与的原因 / 覆盖说明 / 已实现的降级说明 */
+            note?: string | null;
+            /** @description 该项是否被超级管理员覆盖过 */
+            overridden?: boolean;
+        };
+        /** @description 单项分覆盖的留痕（append-only）。**谁、何时、改成多少、为什么都留** */
+        AssessmentOverrideView: {
+            /** Format: int64 */
+            id?: number;
+            item_code?: string;
+            item_name?: string;
+            /** @description 覆盖前的生效值（两位小数字符串；覆盖前未参与时为空） */
+            before_score?: string;
+            /** @description 覆盖后的生效值 */
+            after_score?: string;
+            /** @description 覆盖理由（必填，服务者可见——否则算法是黑箱、无法申诉） */
+            reason?: string;
+            /**
+             * Format: int64
+             * @description 操作者（超级管理员）的账号 id
+             */
+            operator_id?: number;
+            created_at?: string;
+        };
+        /**
+         * @description 一个账期的考核全貌。服务者侧看自己的，运营侧看全平台的（`provider_id` / `provider_name`
+         *     **只在运营侧有值**——与 `CouponContributionView.provider_name` 同一口径）。
+         */
+        AssessmentView: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            provider_id?: number;
+            provider_name?: string | null;
+            period?: string;
+            total_score?: string;
+            level?: number;
+            level_name?: string;
+            recommend_priority?: number;
+            participated_weight?: number;
+            overridden?: boolean;
+            calculated_at?: string;
+            /** @description 三项主项 + 过程子项（未参与的也在） */
+            items?: components["schemas"]["AssessmentItemView"][];
+            /** @description 覆盖留痕（按时间正序）；没被覆盖过时为空数组 */
+            overrides?: components["schemas"]["AssessmentOverrideView"][];
+        };
+        /**
+         * @description **登录不做口令格式校验**（不设 minLength 之类）：格式规则只属于注册，
+         *     登录只有「匹配 / 不匹配」两种结果，不匹配一律 40100。
+         */
+        LoginRequest: {
+            /** @example 13800138000 */
+            phone: string;
+            /** @example pet12345 */
+            password: string;
+        };
+        ApiResponse: {
+            /** @description 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes） */
+            code: number;
+            /**
+             * @description 提示文案，前端直接展示——**但只在失败响应（`code != 0`）里有保证**：
+             *     `code === 0` 时共享请求层只把 `data` 交给调用方（见 packages/shared 的请求层），
+             *     这句在到达页面前就丢了。所以**成功响应里要给用户看的文案必须由 `data` 里的字段承载**
+             *     （例：`/invites/attribution` 的 `data.notice`），不要把话写在这里当作能显示。
+             */
+            message: string;
+            /** @description 业务数据，可为对象 / 数组 / null */
+            data?: unknown;
+            /** @description 全链路追踪 ID */
+            request_id?: string;
+        };
+        UserProfile: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * @description 脱敏手机号，形如 `138****8000`
+             * @example 138****8000
+             */
+            phone: string;
+            nickname: string;
+            /** @description 头像 URL；未设置为 null */
+            avatar?: string;
+            /**
+             * @description 0 未知 / 1 男 / 2 女
+             * @enum {integer}
+             */
+            gender: 0 | 1 | 2;
+            /**
+             * Format: int64
+             * @description 最近一次显式切换到的宠物。没切换过、或那只宠物已被删除时为 null——
+             *     这时前端取宠物列表的第一只作为默认。
+             */
+            active_pet_id?: number;
+            /** @example 2026-09-27 10:00:00 */
+            created_at?: string;
+        };
+        TokenPair: {
+            /** @description JWT；请求时放 Authorization: Bearer 请求头 */
+            access_token: string;
+            /** @description 不透明随机串，一次性使用（ADR-0012） */
+            refresh_token: string;
+            /** @description Access Token 剩余秒数（7200） */
+            expires_in: number;
+            user: components["schemas"]["UserProfile"];
+        };
+        RefreshRequest: {
+            refresh_token: string;
+        };
+        LogoutRequest: {
+            refresh_token: string;
+        };
+        PageResult: {
+            list: unknown[];
+            page: number;
+            /** @default 20 */
+            page_size: number;
+            total: number;
+            has_more: boolean;
+        };
+    };
+    responses: {
+        /** @description 未登录或 Token 已过期（40100 / 40101） */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content?: never;
+        };
+        /** @description 资源不存在（40400） */
+        NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content?: never;
+        };
+    };
+    parameters: {
+        ApplicationId: number;
+        /** @description 提案 id */
+        RequestId: number;
+        /** @description 服务者服务项 id */
+        ServiceId: number;
+        /** @description 券贡献 id（服务者选券并承诺额度后产生的那一条额度账） */
+        ContributionId: number;
+        /** @description 订单 id */
+        OrderId: number;
+        /** @description 照片槽位：1 接宠检查 / 2 服务防护 / 3 取宠对比（ADR-0040 第四节） */
+        OrderPhotoSlot: number;
+        /** @description 考核账期（yyyy-MM，如 2026-08） */
+        Period: string;
+        Page: number;
+        PageSize: number;
+        /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+        IdempotencyKey: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
