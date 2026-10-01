@@ -12,6 +12,7 @@ import com.pethealth.common.error.BusinessException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pethealth.common.time.AppTime;
 import com.pethealth.common.util.JsonFields;
 import com.pethealth.common.util.Text;
 import org.slf4j.Logger;
@@ -48,6 +49,7 @@ public class AiOpsService {
     private final AiOpsMappers.GradingRuleMapper ruleMapper;
     private final AiOpsMappers.GuardTermMapper guardTermMapper;
     private final AiOpsMappers.SwitchMapper switchMapper;
+    private final AiOpsMappers.KnowledgeEntryMapper knowledgeEntryMapper;
     private final AiOpsMappers.RedFlagMapper redFlagMapper;
     private final AiConsultMapper consultMapper;
 
@@ -56,11 +58,13 @@ public class AiOpsService {
                         AiOpsMappers.GuardTermMapper guardTermMapper,
                         AiOpsMappers.SwitchMapper switchMapper,
                         AiOpsMappers.RedFlagMapper redFlagMapper,
+                        AiOpsMappers.KnowledgeEntryMapper knowledgeEntryMapper,
                         AiConsultMapper consultMapper) {
         this.promptMapper = promptMapper;
         this.ruleMapper = ruleMapper;
         this.guardTermMapper = guardTermMapper;
         this.switchMapper = switchMapper;
+        this.knowledgeEntryMapper = knowledgeEntryMapper;
         this.redFlagMapper = redFlagMapper;
         this.consultMapper = consultMapper;
     }
@@ -454,4 +458,83 @@ public class AiOpsService {
 
     private static final ObjectMapper READ_MAPPER = new ObjectMapper();
     private static final Logger log = LoggerFactory.getLogger(AiOpsService.class);
+
+    // ---------------------------------------------------------------- 知识条目复核（D-12 / ADR-0054）
+
+    /** 复核动作：通过 / 打回（只有这两个取值，见契约的 enum）。 */
+    private static final String REVIEW_VET = "vet";
+
+    /**
+     * 知识条目列表：只给复核要看的字段（**正文与载荷不进列表**，那是检索素材）。
+     *
+     * <p>排序是「未复核在前、再按编号」：`pending_review` &lt; `vetted` 在字典序下天然成立，
+     * 所以一条 {@code ORDER BY review_status} 就够了——运营打开这一页就想看到还差哪些。
+     */
+    public PageResult<AiOpsDtos.AdminKnowledgeEntryView> listKnowledgeEntries(String reviewStatus, String categoryCode,
+                                                                        String keyword, long page, long pageSize) {
+        String status = Text.trimToNull(reviewStatus);
+        if (status != null && !AiOpsTables.KnowledgeEntry.STATUS_PENDING.equals(status)
+                && !AiOpsTables.KnowledgeEntry.STATUS_VETTED.equals(status)) {
+            // 两级模型：不认识的取值直接拒，别静默当「全部」（那会让人以为筛过了）
+            throw BusinessException.paramInvalid("复核状态只能是 pending_review 或 vetted");
+        }
+        String category = Text.trimToNull(categoryCode);
+        String kw = Text.trimToNull(keyword);
+        var result = knowledgeEntryMapper.selectPage(new Page<AiOpsTables.KnowledgeEntry>(page, pageSize),
+                Wrappers.<AiOpsTables.KnowledgeEntry>lambdaQuery()
+                        .eq(status != null, AiOpsTables.KnowledgeEntry::getReviewStatus, status)
+                        .eq(category != null, AiOpsTables.KnowledgeEntry::getCategoryCode, category)
+                        // 关键词只打标题与摘要：正文是检索层的事（契约里写明了这一层）
+                        .and(kw != null, w -> w.like(AiOpsTables.KnowledgeEntry::getTitle, kw)
+                                .or().like(AiOpsTables.KnowledgeEntry::getSummary, kw))
+                        .orderByAsc(AiOpsTables.KnowledgeEntry::getReviewStatus)
+                        .orderByAsc(AiOpsTables.KnowledgeEntry::getCode));
+        return PageResult.from(result, AiOpsService::toKnowledgeEntryView);
+    }
+
+    /**
+     * 复核一条知识条目——**唯一能改 {@code review_status} 的入口**（ADR-0054）。
+     *
+     * <p>`vet` 落「谁 + 什么资质 + 什么时候」：`vetted` 是一句专业背书，不是一次开关操作。
+     * `reject` 置回 `pending_review` 并清掉那三列——**两级模型不扩第三态**（V18 的列注释）。
+     *
+     * <p>清空必须走条件更新的显式 `set(…, null)`：MyBatis-Plus 的 `updateById` 会跳过 null 字段，
+     * 用它来「清掉复核人」是一次静默失败——库里那三列还留着上一位复核者。
+     */
+    @Transactional
+    public AiOpsDtos.AdminKnowledgeEntryView reviewKnowledgeEntry(String code, AiOpsDtos.KnowledgeReviewRequest request) {
+        AiOpsTables.KnowledgeEntry row = knowledgeEntryMapper.selectOne(
+                Wrappers.<AiOpsTables.KnowledgeEntry>lambdaQuery()
+                        .eq(AiOpsTables.KnowledgeEntry::getCode, Text.trimToNull(code)));
+        if (row == null) {
+            throw BusinessException.notFound("知识条目不存在：" + code);
+        }
+        if (REVIEW_VET.equals(request.action())) {
+            row.setReviewStatus(AiOpsTables.KnowledgeEntry.STATUS_VETTED);
+            row.setReviewedBy(request.reviewer().trim());
+            row.setReviewedCredential(request.credential().trim());
+            row.setReviewedAt(AppTime.now());
+            knowledgeEntryMapper.updateById(row);
+        } else {
+            knowledgeEntryMapper.update(null, Wrappers.<AiOpsTables.KnowledgeEntry>lambdaUpdate()
+                    .eq(AiOpsTables.KnowledgeEntry::getCode, row.getCode())
+                    .set(AiOpsTables.KnowledgeEntry::getReviewStatus, AiOpsTables.KnowledgeEntry.STATUS_PENDING)
+                    .set(AiOpsTables.KnowledgeEntry::getReviewedBy, null)
+                    .set(AiOpsTables.KnowledgeEntry::getReviewedCredential, null)
+                    .set(AiOpsTables.KnowledgeEntry::getReviewedAt, null));
+            // 回读：上面走的是条件更新，手里的 row 还是旧的（返回给调用方的必须是库里的现值）
+            row = knowledgeEntryMapper.selectOne(Wrappers.<AiOpsTables.KnowledgeEntry>lambdaQuery()
+                    .eq(AiOpsTables.KnowledgeEntry::getCode, row.getCode()));
+        }
+        return toKnowledgeEntryView(row);
+    }
+
+    /** 条目视图：只给复核要看的字段（正文与载荷**不进**视图，契约里也这么写）。 */
+    private static AiOpsDtos.AdminKnowledgeEntryView toKnowledgeEntryView(AiOpsTables.KnowledgeEntry row) {
+        return new AiOpsDtos.AdminKnowledgeEntryView(
+                row.getId(), row.getCode(), row.getCategoryCode(), row.getTitle(), row.getSummary(),
+                row.getRiskHint(), row.getConfidence(), row.getSourceTitle(), row.getSourceUrl(),
+                row.getReviewStatus(), row.getReviewedBy(), row.getReviewedCredential(), row.getReviewedAt(),
+                row.getEffectiveFrom(), row.getEffectiveTo(), row.getUpdatedAt());
+    }
 }

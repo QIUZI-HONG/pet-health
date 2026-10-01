@@ -25,8 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       所以这里不断言「谁能改哪个字段」——那是权限矩阵（#60）的事。
  *   <li><b>写操作留痕</b>：每条改动都要留下 operator_id 与 trace_id（ADR-0011），
  *       断言落在 {@code created_by}/{@code trace_id} 上。
- *   <li><b>复核状态不由代码改</b>：接口里**没有**改 reviewStatus 的入口——
- *       内容是 pending_review 还是 vetted 只能由人工复核流程决定（ADR-0040 第二节）。
+ *   <li><b>复核状态只能由人工复核那一个入口改</b>：通用运营接口（提示词 / 红线词 / 分级规则 /
+ *       护栏词 / 开关）都不能碰 `review_status`，唯一的写入口是
+ *       `POST /ai/knowledge-entries/{code}/review`，且必须填**复核人与资质**
+ *       （ADR-0040 第二节禁的是「代码自动置位」，落地方式见 ADR-0054）。
  * </ol>
  *
  * <p>用 {@link ProviderApiTestSupport} 是为了拿它的 {@code adminToken()}：运营后台的登录入口
@@ -434,5 +436,120 @@ class AiOpsAdminTest extends ProviderApiTestSupport {
                         '["K-0010"]', NULL, 'stub', 'stub', 10)
                 """, petId, riskLevel, degraded, promptVersion);
         return jdbc.queryForObject("SELECT MAX(id) FROM ai_consult", Long.class);
+    }
+
+    // ------------------------------------------------------------ 知识条目复核（D-12）
+
+    /** 本类复核过的条目编号：用例结束后复位回 pending_review（那 40 条种子是别的切片的输入）。 */
+    private final List<String> reviewedCodes = new java.util.ArrayList<>();
+
+    @AfterEach
+    void restoreKnowledgeEntries() {
+        for (String code : reviewedCodes) {
+            jdbc.update("UPDATE knowledge_entry SET review_status = 'pending_review', reviewed_by = NULL, "
+                    + "reviewed_credential = NULL, reviewed_at = NULL WHERE code = ?", code);
+        }
+        reviewedCodes.clear();
+    }
+
+    @Test
+    @DisplayName("知识条目：列表给复核要看的字段（不含正文），能按状态与关键词筛")
+    void knowledgeEntriesAreListable() {
+        String admin = adminToken();
+
+        ApiClient.ApiCall all = api.get("/api/v1/admin/ai/knowledge-entries?page_size=100", admin);
+        assertCodeOk(all, "知识条目列表");
+        // 种子 40 条，且默认**未复核在前**（运营打开就想看到还差哪些）
+        assertThat(all.data().path("total").asLong()).isGreaterThanOrEqualTo(40L);
+        JsonNode first = all.data().path("list").get(0);
+        assertThat(first.path("code").asText()).startsWith("K-");
+        assertThat(first.path("review_status").asText()).isEqualTo("pending_review");
+        assertThat(first.has("body")).as("正文不进列表（那是检索素材）").isFalse();
+        assertThat(first.has("structured_payload")).isFalse();
+
+        // 按状态筛：种子里一条 vetted 都没有 → 空列表；按关键词筛：命中标题或摘要
+        ApiClient.ApiCall vetted = api.get("/api/v1/admin/ai/knowledge-entries?review_status=vetted", admin);
+        assertCodeOk(vetted, "只看已复核");
+        assertThat(vetted.data().path("total").asLong()).isZero();
+        // 中文关键词**直接拼进 URL**（与其它用例一致）：这里再 URLEncoder 一次会被客户端二次编码，
+        // 服务端收到的是字面的 `%E7%8A%AC`，LIKE 自然一条也命中不了
+        String keyword = first.path("title").asText().substring(0, 2);
+        ApiClient.ApiCall searched = api.get("/api/v1/admin/ai/knowledge-entries?keyword=" + keyword, admin);
+        assertCodeOk(searched, "按关键词筛");
+        assertThat(searched.data().path("total").asLong()).isPositive();
+
+        // 登录域：C 端令牌与匿名都进不来（ADR-0012）
+        assertThat(api.get("/api/v1/admin/ai/knowledge-entries", api.registerAndGetAccessToken(nextPhone())).code())
+                .isEqualTo(40100);
+        assertThat(api.get("/api/v1/admin/ai/knowledge-entries", null).code()).isEqualTo(40100);
+    }
+
+    @Test
+    @DisplayName("复核：通过要落「谁 + 什么资质 + 什么时候」，打回置回未复核并清掉那三列")
+    void reviewRecordsWhoAndWhat() {
+        String admin = adminToken();
+        String code = jdbc.queryForObject("SELECT `code` FROM `knowledge_entry` "
+                + "WHERE `review_status` = 'pending_review' ORDER BY `code` LIMIT 1", String.class);
+        reviewedCodes.add(code);
+
+        ApiClient.ApiCall vetted = api.post("/api/v1/admin/ai/knowledge-entries/" + code + "/review",
+                Map.of("action", "vet", "reviewer", "李兽医", "credential", "执业兽医师，证号 A1234"), admin);
+        assertCodeOk(vetted, "复核通过");
+        assertThat(vetted.data().path("review_status").asText()).isEqualTo("vetted");
+        assertThat(vetted.data().path("reviewed_by").asText()).isEqualTo("李兽医");
+        assertThat(vetted.data().path("reviewed_credential").asText()).contains("A1234");
+        assertThat(vetted.data().path("reviewed_at").isNull()).isFalse();
+
+        // 库里也对得上，而且写操作留了痕（operator_id 与 trace_id，ADR-0011）
+        Map<String, Object> row = jdbc.queryForMap("SELECT `review_status`, `reviewed_by`, "
+                + "`reviewed_credential`, `reviewed_at`, `updated_by`, `trace_id` FROM `knowledge_entry` "
+                + "WHERE `code` = ?", code);
+        assertThat(row.get("review_status")).isEqualTo("vetted");
+        assertThat(row.get("reviewed_by")).isEqualTo("李兽医");
+        assertThat(row.get("reviewed_at")).isNotNull();
+        assertThat(((Number) row.get("updated_by")).longValue()).as("留了 operator_id").isPositive();
+
+        // 复核之后「已复核」筛得到它了：这就是「AI 引用为什么一直为空」的那一步
+        ApiClient.ApiCall filtered = api.get("/api/v1/admin/ai/knowledge-entries?review_status=vetted&page_size=100",
+                admin);
+        assertThat(filtered.data().path("list").findValuesAsText("code")).contains(code);
+
+        // 打回：回到未复核，清掉复核人那三列（**两级模型不扩第三态**）
+        ApiClient.ApiCall rejected = api.post("/api/v1/admin/ai/knowledge-entries/" + code + "/review",
+                Map.of("action", "reject", "reviewer", "李兽医", "credential", "执业兽医师，证号 A1234"), admin);
+        assertCodeOk(rejected, "打回");
+        assertThat(rejected.data().path("review_status").asText()).isEqualTo("pending_review");
+        assertThat(rejected.data().path("reviewed_by").isNull()).isTrue();
+        assertThat(rejected.data().path("reviewed_at").isNull()).isTrue();
+
+        // **库里也要真的清掉**：MyBatis-Plus 的 updateById 会跳过 null 字段，
+        // 用它来「清掉复核人」是一次静默失败（返回的视图是空的，库里的名字还在）——
+        // 这条断言就是为那个坑准备的
+        Map<String, Object> afterReject = jdbc.queryForMap("SELECT `review_status`, `reviewed_by`, "
+                + "`reviewed_credential`, `reviewed_at` FROM `knowledge_entry` WHERE `code` = ?", code);
+        assertThat(afterReject.get("review_status")).isEqualTo("pending_review");
+        assertThat(afterReject.get("reviewed_by")).as("打回后库里不该还留着上一位复核者").isNull();
+        assertThat(afterReject.get("reviewed_at")).isNull();
+    }
+
+    @Test
+    @DisplayName("复核的参数与对象都要挡住：动作非法 / 缺复核人 / 条目不存在")
+    void reviewValidatesInput() {
+        String admin = adminToken();
+        String code = jdbc.queryForObject("SELECT `code` FROM `knowledge_entry` ORDER BY `code` LIMIT 1", String.class);
+
+        // 动作只有 vet / reject（没有任何「直接把状态改成某字符串」的口子）
+        assertThat(api.post("/api/v1/admin/ai/knowledge-entries/" + code + "/review",
+                Map.of("action", "vetted", "reviewer", "李兽医", "credential", "执业兽医师"), admin).code())
+                .as("动作必须是 vet / reject").isEqualTo(40001);
+        // 复核人与资质必填：vetted 是专业背书，不是一次开关操作（ADR-0040 第二节）
+        assertThat(api.post("/api/v1/admin/ai/knowledge-entries/" + code + "/review",
+                Map.of("action", "vet", "credential", "执业兽医师"), admin).code()).isEqualTo(40001);
+        assertThat(api.post("/api/v1/admin/ai/knowledge-entries/" + code + "/review",
+                Map.of("action", "vet", "reviewer", "李兽医"), admin).code()).isEqualTo(40001);
+        // 不存在的编号
+        assertThat(api.post("/api/v1/admin/ai/knowledge-entries/K-9999/review",
+                Map.of("action", "vet", "reviewer", "李兽医", "credential", "执业兽医师"), admin).code())
+                .isEqualTo(40400);
     }
 }

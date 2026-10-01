@@ -32,7 +32,7 @@
 开工前先读五样：
 
 1. **[CONTEXT.md](CONTEXT.md)** —— 领域术语表。**命名以它为准**；「商家」「商户」「店铺」「merchant」是禁用词，统一说「服务者」。
-2. **[docs/adr/](docs/adr/)** —— 已定的架构决策（当前 53 条）。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
+2. **[docs/adr/](docs/adr/)** —— 已定的架构决策（当前 54 条）。优先看 ADR-0001 ~ 0004，那四条是对外部交付文档的刻意偏离。
 3. **[ARCHITECTURE.md](ARCHITECTURE.md)** —— 东西是怎么连起来的：运行时拓扑、后端模块边界、**三条核心数据流**（AI 咨询 / 交易 / 增长）、跨切面机制，以及「想改某处该看哪个文件」的索引。
 4. **[地图 #52](https://github.com/QIUZI-HONG/pet-health/issues/52)** —— 哪些决策已定、哪些还没定、下一步该做什么。
 5. **[docs/conventions.md](docs/conventions.md)** —— 实现级约定（分页 / 脱敏 / 加密 / 迁移 / 越权口径 / 命名 / 删除幂等），以及每条约定落在哪个 ADR。
@@ -47,7 +47,7 @@ pet-health/
 ├── ARCHITECTURE.md         架构说明：拓扑 / 模块边界 / 三条数据流 / 关键文件索引
 ├── docs/
 │   ├── README.md           文档地图：哪个是规则、哪个是甲方输入、哪个只是归档
-│   ├── adr/                架构决策记录（当前 53 条）
+│   ├── adr/                架构决策记录（当前 54 条）
 │   ├── agents/             工程技能配置（issue tracker / 领域文档规则 / triage 标签）
 │   ├── design/             AI 层的完整方案（ai-service.md）
 │   ├── conventions.md      项目级约定：分页 / 脱敏 / 加密 / 命名 / 金额精度…

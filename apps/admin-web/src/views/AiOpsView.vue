@@ -7,13 +7,17 @@
  * 硬红线词（命中即短路、不经过模型）、分级规则（命中词抬风险下限）、护栏词（输出侧过滤药名与越界表述）、
  * 运行时开关（一键降级）。所以这一页的性质是**配置面**，不是只读看板。
  *
- * 五段在一页，因为它们同属一组配置、且读的是同一批表（`knowledge_*`，Python 带 TTL 缓存直读）：
- * 改任何一段都是「即时生效、最多滞后一个 TTL」。分成五页只会让「刚才改的是哪一段」更难对。
+ * 六段在一页，因为它们同属一组配置、且读的是同一批表（`knowledge_*`，Python 带 TTL 缓存直读）：
+ * 改任何一段都是「即时生效、最多滞后一个 TTL」。分成六页只会让「刚才改的是哪一段」更难对。
+ *
+ * <p>第六段「知识条目」与那五段不同：改的是**内容**而不是调参，而且改的是「能不能进引用」——
+ * 它没有 TTL 一说，AI 服务每次检索都直读库。
  *
  * 两处**刻意不做**，都是契约里没有的能力：
  * - 没有「新建开关」：开关的语义在代码里，加一个没人读的 code 比没有开关更糟（ADR-0010）；
- * - 没有「改复核状态」：`review_status` 是人工复核的产物，接口给它开后门等于假造复核状态
- *   （ADR-0040 第二节）——所以三段列表里它只展示。
+ * - 没有「改复核状态」的**通用**入口：`review_status` 是人工复核的产物，通用的配置接口给它开后门
+ *   等于把背书降格成一次开关操作（ADR-0040 第二节）。第六段「知识条目」是**唯一**的复核入口，
+ *   且必须填复核人与资质（ADR-0054）。
  */
 import { ref } from "vue";
 import { ConsoleGate } from "@pet-health/ui";
@@ -23,10 +27,11 @@ import AiRedFlagPanel from "../components/AiRedFlagPanel.vue";
 import AiGradingRulePanel from "../components/AiGradingRulePanel.vue";
 import AiGuardTermPanel from "../components/AiGuardTermPanel.vue";
 import AiSwitchPanel from "../components/AiSwitchPanel.vue";
+import AiKnowledgePanel from "../components/AiKnowledgePanel.vue";
 
 const { status } = useAdminSession();
 
-type Tab = "prompts" | "red-flags" | "grading" | "guard-terms" | "switches";
+type Tab = "prompts" | "red-flags" | "grading" | "guard-terms" | "switches" | "knowledge";
 const tab = ref<Tab>("prompts");
 </script>
 
@@ -64,6 +69,9 @@ const tab = ref<Tab>("prompts");
         <button type="button" class="ph-tabs__item" :class="{ 'ph-tabs__item--active': tab === 'switches' }" @click="tab = 'switches'">
           运行时开关
         </button>
+        <button type="button" class="ph-tabs__item" :class="{ 'ph-tabs__item--active': tab === 'knowledge' }" @click="tab = 'knowledge'">
+          知识条目
+        </button>
       </nav>
 
       <!-- 面板靠 v-if 挂载与卸载：每段自己加载自己的数据，切回来就是重新读一遍（配置面最怕看的是旧值） -->
@@ -71,7 +79,8 @@ const tab = ref<Tab>("prompts");
       <AiRedFlagPanel v-else-if="tab === 'red-flags'" />
       <AiGradingRulePanel v-else-if="tab === 'grading'" />
       <AiGuardTermPanel v-else-if="tab === 'guard-terms'" />
-      <AiSwitchPanel v-else />
+      <AiSwitchPanel v-else-if="tab === 'switches'" />
+      <AiKnowledgePanel v-else />
 
       <div class="ph-card ph-aiops__gap">
         <h4 class="ph-card__title">这一段没做的</h4>

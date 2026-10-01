@@ -5,7 +5,7 @@ import com.pethealth.ai.domain.AiOpsTables;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * AI 运营可调项四张配置表 + 红线词表的读写。
+ * AI 运营可调项四张配置表 + 红线词表 + 知识条目（复核）的读写。
  *
  * <p>五个 {@code BaseMapper} 收在一个文件里（同 {@code domain/AiOpsTables} 的理由：它们是
  * 纯 CRUD，没有任何自定义 SQL——真正的判断在 {@code AiOpsService}）。
@@ -34,5 +34,10 @@ public final class AiOpsMappers {
 
     @Mapper
     public interface RedFlagMapper extends BaseMapper<AiOpsTables.RedFlag> {
+    }
+
+    /** 知识条目（V18）：只用于运营复核的列表与状态流转，正文/载荷不从这里读。 */
+    @Mapper
+    public interface KnowledgeEntryMapper extends BaseMapper<AiOpsTables.KnowledgeEntry> {
     }
 }

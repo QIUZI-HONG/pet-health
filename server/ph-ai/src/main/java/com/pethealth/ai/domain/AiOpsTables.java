@@ -4,11 +4,15 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.pethealth.common.persistence.BaseEntity;
 
 /**
- * AI 运营可调项的四张配置表（迁移 V20）+ 红线词表的实体（迁移 V6）。
+ * AI 运营可调项的四张配置表（迁移 V20）+ 红线词表（V6）+ **知识条目**（V18）的实体。
  *
- * <p>为什么把五个实体放在一个文件里：它们都是**纯配置载体**——字段、getter、setter，
+ * <p>为什么把这些实体放在一个文件里：它们都是**纯配置载体**——字段、getter、setter，
  * 没有任何行为，拆成五个文件只会让「运营到底能改什么」这件事看到五处去。
  * 有行为的那部分在 {@code service/AiOpsService}。
+ *
+ * <p>知识条目（{@code knowledge_entry}）与那五张表的区别：它不是「调参」，是**内容**；
+ * 这里的实体只映射运营复核要读写的那几列（正文与载荷不进 Java 侧），写入口只有复核那一个
+ * （见 {@code AiOpsService#reviewKnowledgeEntry} 与 ADR-0054）。
  *
  * <p>命名落在 {@code knowledge_*} 下是刻意的（ADR-0033）：ADR-0009 只允许 AI 服务读
  * `knowledge_*`，而提示词/词表/开关必须在**每次咨询时**被 Python 直接读到——
@@ -384,6 +388,161 @@ public final class AiOpsTables {
 
         public void setRemark(String remark) {
             this.remark = remark;
+        }
+    }
+
+    /**
+     * 知识条目（表 {@code knowledge_entry}，迁移 V18）。
+     *
+     * <p>只映射**运营复核要用的列**：正文（{@code body}）与 L1 载荷（{@code structured_payload}）
+     * 不进 Java 侧——它们是 AI 服务的检索素材，本模块不该顺手把它们复制一份。
+     *
+     * <p>两处刻意：
+     *
+     * <ul>
+     *   <li>{@code review_status} 只有两级（{@code pending_review} / {@code vetted}，V18 的列注释），
+     *       「打回」就是置回 {@code pending_review}——不发明第三态；</li>
+     *   <li>复核要落 **谁 + 什么资质 + 什么时候**（{@code reviewed_by} / {@code reviewed_credential} /
+     *       {@code reviewed_at}）：`vetted` 是一句专业背书，不是一次开关操作
+     *       （ADR-0040 第二节「不许在代码里假造复核状态」的落地方式见 ADR-0054）。</li>
+     * </ul>
+     */
+    @TableName("knowledge_entry")
+    public static class KnowledgeEntry extends BaseEntity {
+
+        public static final String STATUS_PENDING = "pending_review";
+        public static final String STATUS_VETTED = "vetted";
+
+        private String code;
+        private String categoryCode;
+        private String title;
+        private String summary;
+        private String riskHint;
+        private String confidence;
+        private String sourceTitle;
+        private String sourceUrl;
+        private String reviewStatus;
+        private String reviewedBy;
+        private String reviewedCredential;
+        private java.time.LocalDateTime reviewedAt;
+        private java.time.LocalDate effectiveFrom;
+        private java.time.LocalDate effectiveTo;
+
+        /** 复核过没有。**只有它能为 true 时条目才可能进 citations**（ADR-0025 / ADR-0040）。 */
+        public boolean isVetted() {
+            return STATUS_VETTED.equals(reviewStatus);
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public void setCode(String code) {
+            this.code = code;
+        }
+
+        public String getCategoryCode() {
+            return categoryCode;
+        }
+
+        public void setCategoryCode(String categoryCode) {
+            this.categoryCode = categoryCode;
+        }
+
+        public String getTitle() {
+            return title;
+        }
+
+        public void setTitle(String title) {
+            this.title = title;
+        }
+
+        public String getSummary() {
+            return summary;
+        }
+
+        public void setSummary(String summary) {
+            this.summary = summary;
+        }
+
+        public String getRiskHint() {
+            return riskHint;
+        }
+
+        public void setRiskHint(String riskHint) {
+            this.riskHint = riskHint;
+        }
+
+        public String getConfidence() {
+            return confidence;
+        }
+
+        public void setConfidence(String confidence) {
+            this.confidence = confidence;
+        }
+
+        public String getSourceTitle() {
+            return sourceTitle;
+        }
+
+        public void setSourceTitle(String sourceTitle) {
+            this.sourceTitle = sourceTitle;
+        }
+
+        public String getSourceUrl() {
+            return sourceUrl;
+        }
+
+        public void setSourceUrl(String sourceUrl) {
+            this.sourceUrl = sourceUrl;
+        }
+
+        public String getReviewStatus() {
+            return reviewStatus;
+        }
+
+        public void setReviewStatus(String reviewStatus) {
+            this.reviewStatus = reviewStatus;
+        }
+
+        public String getReviewedBy() {
+            return reviewedBy;
+        }
+
+        public void setReviewedBy(String reviewedBy) {
+            this.reviewedBy = reviewedBy;
+        }
+
+        public String getReviewedCredential() {
+            return reviewedCredential;
+        }
+
+        public void setReviewedCredential(String reviewedCredential) {
+            this.reviewedCredential = reviewedCredential;
+        }
+
+        public java.time.LocalDateTime getReviewedAt() {
+            return reviewedAt;
+        }
+
+        public void setReviewedAt(java.time.LocalDateTime reviewedAt) {
+            this.reviewedAt = reviewedAt;
+        }
+
+        public java.time.LocalDate getEffectiveFrom() {
+            return effectiveFrom;
+        }
+
+        public void setEffectiveFrom(java.time.LocalDate effectiveFrom) {
+            this.effectiveFrom = effectiveFrom;
+        }
+
+        public java.time.LocalDate getEffectiveTo() {
+            return effectiveTo;
+        }
+
+        public void setEffectiveTo(java.time.LocalDate effectiveTo) {
+            this.effectiveTo = effectiveTo;
         }
     }
 }

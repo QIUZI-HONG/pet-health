@@ -141,6 +141,14 @@ export type SwitchRow = Row<SwitchView, "id" | "code" | "enabled">;
 export type RedFlagRow = Row<RedFlagView, "id" | "code" | "pattern" | "level" | "action_hint" | "enabled" | "updated_at">;
 export type GradingRuleRow = Row<GradingRuleView, "id" | "code" | "name" | "match_terms" | "min_level" | "enabled" | "updated_at">;
 export type GuardTermRow = Row<GuardTermView, "id" | "kind" | "term" | "enabled" | "updated_at">;
+/** 知识条目（复核用）：只给复核要看的字段，正文与载荷不在列表里（ADR-0054）。 */
+// 名字**必须在 admin 侧取**：`@pet-health/shared` 出口的 `KnowledgeEntryView` 是 C 端那份
+// （带正文与 risk_level），两侧同名不同形状——从 shared 直接导入会静默拿到另一个 schema。
+// 契约与 DTO 也特意叫 `AdminKnowledgeEntryView`：漂移守卫要求 schema 名 ↔ 类名一一对应
+export type AdminKnowledgeEntryView = Schemas["AdminKnowledgeEntryView"];
+export type KnowledgeEntryRow = Row<AdminKnowledgeEntryView,
+  "id" | "code" | "category_code" | "title" | "summary" | "source_title" | "review_status"
+  | "reviewed_by" | "reviewed_credential" | "reviewed_at" | "updated_at">;
 
 // 积分与邀请的配置行：行为表的键是 `code`（没有 id），其余各有 id（或 threshold）
 export type PointBehaviorRow = Row<PointBehaviorView, "code" | "name" | "points" | "status" | "updated_at">;
@@ -540,6 +548,38 @@ export const adminApp = {
    */
   updateAiSwitch(switchCode: string, enabled: boolean): Promise<SwitchView> {
     return adminHttp.put<SwitchView>(`${BASE}/ai/switches/${switchCode}`, { enabled });
+  },
+
+  /**
+   * 知识条目列表（交付文档 F024/F025 的内容，按复核状态查阅）。
+   *
+   * **正文与 L1 载荷不在列表里**（那是检索素材）：这一屏管的是「哪些还没复核」，不是读内容。
+   * 默认未复核在前——运营打开就想看到还差哪些。
+   */
+  listAiKnowledgeEntries(
+    params: { reviewStatus?: string; categoryCode?: string; keyword?: string; page?: number; pageSize?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<Paged<KnowledgeEntryRow>> {
+    return adminHttp.get<Paged<KnowledgeEntryRow>>(`${BASE}/ai/knowledge-entries`, {
+      review_status: params.reviewStatus,
+      category_code: params.categoryCode,
+      keyword: params.keyword,
+      page: params.page,
+      page_size: params.pageSize,
+    }, { signal });
+  },
+
+  /**
+   * 复核一条知识条目：`vet` 通过 / `reject` 打回。
+   *
+   * **这是唯一能改 `review_status` 的接口**（ADR-0054），且必须填复核人与资质——
+   * `vetted` 是一句专业背书（只有它能进 AI 引用的 citations），不是一次开关操作。
+   */
+  reviewAiKnowledgeEntry(
+    code: string,
+    body: { action: "vet" | "reject"; reviewer: string; credential: string },
+  ): Promise<AdminKnowledgeEntryView> {
+    return adminHttp.post<AdminKnowledgeEntryView>(`${BASE}/ai/knowledge-entries/${encodeURIComponent(code)}/review`, body);
   },
 
   // ---- 积分与邀请的配置（ADR-0038 / ADR-0046；这一页只有配置，没有用户与流水）----

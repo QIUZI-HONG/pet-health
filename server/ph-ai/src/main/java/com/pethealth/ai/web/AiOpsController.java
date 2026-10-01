@@ -233,4 +233,35 @@ public class AiOpsController {
         long operatorId = CurrentUser.requireAdmin();
         return ApiResponse.ok(humanConsultService.handle(operatorId, ticketId, request));
     }
+
+    // ---------------------------------------------------------------- 知识条目复核（D-12 / ADR-0054）
+
+    /** 知识条目列表（复核用）：只给复核要看的字段，未复核在前。 */
+    @GetMapping("/knowledge-entries")
+    public ApiResponse<PageResult<AiOpsDtos.AdminKnowledgeEntryView>> knowledgeEntries(
+            @RequestParam(name = "review_status", required = false) String reviewStatus,
+            @RequestParam(name = "category_code", required = false) String categoryCode,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "1") @Min(value = 1, message = "页码从 1 开始") long page,
+            @RequestParam(name = "page_size", defaultValue = "20")
+            @Min(value = 1, message = "每页至少 1 条")
+            @Max(value = PageResult.MAX_PAGE_SIZE, message = "每页最多 " + PageResult.MAX_PAGE_SIZE + " 条")
+            long pageSize) {
+        CurrentUser.requireAdmin();
+        return ApiResponse.ok(opsService.listKnowledgeEntries(reviewStatus, categoryCode, keyword, page, pageSize));
+    }
+
+    /**
+     * 复核一条知识条目：`vet`（通过）/ `reject`（打回）。
+     *
+     * <p>**这是唯一能改 `review_status` 的接口**（ADR-0054）：`vetted` 是一句专业背书，
+     * 所以要人工填复核人与资质，其余运营接口仍然碰不到这个字段（ADR-0040 第二节）。
+     */
+    @PostMapping("/knowledge-entries/{code}/review")
+    public ApiResponse<AiOpsDtos.AdminKnowledgeEntryView> reviewKnowledgeEntry(
+            @PathVariable("code") String code,
+            @Valid @RequestBody AiOpsDtos.KnowledgeReviewRequest request) {
+        CurrentUser.requireAdmin();
+        return ApiResponse.ok(opsService.reviewKnowledgeEntry(code, request));
+    }
 }

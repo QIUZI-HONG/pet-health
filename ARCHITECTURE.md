@@ -9,7 +9,7 @@
 | --- | --- |
 | 怎么把项目跑起来、环境变量、本机特有的坑 | [`README.md`](README.md) |
 | 领域术语（**命名以它为准**） | [`CONTEXT.md`](CONTEXT.md) |
-| 某个决策为什么这么定 | [`docs/adr/`](docs/adr/)（53 条） |
+| 某个决策为什么这么定 | [`docs/adr/`](docs/adr/)（54 条） |
 | 分页 / 脱敏 / 加密 / 迁移 / 越权口径这些实现级约定 | [`docs/conventions.md`](docs/conventions.md) |
 | 后端跑法、迁移与回滚规程 | [`server/README.md`](server/README.md) |
 | AI 服务的设计细节 | [`docs/design/ai-service.md`](docs/design/ai-service.md) |

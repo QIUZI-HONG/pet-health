@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -246,5 +247,53 @@ public final class AiOpsDtos {
             String promptVersion,
             int latencyMs,
             LocalDateTime createdAt) {
+    }
+
+    /**
+     * 知识条目（运营复核用）：只给复核要看的字段——正文与 L1 载荷不进列表（那是检索素材）。
+     *
+     * <p><b>类名带 `Admin` 前缀是必须的</b>：C 端另有一份同形状不同用途的 `KnowledgeEntryView`
+     * （那份带正文与 `risk_level`），而契约漂移守卫要求 **schema 名 ↔ DTO 简单名一一对应**
+     * （`DtoIndex` 会因为两个同简单名的 DTO 直接报错）。契约里的 schema 同名。
+     *
+     * <p>{@code reviewStatus} 只有两级（{@code pending_review} / {@code vetted}），
+     * 而**只有 vetted 能进 citations**（ADR-0025 / ADR-0040）。
+     */
+    public record AdminKnowledgeEntryView(
+            Long id,
+            String code,
+            String categoryCode,
+            String title,
+            String summary,
+            String riskHint,
+            String confidence,
+            String sourceTitle,
+            String sourceUrl,
+            String reviewStatus,
+            String reviewedBy,
+            String reviewedCredential,
+            LocalDateTime reviewedAt,
+            LocalDate effectiveFrom,
+            LocalDate effectiveTo,
+            LocalDateTime updatedAt) {
+    }
+
+    /**
+     * 复核请求：{@code vet}（通过）或 {@code reject}（打回未复核）。
+     *
+     * <p>{@code reviewer} 与 {@code credential} **必填**：`vetted` 是一句专业背书，
+     * 要落「谁 + 什么资质」——这是 ADR-0040 第二节「不许在代码里假造复核状态」的落地方式
+     * （不是禁止人工复核，是禁止自动置位，见 ADR-0054）。
+     */
+    public record KnowledgeReviewRequest(
+            @NotBlank(message = "复核动作不能为空（vet / reject）")
+            @Pattern(regexp = "vet|reject", message = "复核动作只能是 vet 或 reject")
+            String action,
+            @NotBlank(message = "复核人不能为空：vetted 是一句专业背书，要落到数据里")
+            @Size(max = 64, message = "复核人最长 64 个字符")
+            String reviewer,
+            @NotBlank(message = "复核资质不能为空（如「执业兽医师，证号 XXXX」）")
+            @Size(max = 128, message = "复核资质最长 128 个字符")
+            String credential) {
     }
 }

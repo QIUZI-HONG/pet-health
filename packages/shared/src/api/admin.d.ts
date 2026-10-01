@@ -4288,6 +4288,138 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/knowledge-entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 知识条目列表（运营复核用）
+         * @description 交付文档 F024/F025 的知识条目，按**复核状态**筛选与查阅。
+         *
+         *     只返回复核要看的字段：**正文与 L1 载荷不在列表里**（那是检索素材，AI 服务直接读库）。
+         *     `review_status` 只有两级：`pending_review`（未复核）/ `vetted`（兽医复核过），
+         *     而**只有 vetted 能进 citations**——所以这份列表就是「AI 引用一直为空」的那个答案所在
+         *     （种子 40 条全是 `pending_review`）。
+         *
+         *     默认排序：未复核在前、再按编号升序——运营打开就想看到「还差哪些」。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 复核状态筛选：pending_review / vetted；不传表示全部 */
+                    review_status?: string;
+                    /** @description 知识类目编码（knowledge_category.code，如 `vaccine`） */
+                    category_code?: string;
+                    /** @description 关键词：在**标题与摘要**上模糊匹配（正文不参与——那是检索的事） */
+                    keyword?: string;
+                    page?: components["parameters"]["Page"];
+                    page_size?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["PageResult"] & {
+                                list?: components["schemas"]["AdminKnowledgeEntryView"][];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/knowledge-entries/{code}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 复核一条知识条目（通过 / 打回）
+         * @description **只有这个入口能改 `review_status`**（ADR-0054）：
+         *
+         *     - `vet`：置 `vetted`，并落 `reviewed_by` / `reviewed_credential` / `reviewed_at`
+         *       ——`vetted` 是一句专业背书，所以要记下谁、什么资质、什么时候；
+         *     - `reject`：置回 `pending_review`，并清掉那三列（打回不是第三态，两级模型不扩）。
+         *
+         *     其余运营接口（提示词 / 红线词 / 分级规则 / 护栏词 / 开关）**仍然不能碰这个字段**：
+         *     ADR-0040 第二节禁的是「代码自动置位」，不是「记录人工复核」——
+         *     所以这里要求人工填复核人与资质，且写操作照常留 operator_id 与 trace_id。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 客户端生成的唯一键（建议 UUID），同一逻辑写操作重试时保持不变；最长 200 字符 */
+                    "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                };
+                path: {
+                    /** @description 条目编号（形如 `K-0011`，对外可分享可收藏的那个） */
+                    code: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["KnowledgeReviewRequest"];
+                };
+            };
+            responses: {
+                /** @description 复核后的条目 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AdminKnowledgeEntryView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001：动作不是 vet/reject、复核人或资质为空） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 条目不存在（40400） */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai/guard-terms": {
         parameters: {
             query?: never;
@@ -6332,6 +6464,47 @@ export interface components {
             /** @description true 启用 / false 停用；**读写同形状**（库里的列仍是 tinyint） */
             enabled: boolean;
             remark?: string | null;
+        };
+        /** @description 知识条目（运营复核用）。**不含正文与载荷**——列表是给人扫的，检索素材不进这里 */
+        AdminKnowledgeEntryView: {
+            /** Format: int64 */
+            id?: number;
+            /** @description 对外编号（形如 K-0011；引用与留痕都用它） */
+            code?: string;
+            /** @description 知识类目编码（knowledge_category.code） */
+            category_code?: string;
+            title?: string;
+            /** @description 一句话摘要（进模型上下文与引用展示都用它） */
+            summary?: string;
+            /** @description green / yellow / red；只有症状分诊与急救类才有 */
+            risk_hint?: string | null;
+            /** @description high / medium / low（来源等级映射，影响措辞强度） */
+            confidence?: string;
+            /** @description 来源名（引用要能点回原始资料） */
+            source_title?: string;
+            source_url?: string | null;
+            /** @description pending_review（未复核）/ vetted（兽医复核过）。**只有 vetted 能进 citations** */
+            review_status?: string;
+            /** @description 复核人；打回后为空（谁打回看审计列） */
+            reviewed_by?: string | null;
+            /** @description 复核资质，如「执业兽医师，证号 XXXX」 */
+            reviewed_credential?: string | null;
+            reviewed_at?: string | null;
+            effective_from?: string | null;
+            /** @description 过期即停用（不物理删除：历史回答仍要能追溯） */
+            effective_to?: string | null;
+            updated_at?: string;
+        };
+        KnowledgeReviewRequest: {
+            /**
+             * @description vet 通过（置 vetted）/ reject 打回（置回 pending_review）
+             * @enum {string}
+             */
+            action: "vet" | "reject";
+            /** @description 复核人姓名。**必填**：vetted 是专业背书，不是一次开关操作 */
+            reviewer: string;
+            /** @description 复核资质（如「执业兽医师，证号 XXXX」）。**必填**，与复核人一起落库 */
+            credential: string;
         };
         /** @description 一个护栏词（输出侧过滤依据） */
         GuardTermView: {

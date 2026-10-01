@@ -12,7 +12,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises } from "@vue/test-utils";
-import type { GradingRuleRow, GuardTermRow, PromptRow, RedFlagRow, SwitchRow } from "../api/adminApi";
+import type { GradingRuleRow, GuardTermRow, KnowledgeEntryRow, PromptRow, RedFlagRow, SwitchRow } from "../api/adminApi";
 import AiOpsView from "../views/AiOpsView.vue";
 import { apiFailure, buttonByText, mountPage } from "./support";
 
@@ -31,6 +31,8 @@ const createAiGuardTerm = vi.fn();
 const updateAiGuardTerm = vi.fn();
 const listAiSwitches = vi.fn();
 const updateAiSwitch = vi.fn();
+const listAiKnowledgeEntries = vi.fn();
+const reviewAiKnowledgeEntry = vi.fn();
 
 vi.mock("../api/adminApi", () => ({
   adminApp: {
@@ -49,6 +51,8 @@ vi.mock("../api/adminApi", () => ({
     updateAiGuardTerm: (...args: unknown[]) => updateAiGuardTerm(...args),
     listAiSwitches: (...args: unknown[]) => listAiSwitches(...args),
     updateAiSwitch: (...args: unknown[]) => updateAiSwitch(...args),
+    listAiKnowledgeEntries: (...args: unknown[]) => listAiKnowledgeEntries(...args),
+    reviewAiKnowledgeEntry: (...args: unknown[]) => reviewAiKnowledgeEntry(...args),
   },
 }));
 
@@ -111,6 +115,22 @@ const SWITCH: SwitchRow = {
   updated_at: "2026-09-20 10:00:00",
 };
 
+/** 一条未复核的知识条目：正文与载荷不在列表里（契约里那两个字段就不给运营侧）。 */
+const KNOWLEDGE: KnowledgeEntryRow = {
+  id: 31,
+  code: "K-0001",
+  category_code: "vaccine",
+  title: "犬核心疫苗的接种时间表",
+  summary: "幼犬核心疫苗一般从 6–8 周龄开始",
+  source_title: "WSAVA 2024 犬猫疫苗接种指南",
+  review_status: "pending_review",
+  reviewed_by: null,
+  reviewed_credential: null,
+  reviewed_at: null,
+  updated_at: "2026-09-20 10:00:00",
+};
+
+
 function page(list: unknown[]) {
   return { list, page: 1, page_size: 20, total: list.length, has_more: false };
 }
@@ -131,6 +151,8 @@ beforeEach(() => {
   updateAiGuardTerm.mockReset().mockResolvedValue(GUARD);
   listAiSwitches.mockReset().mockResolvedValue([SWITCH]);
   updateAiSwitch.mockReset().mockResolvedValue(SWITCH);
+  listAiKnowledgeEntries.mockReset().mockResolvedValue(page([KNOWLEDGE]));
+  reviewAiKnowledgeEntry.mockReset().mockResolvedValue({ ...KNOWLEDGE, review_status: "vetted" });
 });
 
 describe("AI 运营：能读", () => {
@@ -350,5 +372,48 @@ describe("AI 运营：能改", () => {
     expect(wrapper.text()).toContain("开关不存在，或这个 code 代码里没人读");
     expect(wrapper.text()).toContain("req-400");
     expect(listAiSwitches).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("AI 运营：知识条目复核（ADR-0054）", () => {
+  it("打开分段默认只看未复核，且列表里没有正文（运营看的是状态，不是内容）", async () => {
+    const { wrapper } = await mountPage(AiOpsView, "/admin/ai-ops");
+    await buttonByText(wrapper, "知识条目").trigger("click");
+    await flushPromises();
+
+    const [params] = listAiKnowledgeEntries.mock.calls[0] as [{ reviewStatus?: string }];
+    expect(params.reviewStatus).toBe("pending_review");
+    expect(wrapper.text()).toContain("犬核心疫苗的接种时间表");
+    expect(wrapper.text()).toContain("WSAVA 2024 犬猫疫苗接种指南");
+    // 「只有复核过的条目能进引用」这句必须说出来：引用为空时答案本身就没有依据
+    expect(wrapper.text()).toContain("引用");
+  });
+
+  it("复核通过必须填复核人与资质：第一次点击只展开确认区，填全并确认后才提交", async () => {
+    const { wrapper } = await mountPage(AiOpsView, "/admin/ai-ops");
+    await buttonByText(wrapper, "知识条目").trigger("click");
+    await flushPromises();
+
+    await buttonByText(wrapper, "复核通过").trigger("click");
+    await flushPromises();
+
+    // 一次点击不执行（与停用红线、切换开关同一口径）
+    expect(reviewAiKnowledgeEntry).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("专业背书");
+
+    // 没填复核人 / 资质时提交按钮是禁用的
+    const confirm = buttonByText(wrapper, "确认通过");
+    expect(confirm.attributes("disabled")).toBeDefined();
+
+    await wrapper.get("#kb-reviewer").setValue("李兽医");
+    await wrapper.get("#kb-credential").setValue("执业兽医师，证号 A1234");
+    await confirm.trigger("click");
+    await flushPromises();
+
+    expect(reviewAiKnowledgeEntry).toHaveBeenCalledWith("K-0001", {
+      action: "vet",
+      reviewer: "李兽医",
+      credential: "执业兽医师，证号 A1234",
+    });
   });
 });

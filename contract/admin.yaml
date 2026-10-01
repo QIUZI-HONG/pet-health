@@ -2442,6 +2442,95 @@ paths:
         "404":
           description: 分级规则不存在（40400）
 
+  /ai/knowledge-entries:
+    get:
+      tags: [ai]
+      summary: 知识条目列表（运营复核用）
+      description: |
+        交付文档 F024/F025 的知识条目，按**复核状态**筛选与查阅。
+
+        只返回复核要看的字段：**正文与 L1 载荷不在列表里**（那是检索素材，AI 服务直接读库）。
+        `review_status` 只有两级：`pending_review`（未复核）/ `vetted`（兽医复核过），
+        而**只有 vetted 能进 citations**——所以这份列表就是「AI 引用一直为空」的那个答案所在
+        （种子 40 条全是 `pending_review`）。
+
+        默认排序：未复核在前、再按编号升序——运营打开就想看到「还差哪些」。
+      parameters:
+        - name: review_status
+          in: query
+          description: 复核状态筛选：pending_review / vetted；不传表示全部
+          schema: { type: string }
+        - name: category_code
+          in: query
+          description: 知识类目编码（knowledge_category.code，如 `vaccine`）
+          schema: { type: string }
+        - name: keyword
+          in: query
+          description: 关键词：在**标题与摘要**上模糊匹配（正文不参与——那是检索的事）
+          schema: { type: string }
+        - $ref: "./common.yaml#/components/parameters/Page"
+        - $ref: "./common.yaml#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./common.yaml#/components/schemas/PageResult"
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: "#/components/schemas/AdminKnowledgeEntryView" }
+
+  /ai/knowledge-entries/{code}/review:
+    post:
+      tags: [ai]
+      summary: 复核一条知识条目（通过 / 打回）
+      description: |
+        **只有这个入口能改 `review_status`**（ADR-0054）：
+
+        - `vet`：置 `vetted`，并落 `reviewed_by` / `reviewed_credential` / `reviewed_at`
+          ——`vetted` 是一句专业背书，所以要记下谁、什么资质、什么时候；
+        - `reject`：置回 `pending_review`，并清掉那三列（打回不是第三态，两级模型不扩）。
+
+        其余运营接口（提示词 / 红线词 / 分级规则 / 护栏词 / 开关）**仍然不能碰这个字段**：
+        ADR-0040 第二节禁的是「代码自动置位」，不是「记录人工复核」——
+        所以这里要求人工填复核人与资质，且写操作照常留 operator_id 与 trace_id。
+      parameters:
+        - name: code
+          in: path
+          required: true
+          description: 条目编号（形如 `K-0011`，对外可分享可收藏的那个）
+          schema: { type: string }
+        - $ref: "./common.yaml#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KnowledgeReviewRequest" }
+      responses:
+        "200":
+          description: 复核后的条目
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/AdminKnowledgeEntryView" }
+        "400":
+          description: 参数错误（40001：动作不是 vet/reject、复核人或资质为空）
+        "404":
+          description: 条目不存在（40400）
+
   /ai/guard-terms:
     get:
       tags: [ai]
@@ -4087,6 +4176,35 @@ components:
         advice: { type: string, maxLength: 256, nullable: true, description: 建议文案，**不许写药名与剂量** }
         enabled: { type: boolean, description: true 启用 / false 停用；**读写同形状**（库里的列仍是 tinyint） }
         remark: { type: string, maxLength: 256, nullable: true }
+
+    AdminKnowledgeEntryView:
+      type: object
+      description: 知识条目（运营复核用）。**不含正文与载荷**——列表是给人扫的，检索素材不进这里
+      properties:
+        id: { type: integer, format: int64 }
+        code: { type: string, description: 对外编号（形如 K-0011；引用与留痕都用它） }
+        category_code: { type: string, description: 知识类目编码（knowledge_category.code） }
+        title: { type: string }
+        summary: { type: string, description: 一句话摘要（进模型上下文与引用展示都用它） }
+        risk_hint: { type: string, nullable: true, description: green / yellow / red；只有症状分诊与急救类才有 }
+        confidence: { type: string, description: high / medium / low（来源等级映射，影响措辞强度） }
+        source_title: { type: string, description: 来源名（引用要能点回原始资料） }
+        source_url: { type: string, nullable: true }
+        review_status: { type: string, description: pending_review（未复核）/ vetted（兽医复核过）。**只有 vetted 能进 citations** }
+        reviewed_by: { type: string, nullable: true, description: 复核人；打回后为空（谁打回看审计列） }
+        reviewed_credential: { type: string, nullable: true, description: 复核资质，如「执业兽医师，证号 XXXX」 }
+        reviewed_at: { type: string, nullable: true }
+        effective_from: { type: string, nullable: true }
+        effective_to: { type: string, nullable: true, description: 过期即停用（不物理删除：历史回答仍要能追溯） }
+        updated_at: { type: string }
+
+    KnowledgeReviewRequest:
+      type: object
+      required: [action, reviewer, credential]
+      properties:
+        action: { type: string, enum: [vet, reject], description: vet 通过（置 vetted）/ reject 打回（置回 pending_review） }
+        reviewer: { type: string, description: 复核人姓名。**必填**：vetted 是专业背书，不是一次开关操作 }
+        credential: { type: string, description: 复核资质（如「执业兽医师，证号 XXXX」）。**必填**，与复核人一起落库 }
 
     GuardTermView:
       type: object
