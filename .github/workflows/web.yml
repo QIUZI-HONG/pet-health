@@ -6,6 +6,7 @@ on:
     paths:
       - "apps/**"
       - "packages/**"
+      - "eslint.config.mjs"
       - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
       - ".github/workflows/web.yml"
@@ -13,6 +14,7 @@ on:
     paths:
       - "apps/**"
       - "packages/**"
+      - "eslint.config.mjs"
       - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
       - ".github/workflows/web.yml"
@@ -40,6 +42,11 @@ jobs:
       # 改了契约却忘了跑 gen:api，这里会红。
       - name: Contract types are in sync
         run: pnpm --filter @pet-health/shared gen:api:check
+
+      # Lint（只查正确性、不管格式）：补的是类型检查与测试都看不见的那一类
+      # （漏 await 的 promise、意外的 any、模板里写错的指令）。基线见 eslint.config.mjs。
+      - name: Lint
+        run: pnpm lint
 
       # 前端测试：框架与导航、四态组件（验收标准里的「可导航」「可复用」是行为，得跑起来验）。
       # 还没有测试的包会被 pnpm 跳过；`build` 里另带硬编码色值检查（ADR-0015）。

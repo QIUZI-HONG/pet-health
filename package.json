@@ -5,6 +5,15 @@
   "description": "宠物 AI 健康管理平台 —— 单仓：后端 + 三个 Web 端 + 契约（ADR-0005）",
   "scripts": {
     "dev": "pnpm -r --parallel dev",
-    "build": "pnpm -r build"
+    "build": "pnpm -r build",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-vue": "^10.11.1",
+    "globals": "^17.12.0",
+    "typescript-eslint": "^8.71.0"
   }
 }
