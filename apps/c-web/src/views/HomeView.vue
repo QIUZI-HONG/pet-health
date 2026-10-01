@@ -568,6 +568,9 @@ watch(
   padding: var(--ph-space-4);
   border-radius: var(--ph-radius-card);
   border: 1px solid var(--ph-color-border);
+  /* 首页次栏只有约 1/3 宽（ADR-0016 的两栏）：放不下时让动作换到下一行并靠右，
+     而不是把标题挤成「30 天后过\n期」这种断法 */
+  flex-wrap: wrap;
 }
 
 .ph-bar--coupon {
@@ -583,7 +586,9 @@ watch(
 }
 
 .ph-bar__body {
-  flex: 1;
+  /* 占满一行：首页次栏只有约 1/3 宽，标题与动作挤在一行会把文案断成「30 天后过\n期」。
+     让动作换到下一行（右对齐），条内读起来才是「一句话 + 一个动作」。 */
+  flex: 1 1 100%;
   min-width: 0;
 }
 
@@ -594,6 +599,7 @@ watch(
 
 .ph-bar__action {
   flex: none;
+  margin-left: auto;
   color: var(--ph-color-orange);
   font-weight: 500;
   text-decoration: none;
