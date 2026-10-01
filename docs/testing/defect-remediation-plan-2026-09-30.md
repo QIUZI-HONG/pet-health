@@ -19,7 +19,10 @@
 | 🆕 **D-44 模板里的 Markdown 强调不渲染**（复核 D-37 时发现） | 全仓 `apps/*/src` 里 **78 行**模板文案写着 `**强调**`，而界面不解析 Markdown——用户看到的是字面的星号。这不是「一处漏了」而是全仓的一个习惯（我自己新写的两处也跟着写了）。建议：统一换成 `<strong>`（或给提示类文案一个 `v-html` 白名单渲染），并加一条构建期检查防回潮 | 2.0 |
 | ✅ **D-40 引入 lint**（2026-10-01） | 根 `eslint.config.mjs`（flat，**只查正确性、不管格式**——不引 Prettier 是因为它会把整个仓库重排一遍，那种 diff 只有噪音）+ `pnpm lint` + `web.yml` 加一步。**基线：0 error / 12 warning**（只存在于生产代码，全是 `no-non-null-assertion`，逐条可查：admin 6 处、provider 4 处、c-web 2 处）。首跑时看到的是 68 条，其中大半在测试文件里——所以测试范围里关掉了这条规则（`findAll(...)!.trigger(...)` 是惯用写法，元素不存在时断言会当场报错），**剩下的 12 条才是真正的待办**；`require-atomic-updates` 刻意不开（在 Vue 的 `ref().value` 模式下 9 条全是误报，理由写在配置里） |
 | ✅ **新增需求：三端注册**（2026-10-01，项目所有者提，权限后置） | C 端本就有；补两个后台：`POST /provider/auth/register`（注册即登录，发 **provider 域**令牌）与 `POST /admin/auth/register`（**只建账号不发令牌**，响应里的 `notice` 说明还差「加入名单」）。账号仍是同一批（ADR-0035），权限矩阵留到后面单独做——所以运营后台的注册不假装能进，测试里钉住了「注册完登录仍是 40300」这条现状 |
-| ⬜ 未动 | D-08 / D-11 / D-13 / D-14、D-16 ~ D-26（Wave 2）、D-27 / D-29 / D-30（Wave 3）、D-38、D-44 |
+| 🟡 **D-16 首页：三块已做，第四块待契约**（2026-10-01） | ✅ 提醒卡的**彩色分类 pill**（按 `MessageView.type` 映射，认不出的类型显示「提醒」）；✅ **券提醒条**（暖橙浅底，张数与「最近到期」天数都按服务端数据）；✅ **邀请入口条**（主色浅底，用服务端的有效邀请数与下一档剩余）。两块新数据走**已有接口**（`/coupons`、`/invites/center`），未登录不发请求。**待做**：每条提醒的**第二个动作 chip**——契约只给单 `action_hint`/`action_target`，要加第二对字段（`message` 表 + 提醒生成器一起改） |
+| ⬜ 未动 | D-08 / D-11 / D-13 / D-14、**D-16 的第四块**、D-17 ~ D-26（Wave 2）、D-27 / D-29 / D-30（Wave 3）、D-38、D-44 |
+
+> **视觉走查的截图**：`docs/testing/screenshots-2026-10-01-wave2/`（桌面 1440 与手机 420 两档，被 `.gitignore` 覆盖不入库）。这一轮建立的做法可以照抄：起后端 + C 端 dev + `demo-seed.sh`，再用 Playwright 拍——**注意两个坑**：给演示库补数据时中文要**写成 SQL 文件再重定向**（经 `docker exec` 的 argv 传会被编码破坏），且 `mysql` 客户端要加 `--default-character-set=utf8mb4`。
 
 **这一批的评审（重构不改行为）**：结论「可以接受」。逐字段核对了两处归因的等价性、`useImagePicker` 的四个细节（input 清空 / 失败带请求 ID / 两个下标复位）与两处字符串 ref 的名字对应、`.ph-thumb` 与删掉的四份逐字相同、lint 基线可复现（68 条全是 `no-non-null-assertion`，`no-explicit-any` 命中 0）。评审揪出两条**注释与事实不符**，已改：`ProviderInviteCode.STATUS_ENABLED` 那句「唯一会被归因命中」是反的（归因根本不读 status，真读点只有服务者侧视图——这正是 D-08 记的死开关）；`eslint.config.mjs` 的说明里写了「补的是漏 await 的 promise」，而那条规则（`no-floating-promises`）**并没有开**——已改成「还没做」。
 
