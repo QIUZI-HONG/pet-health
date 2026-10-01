@@ -142,3 +142,49 @@ describe("我的 · 资料编辑", () => {
     expect(updateCall()).toBeUndefined();
   });
 });
+
+describe("我的页：订单与福利两块（4.16.6 的第 2、4 块）", () => {
+  it("订单按进行中 / 已完成分组，福利块给券的最近到期天数", async () => {
+    const until = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 19).replace("T", " ");
+    transport.request.mockImplementation((config: { url: string }) => {
+      if (config.url.includes("/orders")) {
+        return Promise.resolve(ok({
+          list: [
+            { id: 1, order_no: "PH1", status: 2, service_name: "洗护套餐", appointment_date: "2026-10-05" },
+            { id: 2, order_no: "PH2", status: 3, service_name: "基础体检", appointment_date: "2026-09-20" },
+          ],
+          page: 1, page_size: 4, total: 2, has_more: false,
+        }));
+      }
+      if (config.url.includes("/coupons")) {
+        return Promise.resolve(ok({
+          list: [{ id: 9, code: "C-9", template_name: "洗护券 20 元", face_value: "20.00",
+                   min_amount: "0.00", source: 4, status: 1, valid_until: until }],
+          page: 1, page_size: 100, total: 1, has_more: false,
+        }));
+      }
+      return Promise.resolve(ok(profile()));
+    });
+
+    const { wrapper } = await mountProfile();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("我的订单");
+    expect(wrapper.text()).toContain("进行中");
+    expect(wrapper.text()).toContain("已完成");
+    expect(wrapper.text()).toContain("洗护套餐");
+    expect(wrapper.text()).toContain("基础体检");
+    expect(wrapper.text()).toContain("我的福利");
+    expect(wrapper.text()).toContain("共 1 张可用券");
+    expect(wrapper.text()).toContain("洗护券 20 元 5 天后过期");
+  });
+
+  it("没有订单与券时不显示那两块（「我的」页不摆空格子）", async () => {
+    stubTransport();
+    const { wrapper } = await mountProfile();
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain("我的订单");
+    expect(wrapper.text()).not.toContain("我的福利");
+  });
+});

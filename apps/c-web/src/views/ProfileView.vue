@@ -7,11 +7,12 @@
  *
  * 权益、积分、券、社群这些入口先不放：它们还没有数据源，摆一排点不动的入口不如不摆。
  */
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { toApiFailure, cApp, formatDate, genderLabel, speciesLabel, todayIso, toUserMessage, type PetView } from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import ComplianceCard from "../components/ComplianceCard.vue";
+import { commerce, type CouponView, type OrderView } from "../api/commerce";
 import SessionGate from "../components/SessionGate.vue";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import StateError from "../components/states/StateError.vue";
@@ -51,6 +52,59 @@ const form = reactive({
 const canSubmit = computed(() => form.name.trim().length > 0 && !saving.value);
 
 /** 回收站是这一页独有的数据；宠物列表本身在会话 store 里（会话加载时就一起取了）。 */
+/**
+ * 「我的订单」与「我的福利」（交付文档 4.16.6 的第 2、4 块）。
+ *
+ * 这两块的数据都是**已有接口**：订单列表（`/orders`）与券包（`/coupons?status=1`）。
+ * 取不到就不显示那一块——「我的」是回访的第一落点，一块取不到不该让整页报错。
+ * 订单只取最近 4 条并按状态分组（进行中 vs 已完成），与稿子一致；要看全量走「查看全部」。
+ */
+const recentOrders = ref<OrderView[]>([]);
+const usableCoupons = ref<CouponView[]>([]);
+
+/** 进行中：0 待接单 / 1 已预约 / 2 履约中（契约的 OrderStatus）。 */
+const ongoingOrders = computed(() => recentOrders.value.filter((order) => (order.status ?? 0) <= 2));
+/** 已完成与已取消：3 已完成 / 4 已取消。 */
+const doneOrders = computed(() => recentOrders.value.filter((order) => (order.status ?? 0) >= 3));
+
+const soonestCoupon = computed(() => {
+  const withExpiry = usableCoupons.value
+    .map((coupon) => ({ coupon, days: daysLeft(coupon.valid_until) }))
+    .filter((item) => item.days !== null)
+    .sort((a, b) => (a.days ?? 0) - (b.days ?? 0));
+  return withExpiry[0] ?? null;
+});
+
+/** 订单状态词（0 待接单 / 1 已预约 / 2 履约中 / 3 已完成 / 4 已取消，契约的 OrderStatus）。 */
+function orderStatusText(status: number | undefined): string {
+  return ["待接单", "已预约", "履约中", "已完成", "已取消"][status ?? 0] ?? "进行中";
+}
+
+/** 券还有几天到期（按业务日算整天）。 */
+function daysLeft(validUntil: string | null | undefined): number | null {
+  if (!validUntil) return null;
+  const target = Date.parse(validUntil.replace(" ", "T"));
+  if (Number.isNaN(target)) return null;
+  return Math.max(0, Math.ceil((target - Date.now()) / 86_400_000));
+}
+
+async function loadHighlights(): Promise<void> {
+  const [orders, coupons] = await Promise.allSettled([
+    commerce.listOrders({ pageSize: 4 }),
+    commerce.listCoupons({ status: 1, pageSize: 100 }),
+  ]);
+  if (orders.status === "fulfilled") {
+    recentOrders.value = orders.value.list ?? [];
+  }
+  if (coupons.status === "fulfilled") {
+    usableCoupons.value = coupons.value.list ?? [];
+  }
+}
+
+onMounted(() => {
+  void loadHighlights();
+});
+
 async function loadRecycleBin(): Promise<void> {
   if (!session.isLoggedIn) return;
   errorMessage.value = "";
@@ -286,6 +340,48 @@ function restorableUntil(pet: PetView): string {
 
       <div v-else class="ph-columns">
       <div class="ph-stack">
+        <!-- 我的订单（4.16.6 第 2 块）：进行中 / 已完成两段，最近 4 条 -->
+        <article v-if="recentOrders.length" class="ph-card">
+          <div class="ph-card__head">
+            <h3 class="ph-card__title">我的订单</h3>
+            <RouterLink class="ph-profile__more" :to="{ name: 'orders' }">查看全部 →</RouterLink>
+          </div>
+          <div v-if="ongoingOrders.length" class="ph-profile__group">
+            <p class="ph-profile__group-title">进行中</p>
+            <ul class="ph-profile__list">
+              <li v-for="order in ongoingOrders" :key="order.id" class="ph-profile__row">
+                <RouterLink class="ph-profile__link" :to="{ name: 'order-detail', params: { id: order.id } }">
+                  {{ order.service_name ?? "订单" }}
+                </RouterLink>
+                <span class="ph-profile__ongoing">{{ orderStatusText(order.status) }}</span>
+              </li>
+            </ul>
+          </div>
+          <div v-if="doneOrders.length" class="ph-profile__group">
+            <p class="ph-profile__group-title">已完成</p>
+            <ul class="ph-profile__list">
+              <li v-for="order in doneOrders" :key="order.id" class="ph-profile__row">
+                <RouterLink class="ph-profile__link" :to="{ name: 'order-detail', params: { id: order.id } }">
+                  {{ order.service_name ?? "订单" }}
+                </RouterLink>
+                <span class="ph-text-weak">{{ order.appointment_date ?? "" }}</span>
+              </li>
+            </ul>
+          </div>
+        </article>
+
+        <!-- 我的福利（同第 4 块）：暖橙浅底，只讲「有几张、最近哪张要过期」 -->
+        <article v-if="usableCoupons.length" class="ph-card ph-profile__welfare">
+          <div class="ph-card__head">
+            <h3 class="ph-card__title">我的福利</h3>
+            <RouterLink class="ph-profile__more" :to="{ name: 'coupons' }">券包 →</RouterLink>
+          </div>
+          <p class="ph-profile__welfare-line">
+            共 {{ usableCoupons.length }} 张可用券<template v-if="soonestCoupon">，{{ soonestCoupon.coupon.template_name }} {{ soonestCoupon.days }} 天后过期</template>
+          </p>
+          <p class="ph-text-weak">券是到店抵扣凭证：到店出示给门店核销，平台不经手资金（ADR-0036）。</p>
+        </article>
+
         <!-- 宠物 -->
         <article class="ph-card">
           <div class="ph-card__head">
@@ -457,6 +553,61 @@ function restorableUntil(pet: PetView): string {
 </template>
 
 <style scoped>
+/* 订单分组与福利块（4.16.6 的第 2、4 块） */
+.ph-profile__more {
+  color: var(--ph-color-primary);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.ph-profile__ongoing {
+  color: var(--ph-color-orange);
+  font-size: 13px;
+}
+
+.ph-profile__group + .ph-profile__group {
+  margin-top: var(--ph-space-3);
+}
+
+.ph-profile__group-title {
+  margin: 0 0 var(--ph-space-2);
+  font-size: 13px;
+  color: var(--ph-color-text-sub);
+}
+
+.ph-profile__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ph-profile__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ph-space-3);
+  padding: var(--ph-space-2) 0;
+  border-bottom: 1px solid var(--ph-color-divider);
+}
+
+.ph-profile__row:last-child {
+  border-bottom: 0;
+}
+
+.ph-profile__link {
+  color: var(--ph-color-text);
+  text-decoration: none;
+}
+
+.ph-profile__welfare {
+  background: var(--ph-color-orange-light);
+}
+
+.ph-profile__welfare-line {
+  margin: 0 0 var(--ph-space-1);
+  font-weight: 600;
+}
+
 .ph-card__head {
   display: flex;
   align-items: center;
