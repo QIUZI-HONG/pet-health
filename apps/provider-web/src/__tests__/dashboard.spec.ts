@@ -177,3 +177,14 @@ describe("今日概览：一屏看完", () => {
     expect(listAssessments).not.toHaveBeenCalled();
   });
 });
+
+describe("今日概览：考核卡上的 AI 推荐优先级（4.16.8）", () => {
+  it("把推荐优先级写出来（等级决定流量，这一行是它的读数）", async () => {
+    listAssessments.mockResolvedValue({ list: [ASSESSMENT], page: 1, page_size: 1, total: 1, has_more: false });
+
+    const { wrapper } = await mountPage(DashboardView, "/b/dashboard");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("AI 推荐优先级：较高");
+  });
+});

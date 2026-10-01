@@ -20,7 +20,8 @@ import { ConsoleGate, ConsoleState } from "@pet-health/ui";
 import { formatAmount, formatDate, isIdentityError, speciesLabel, toApiFailure, todayIso } from "@pet-health/shared";
 import { providerApp, type AssessmentRow, type ContributionRow, type OrderRow } from "../api/providerApi";
 import { useProviderSession } from "../session";
-import { assessmentLevelLabel, assessmentLevelTone, completionRateText, orderStatusLabel, orderStatusTone, scoreText } from "../utils/labels";
+import { assessmentLevelLabel, assessmentLevelTone, completionRateText, orderStatusLabel, orderStatusTone, scoreText,
+  recommendPriorityLabel } from "../utils/labels";
 
 const { status } = useProviderSession();
 
@@ -297,6 +298,10 @@ onMounted(() => {
               {{ assessmentLevelLabel(latestAssessment) }}
             </span>
             <span class="ph-text-sub">账期 {{ latestAssessment.period }}</span>
+            <!-- 4.16.8 的考核卡上就写着「AI 推荐优先级：较高」——等级决定流量，这一行是它的读数 -->
+            <span class="ph-text-sub">
+              AI 推荐优先级：{{ recommendPriorityLabel(latestAssessment.recommend_priority) }}
+            </span>
             <span v-if="latestAssessment.overridden" class="ph-tag ph-tag--warning">有单项分被覆盖</span>
           </p>
           <p class="ph-dash__link"><RouterLink :to="{ name: 'assessment' }">去考核中心看三项明细 →</RouterLink></p>
