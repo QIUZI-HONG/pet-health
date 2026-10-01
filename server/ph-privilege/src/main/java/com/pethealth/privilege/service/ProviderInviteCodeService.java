@@ -63,7 +63,7 @@ public class ProviderInviteCodeService {
 
     /** 我的推广码与战况（服务者后台）。没生成过时 {@code code = null}，不写库。 */
     @Transactional(readOnly = true)
-    public ProviderInviteCodeView view() {
+    public ProviderInviteCodeView viewInviteCode() {
         long providerId = requireAdminProviderId();
         ProviderInviteCode code = findByProvider(providerId);
         return viewOf(providerId, code);

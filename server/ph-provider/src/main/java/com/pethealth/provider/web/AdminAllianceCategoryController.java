@@ -44,7 +44,7 @@ public class AdminAllianceCategoryController {
     @GetMapping
     public ApiResponse<List<AllianceCategoryView>> list() {
         CurrentUser.requireDomain(LoginDomain.ADMIN);
-        return ApiResponse.ok(allianceCategories.list());
+        return ApiResponse.ok(allianceCategories.listCategories());
     }
 
     /** 新增一档。编码与名称都会查重。 */

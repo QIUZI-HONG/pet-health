@@ -36,7 +36,7 @@ public class ProviderInviteController {
     @GetMapping
     public ApiResponse<ProviderInviteCodeView> view() {
         CurrentUser.requireDomain(LoginDomain.PROVIDER);
-        return ApiResponse.ok(inviteCodes.view());
+        return ApiResponse.ok(inviteCodes.viewInviteCode());
     }
 
     /** 生成推广码，**幂等**：重复调用返回同一个码。 */

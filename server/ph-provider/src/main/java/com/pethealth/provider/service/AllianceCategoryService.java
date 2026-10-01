@@ -72,7 +72,7 @@ public class AllianceCategoryService {
 
     /** 维度列表。运营看全部（含停用），因为停用的维度仍然承载着既有归属。 */
     @Transactional(readOnly = true)
-    public List<AllianceCategoryView> list() {
+    public List<AllianceCategoryView> listCategories() {
         CurrentUser.requireAdmin();
         List<AllianceCategory> categories = categoryMapper.selectList(
                 Wrappers.<AllianceCategory>lambdaQuery()
