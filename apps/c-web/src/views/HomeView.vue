@@ -22,6 +22,8 @@ import {
 import { useSessionStore } from "../stores/session";
 import { useMessageStore } from "../stores/messages";
 import { onInviteNotice, takeInviteNotice } from "../utils/invite";
+import { reminderTypeLabel, reminderTypeTone } from "../utils/reminder";
+import { commerce, type CouponView } from "../api/commerce";
 import CheckInCard from "../components/CheckInCard.vue";
 import HealthScoreCard from "../components/HealthScoreCard.vue";
 import SessionGate from "../components/SessionGate.vue";
@@ -55,6 +57,58 @@ const checkInDate = ref("");
 const checkInToday = ref("");
 /** 可补录窗口：[今天 - 7 天, 今天]，与 `CheckInService.BACKFILL_WINDOW_DAYS` 同一口径。 */
 const checkInMinDate = computed(() => (checkInToday.value ? shiftDate(checkInToday.value, -CHECKIN_BACKFILL_DAYS) : ""));
+/**
+ * 券提醒条与邀请入口条（交付文档 4.16.2 的第 6、7 块）。
+ *
+ * 两块都用**已有的接口**取数，不新增契约：券包（`/coupons?status=1`）与邀请中心（`/invites/center`）。
+ * 取不到就不显示那一块（首页是「看一眼今天要做什么」的地方，一块取不到不该让整页报错）。
+ */
+const expiringCoupons = ref<CouponView[]>([]);
+const inviteProgress = ref<{ effective: number; nextThreshold: number | null; nextRemaining: number | null } | null>(null);
+
+/** 券提醒条只说实话：张数按服务端的券包算，天数按**最近到期**那张算。 */
+const couponHint = computed(() => {
+  const coupons = expiringCoupons.value;
+  if (coupons.length === 0) {
+    return null;
+  }
+  const soonest = coupons
+    .map((coupon) => ({ coupon, days: daysUntil(coupon.valid_until) }))
+    .filter((item) => item.days !== null)
+    .sort((a, b) => (a.days ?? 0) - (b.days ?? 0))[0];
+  return {
+    count: coupons.length,
+    days: soonest?.days ?? null,
+    name: soonest?.coupon.template_name ?? "券",
+  };
+});
+
+/** 到期还有几天（按业务日算整天的差；服务端给的 `valid_until` 是本地时间字符串）。 */
+function daysUntil(validUntil: string | null | undefined): number | null {
+  if (!validUntil) return null;
+  const target = Date.parse(validUntil.replace(" ", "T"));
+  if (Number.isNaN(target)) return null;
+  return Math.max(0, Math.ceil((target - Date.now()) / 86_400_000));
+}
+
+async function loadHighlights(): Promise<void> {
+  if (!session.isLoggedIn) return;
+  const [coupons, invites] = await Promise.allSettled([
+    commerce.listCoupons({ status: 1, pageSize: 100 }),
+    commerce.getInviteCenter(),
+  ]);
+  if (coupons.status === "fulfilled") {
+    expiringCoupons.value = coupons.value.list ?? [];
+  }
+  if (invites.status === "fulfilled") {
+    inviteProgress.value = {
+      effective: invites.value.effective_count ?? 0,
+      nextThreshold: invites.value.next_threshold ?? null,
+      nextRemaining: invites.value.next_remaining ?? null,
+    };
+  }
+}
+
 /** 首页强提醒流：未读的健康提醒，按风险等级与指向时间排序（交付文档 4.16.2 画的 6 张卡）。 */
 const reminders = ref<MessageView[]>([]);
 const loading = ref(false);
@@ -76,6 +130,7 @@ const inviteNotice = ref("");
 let unsubscribeInviteNotice: () => void = () => {};
 
 onMounted(() => {
+  void loadHighlights();
   inviteNotice.value = takeInviteNotice();
   unsubscribeInviteNotice = onInviteNotice((notice) => {
     inviteNotice.value = notice;
@@ -279,7 +334,12 @@ watch(
                   aria-hidden="true"
                 />
                 <div class="ph-reminders__body">
-                  <p class="ph-reminders__title">{{ message.title }}</p>
+                  <p class="ph-reminders__head">
+                    <span class="ph-reminders__pill" :class="`ph-reminders__pill--${reminderTypeTone(message.type)}`">
+                      {{ reminderTypeLabel(message.type) }}
+                    </span>
+                    <span class="ph-reminders__title">{{ message.title }}</span>
+                  </p>
                   <p v-if="message.content" class="ph-reminders__content">{{ message.content }}</p>
                   <div class="ph-reminders__actions">
                     <RouterLink
@@ -300,6 +360,34 @@ watch(
               title="暂时一切正常"
               description="疫苗到期、体重异常这类提醒会自动出现在这里。"
             />
+          </article>
+
+          <!-- 券提醒条（交付文档 4.16.2 第 6 块）：暖橙浅底，只说实话——几张、几天后过期 -->
+          <article v-if="couponHint" class="ph-bar ph-bar--coupon">
+            <span class="ph-bar__icon" aria-hidden="true">🎟️</span>
+            <div class="ph-bar__body">
+              <p class="ph-bar__title">
+                您有 {{ couponHint.count }} 张券{{ couponHint.days !== null ? `，${couponHint.name} ${couponHint.days} 天后过期` : "" }}
+              </p>
+              <p class="ph-text-weak">券是到店抵扣凭证：到店出示给门店核销，平台不经手资金（ADR-0036）。</p>
+            </div>
+            <RouterLink class="ph-bar__action" :to="{ name: 'coupons' }">去使用 →</RouterLink>
+          </article>
+
+          <!-- 邀请入口条（同第 7 块）：主色浅底，进度按服务端给的有效邀请数算 -->
+          <article v-if="inviteProgress" class="ph-bar ph-bar--invite">
+            <span class="ph-bar__icon" aria-hidden="true">👥</span>
+            <div class="ph-bar__body">
+              <p class="ph-bar__title">邀请好友，双方各得洗护券</p>
+              <p class="ph-text-weak">
+                已有效邀请 {{ inviteProgress.effective }} 人{{
+                  inviteProgress.nextThreshold !== null && inviteProgress.nextRemaining !== null
+                    ? `；再邀 ${inviteProgress.nextRemaining} 人到 ${inviteProgress.nextThreshold} 人档`
+                    : ""
+                }}
+              </p>
+            </div>
+            <RouterLink class="ph-bar__action" :to="{ name: 'invites' }">立即邀请 →</RouterLink>
           </article>
 
           <article class="ph-card">
@@ -423,6 +511,96 @@ watch(
 
 .ph-reminders__body {
   min-width: 0;
+}
+
+/* 分类 pill（4.16.2 的彩色分类标签）：与风险色条分工不同——色条说「多紧急」，pill 说「是哪一类」 */
+.ph-reminders__head {
+  display: flex;
+  align-items: center;
+  gap: var(--ph-space-2);
+  margin: 0;
+}
+
+.ph-reminders__pill {
+  flex: none;
+  padding: 1px var(--ph-space-2);
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* 色调与 4.16.10 的用色纪律一致：红=异常，橙=券/疫苗这类待办，绿=按期的驱虫，紫=长期跟踪，蓝=信息 */
+.ph-reminders__pill--danger {
+  background: var(--ph-color-danger-light);
+  color: var(--ph-color-danger);
+}
+
+.ph-reminders__pill--warning {
+  background: var(--ph-color-orange-light);
+  color: var(--ph-color-orange);
+}
+
+.ph-reminders__pill--success {
+  background: var(--ph-color-primary-light);
+  color: var(--ph-color-primary);
+}
+
+.ph-reminders__pill--purple {
+  background: var(--ph-color-purple-light);
+  color: var(--ph-color-purple);
+}
+
+.ph-reminders__pill--info {
+  background: var(--ph-color-bg);
+  color: var(--ph-color-blue);
+}
+
+.ph-reminders__pill--neutral {
+  background: var(--ph-color-bg);
+  color: var(--ph-color-text-sub);
+}
+
+/* 券提醒条（暖橙浅底）与邀请入口条（主色浅底）：4.16.2 的第 6、7 块 */
+.ph-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ph-space-3);
+  padding: var(--ph-space-4);
+  border-radius: var(--ph-radius-card);
+  border: 1px solid var(--ph-color-border);
+}
+
+.ph-bar--coupon {
+  background: var(--ph-color-orange-light);
+}
+
+.ph-bar--invite {
+  background: var(--ph-color-primary-light);
+}
+
+.ph-bar__icon {
+  font-size: 20px;
+}
+
+.ph-bar__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.ph-bar__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.ph-bar__action {
+  flex: none;
+  color: var(--ph-color-orange);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.ph-bar--invite .ph-bar__action {
+  color: var(--ph-color-primary);
 }
 
 .ph-reminders__title {
