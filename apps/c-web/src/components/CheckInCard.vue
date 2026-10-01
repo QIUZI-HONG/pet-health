@@ -19,6 +19,16 @@ import { computed, ref } from "vue";
 import { formatDate } from "@pet-health/shared";
 import type { CheckInDay, CheckInItem, CheckInItemRequest } from "@pet-health/shared";
 
+/**
+ * 中文日期（`2026-09-30` → `2026年09月30日`）：交付文档 13.2 的展示口径。
+ * 原生 `input[type=date]` 在浏览器里显示的是 `09/30/2026`，改不了它，所以补一行中文在旁边。
+ */
+const chineseDate = computed(() => {
+  const raw = props.day?.date ?? "";
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  return match ? `${match[1]}年${match[2]}月${match[3]}日` : raw;
+});
+
 const props = defineProps<{
   day: CheckInDay | null;
   streakDays: number;
@@ -211,6 +221,9 @@ function statusText(item: CheckInItem): string {
             aria-label="打卡日期"
             @change="changeDate"
           />
+          <!-- 原生 date 输入在中文环境里显示成 09/30/2026；交付文档 13.2 要的是
+               「YYYY年MM月DD日」，所以旁边补一行中文日期（输入框保持原生：它是能用的选择器） -->
+          <span class="ph-text-weak ph-checkin__date-text">{{ chineseDate }}</span>
         </label>
         <span v-if="!viewingToday" class="ph-checkin__backfill">
           正在补录 {{ formatDate(props.day.date) }} 的记录（只能补最近 7 天）

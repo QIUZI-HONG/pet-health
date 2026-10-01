@@ -158,6 +158,11 @@ const quickEntries = [
   { label: "AI 管家", hint: "描述症状，拿到风险分级", to: "/ai", icon: "💬" },
   { label: "去打卡", hint: "每天 3 秒记录", to: "/", icon: "✅" },
   { label: "找服务", hint: "医院 / 洗护 / 寄养", to: "/services", icon: "🩺" },
+  // 稿子（4.16.2 快捷服务）里还有「找洗护 / 找训犬 / 上门喂养」三个直达入口：
+  // 它们是服务页的分类深链（`?type=` 由服务页自己读），点进来就是筛好的那一类
+  { label: "找洗护", hint: "洗护与美容", to: "/services?type=2", icon: "🛁" },
+  { label: "找训犬", hint: "基础训练与矫正", to: "/services?type=3", icon: "🐕" },
+  { label: "上门喂养", hint: "寄养与上门", to: "/services?type=4", icon: "🏠" },
   { label: "看档案", hint: "疫苗与就医记录", to: "/records", icon: "📋" },
   // 社区（切片 #84 / F020）：ADR-0041 定的是「嵌在首页与档案页的侧栏，不做独立 Tab」，
   // 所以它的入口在这里，而不是左栏——不动导航的信息架构

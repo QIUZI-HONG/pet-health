@@ -38,6 +38,9 @@ a {
   display: grid;
   grid-template-columns: 208px minmax(0, 1fr);
   min-height: 100vh;
+  /* 窄屏守卫（ADR-0016：桌面重排，不做手机适配）：小于 1080px 横向滚动，
+     而不是把左栏与内容区挤成逐字换行——原先窄屏下首页会被压成「AI 管\n家」。 */
+  min-width: 1080px;
 }
 
 .ph-shell__main {
@@ -106,7 +109,7 @@ a {
   background: var(--ph-color-surface);
   border: 1px solid var(--ph-color-border);
   border-radius: var(--ph-radius-card);
-  padding: var(--ph-space-5);
+  padding: var(--ph-space-4);
 }
 
 .ph-card__title {

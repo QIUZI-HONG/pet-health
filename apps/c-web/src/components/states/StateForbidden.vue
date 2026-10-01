@@ -9,6 +9,7 @@
  * （ADR-0016 的决定）。
  */
 import { useRouter } from "vue-router";
+import StateIcon from "./StateIcon.vue";
 
 withDefaults(
   defineProps<{
@@ -32,7 +33,7 @@ function goLogin(): void {
 
 <template>
   <div class="ph-state ph-state--forbidden">
-    <div class="ph-state__icon" aria-hidden="true">🔒</div>
+    <StateIcon tone="forbidden" />
     <p class="ph-state__title">{{ title }}</p>
     <p class="ph-state__desc">{{ description }}</p>
     <div class="ph-state__actions">

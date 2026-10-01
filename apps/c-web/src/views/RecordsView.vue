@@ -28,11 +28,13 @@ import {
   type ArchiveSectionView,
   type CareModeView,
   type EpidemicRecordView,
+  type HealthScoreView,
 } from "@pet-health/shared";
 import SessionGate from "../components/SessionGate.vue";
 import PhotoUploader from "../components/PhotoUploader.vue";
 import CareModeCard from "../components/CareModeCard.vue";
 import ArchiveSectionsCard from "../components/ArchiveSectionsCard.vue";
+import HealthScoreCard from "../components/HealthScoreCard.vue";
 import HealthReportCard from "../components/HealthReportCard.vue";
 import TimelineCard from "../components/TimelineCard.vue";
 import StateEmpty from "../components/states/StateEmpty.vue";
@@ -43,6 +45,10 @@ import { useSessionStore } from "../stores/session";
 const session = useSessionStore();
 
 const sections = ref<ArchiveSectionView[]>([]);
+
+/** 健康评分与连续天数（4.16.4 的主块；与首页同一个接口、同一个组件）。 */
+const score = ref<HealthScoreView | null>(null);
+const streakDays = ref(0);
 const careMode = ref<CareModeView | null>(null);
 const records = ref<EpidemicRecordView[]>([]);
 /** 就医记录（F004）：它是可写分项 `medical`，但**不属于那 8 个分项**（ADR-0030），所以单独一块。 */
@@ -101,23 +107,31 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = "";
   sections.value = [];
+  score.value = null;
+  streakDays.value = 0;
   careMode.value = null;
   records.value = [];
   medicalRecords.value = [];
   try {
-    // 四件事一起发：它们互不依赖，串起来只会让切宠物更慢
-    const [loadedSections, loadedCareMode, loadedRecords, loadedMedical] = await Promise.all([
-      cApp.listArchiveSections(id, signal),
-      cApp.getCareMode(id, signal),
-      cApp.listEpidemicRecords(id, signal),
-      // 就医记录不属于那 8 个分项，所以它的列表要自己拉（section=medical）
-      cApp.listArchiveRecords(id, { section: "medical", pageSize: 20 }, signal),
-    ]);
+    // 六件事一起发：它们互不依赖，串起来只会让切宠物更慢
+    const [loadedSections, loadedCareMode, loadedRecords, loadedMedical, loadedScore, loadedStreak] =
+      await Promise.all([
+        cApp.listArchiveSections(id, signal),
+        cApp.getCareMode(id, signal),
+        cApp.listEpidemicRecords(id, signal),
+        // 就医记录不属于那 8 个分项，所以它的列表要自己拉（section=medical）
+        cApp.listArchiveRecords(id, { section: "medical", pageSize: 20 }, signal),
+        // 评分卡（4.16.4 的主块）：与首页同一份组件同一个接口；连续天数它也要用
+        cApp.getHealthScore(id, signal),
+        cApp.getCheckInStreak(id, signal),
+      ]);
     if (!latest.isCurrent(seq)) return;
     sections.value = loadedSections;
     careMode.value = loadedCareMode;
     records.value = loadedRecords;
     medicalRecords.value = loadedMedical.list;
+    score.value = loadedScore;
+    streakDays.value = loadedStreak.streak_days ?? 0;
   } catch (error) {
     if (!latest.isCurrent(seq)) return;
     const failure = toApiFailure(error, "加载失败，请稍后重试");
@@ -261,6 +275,9 @@ async function removeMedical(record: ArchiveRecordView): Promise<void> {
 
       <div v-else class="ph-columns">
         <div class="ph-stack">
+          <!-- 健康评分详情（交付文档 4.16.4 的主块）：组件与首页同一份，
+               评分只取一次（`scoreApi` 与首页共用 `/pets/{id}/health-score`） -->
+          <HealthScoreCard v-if="score" :score="score" :streak-days="streakDays" :loading="loading" />
           <ArchiveSectionsCard v-if="sections.length" :pet-id="petId" :sections="sections" />
           <TimelineCard :pet-id="petId" />
         </div>

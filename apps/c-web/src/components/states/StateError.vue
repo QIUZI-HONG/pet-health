@@ -19,11 +19,12 @@ withDefaults(
 );
 
 defineEmits<{ retry: [] }>();
+import StateIcon from "./StateIcon.vue";
 </script>
 
 <template>
   <div class="ph-state ph-state--error" role="alert">
-    <div class="ph-state__icon" aria-hidden="true">⚠️</div>
+    <StateIcon tone="error" />
     <p class="ph-state__title">{{ message }}</p>
     <p v-if="requestId" class="ph-state__trace">请求 ID：{{ requestId }}</p>
     <div class="ph-state__actions">

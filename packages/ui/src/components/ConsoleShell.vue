@@ -29,7 +29,7 @@ withDefaults(
 </script>
 
 <template>
-  <div class="ph-console">
+  <div class="ph-console ph-console__viewport">
     <aside class="ph-console__aside">
       <div class="ph-console__brand">
         <span class="ph-console__logo" aria-hidden="true">🐾</span>

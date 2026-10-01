@@ -28,6 +28,9 @@ const listArchiveSections = vi.fn().mockResolvedValue([]);
 // 就医记录（F004）：档案页自己拉 `section=medical` 的列表，这个桩不补上整页会进错误态
 const listArchiveRecords = vi.fn().mockResolvedValue({ list: [], page: 1, page_size: 20, total: 0, has_more: false });
 const listTimeline = vi.fn().mockResolvedValue({ list: [], page: 1, page_size: 10, total: 0, has_more: false });
+// 档案页首块现在挂评分卡（4.16.4）：这两个不补上，整页会进错误态
+const getHealthScore = vi.fn().mockResolvedValue({ total_score: null, dimensions: [], trend: [] });
+const getCheckInStreak = vi.fn().mockResolvedValue({ streak_days: 0, checked_today: false });
 const listHealthReports = vi.fn().mockResolvedValue({ list: [], page: 1, page_size: 12, total: 0, has_more: false });
 const getCareMode = vi.fn().mockResolvedValue({
   active: false,
@@ -54,6 +57,8 @@ vi.mock("@pet-health/shared", async () => {
       listArchiveSections: (...args: unknown[]) => listArchiveSections(...args),
       listArchiveRecords: (...args: unknown[]) => listArchiveRecords(...args),
       listTimeline: (...args: unknown[]) => listTimeline(...args),
+      getHealthScore: (...args: unknown[]) => getHealthScore(...args),
+      getCheckInStreak: (...args: unknown[]) => getCheckInStreak(...args),
       listHealthReports: (...args: unknown[]) => listHealthReports(...args),
       getCareMode: (...args: unknown[]) => getCareMode(...args),
       getUnreadCount: getUnreadCount,

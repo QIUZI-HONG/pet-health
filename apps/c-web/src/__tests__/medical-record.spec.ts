@@ -23,6 +23,8 @@ const listEpidemicRecords = vi.fn();
 const getCareMode = vi.fn();
 const listHealthReports = vi.fn();
 const listTimeline = vi.fn();
+const getHealthScore = vi.fn();
+const getCheckInStreak = vi.fn();
 
 vi.mock("@pet-health/shared", async () => {
   const actual = await vi.importActual<typeof import("@pet-health/shared")>("@pet-health/shared");
@@ -37,6 +39,9 @@ vi.mock("@pet-health/shared", async () => {
       getCareMode: (...args: unknown[]) => getCareMode(...args),
       listHealthReports: (...args: unknown[]) => listHealthReports(...args),
       listTimeline: (...args: unknown[]) => listTimeline(...args),
+      // 档案页现在首块还挂评分卡（4.16.4），所以这两个也要打桩
+      getHealthScore: (...args: unknown[]) => getHealthScore(...args),
+      getCheckInStreak: (...args: unknown[]) => getCheckInStreak(...args),
     },
   };
 });
@@ -90,6 +95,8 @@ beforeEach(() => {
   listEpidemicRecords.mockResolvedValue([]);
   getCareMode.mockResolvedValue({ active: false, reasons: [], effects: [], notice: "" });
   listHealthReports.mockResolvedValue({ list: [], page: 1, page_size: 12, total: 0, has_more: false });
+  getHealthScore.mockResolvedValue({ total_score: null, dimensions: [], trend: [] });
+  getCheckInStreak.mockResolvedValue({ streak_days: 0, checked_today: false });
   listTimeline.mockResolvedValue({ list: [], page: 1, page_size: 10, total: 0, has_more: false });
   createArchiveRecord.mockResolvedValue(makeMedical());
   deleteArchiveRecord.mockResolvedValue(undefined);

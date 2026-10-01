@@ -56,12 +56,12 @@ a {
   color: var(--ph-color-text-sub);
 }
 
-/* ===== 卡片（交付文档 4.12：白底 + 1px 描边 + 圆角 16 + 内边距 16）===== */
+/* ===== 卡片（交付文档 4.12：白底 + 1px 描边 + 圆角 16 + 内边距 16px）===== */
 .ph-card {
   background: var(--ph-color-surface);
   border: 1px solid var(--ph-color-border);
   border-radius: var(--ph-radius-card);
-  padding: var(--ph-space-5);
+  padding: var(--ph-space-4);
 }
 
 .ph-card__title {
@@ -421,4 +421,12 @@ a {
   border-radius: var(--ph-radius-input);
   border: 1px solid var(--ph-color-border);
   background: var(--ph-color-surface);
+}
+
+/* ===== 窄屏守卫（ADR-0016：桌面重排，不做手机适配）=====
+   小于 1080px 时**横向滚动**，而不是把左栏与内容区挤成逐字换行——
+   原先窄屏下首页会被压成「AI 管\n家」这种断法（截图核实过）。
+   这是守卫，不是响应式：真要手机版式是一次产品决策（缺陷计划 E-04）。 */
+.ph-console__viewport {
+  min-width: 1080px;
 }
