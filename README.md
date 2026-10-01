@@ -224,6 +224,8 @@ docker compose -f deploy/docker-compose.dev.yml exec mysql \
   **两个后台此前没有测试基建**，现在与 C 端同一套（jsdom + 真路由表 + 会话种法）；
   请求层的深测（令牌怎么带、40101 静默刷新、会话失效广播）**住在它被测的包 `packages/shared` 里**，
   不再寄居在 C 端。两道构建检查的实现在 `packages/config/scripts/`，三端共用一份、各端只声明自己的预算
+- `pnpm lint` —— ESLint（flat config，**只查正确性、不管格式**）：**0 error / 12 warning**
+  （warning 全是生产代码里的 `no-non-null-assertion`，逐条可查，配置见 `eslint.config.mjs`）；已接进 `web.yml`
 - `cd ai && .venv/bin/ruff check . && .venv/bin/pytest` —— 静态检查通过；
   **201 通过 + 2 xfailed + 7 skipped**（xfail 是两个已标记的安全缺口，见测试报告 14.2；
   skipped 是需要真库的连库用例；另有 `live` / `eval` 各 1 条默认不跑）；
