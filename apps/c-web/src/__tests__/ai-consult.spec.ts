@@ -102,10 +102,15 @@ describe("AiConsultView", () => {
     const wrapper = await mountLoggedIn();
 
     await wrapper.find("textarea").setValue("今天吐了两次，精神不太好");
-    await wrapper.find("button").trigger("click");
+    // 页面上第一个 button 现在是快捷标签，所以按文案取发送键
+    await wrapper.findAll("button").find((b) => b.text().includes("发送"))!.trigger("click");
     await flushPromises();
 
-    const call = transport.request.mock.calls[0][0];
+    // 页面挂载时还会拉一次「需要关注」（问候卡），所以按 URL 找咨询那一条
+    const consultCall = transport.request.mock.calls.find((entry) =>
+      String((entry[0] as { url: string }).url).includes("/ai-consults"));
+    expect(consultCall).toBeDefined();
+    const call = consultCall![0] as { url: string; data: { question: string } };
     expect(call.url).toBe("/api/v1/app/pets/7/ai-consults");
     expect(call.data.question).toBe("今天吐了两次，精神不太好");
 
@@ -118,14 +123,18 @@ describe("AiConsultView", () => {
     expect(text).toContain("deepseek-flash");
   });
 
-  it("需求为空时按钮禁用，不发请求", async () => {
+  it("需求为空时发送键禁用，不发咨询请求", async () => {
     const wrapper = await mountLoggedIn();
-
-    expect(wrapper.find("button").attributes("disabled")).toBeDefined();
-    await wrapper.find("button").trigger("click");
     await flushPromises();
 
-    expect(transport.request).not.toHaveBeenCalled();
+    const sendButton = wrapper.findAll("button").find((b) => b.text().includes("发送"))!;
+    expect(sendButton.attributes("disabled")).toBeDefined();
+    await sendButton.trigger("click");
+    await flushPromises();
+
+    // 问候卡那次 highlights 不算：这里要断言的是**没有发出咨询请求**
+    expect(transport.request.mock.calls.some((entry) =>
+      String((entry[0] as { url: string }).url).includes("/ai-consults"))).toBe(false);
   });
 
   it("红线命中：标明结论由规则给出、未经模型", async () => {
@@ -291,5 +300,57 @@ describe("AI 管家页：图片 / 引用 / 转人工", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("建议尽快就医");
+  });
+});
+
+describe("AI 管家：问候卡与快捷标签（4.16.3 的第 1、2 块）", () => {
+  it("问候卡给宠物名与「需要关注」的真实条数（取不到就不显示那半句）", async () => {
+    transport.request.mockImplementation((config: { url: string }) => {
+      if (config.url.endsWith("/messages/highlights")) {
+        return Promise.resolve(ok([
+          { id: 1, kind: 1, type: 4, title: "饮水量比上周 +30%", content: "继续观察", risk_level: 3,
+            remind_at: "2026-10-01 08:00:00", read: false, action_hint: null, action_target: null },
+          { id: 2, kind: 1, type: 1, title: "狂犬疫苗还有 7 天到期", content: "可先看看附近医院", risk_level: 2,
+            remind_at: "2026-10-01 08:00:00", read: false, action_hint: null, action_target: null },
+        ]));
+      }
+      return Promise.resolve(ok(consult()));
+    });
+
+    const wrapper = await mountLoggedIn();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("豆豆");
+    expect(wrapper.text()).toContain("有 2 项需要关注");
+    expect(wrapper.text()).toContain("饮水量比上周 +30%");
+  });
+
+  it("没有需要关注的事时不编「状态不错」，只说没有可关注的事", async () => {
+    transport.request.mockImplementation((config: { url: string }) =>
+      Promise.resolve(ok(config.url.endsWith("/messages/highlights") ? [] : consult())));
+
+    const wrapper = await mountLoggedIn();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("暂时没有需要特别关注的事");
+    expect(wrapper.text()).not.toContain("今天状态不错");
+  });
+
+  it("四个快捷标签点一下直接发送（稿子的口径：点击即作为提问内容发送）", async () => {
+    transport.request.mockImplementation((config: { url: string }) =>
+      Promise.resolve(ok(config.url.endsWith("/messages/highlights") ? [] : consult())));
+
+    const wrapper = await mountLoggedIn();
+    await flushPromises();
+
+    const chips = wrapper.findAll(".ph-ai__quick-chip");
+    expect(chips.map((chip) => chip.text())).toEqual(["皮肤问题", "呕吐", "疫苗", "行为异常"]);
+
+    await chips[1]!.trigger("click");
+    await flushPromises();
+
+    const consultCall = transport.request.mock.calls.find((call) =>
+      String((call[0] as { url: string }).url).includes("/ai-consults"));
+    expect((consultCall![0] as { data: { question: string } }).data.question).toBe("呕吐");
   });
 });

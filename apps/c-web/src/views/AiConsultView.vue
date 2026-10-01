@@ -10,7 +10,7 @@
  *  - **降级**答复（`degraded`）要标出来，别让用户以为是模型结论；
  *  - 到量的提示**不拦人**（ADR-0024）：照常给结果，只是劝一句邀请好友。
  */
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import {
   formatDate,
   speciesLabel,
@@ -18,7 +18,11 @@ import {
   cApp,
   toUserMessage,
   createLatestGuard,
-  type AiConsultView, riskTone, type RiskTone } from "@pet-health/shared";
+  type AiConsultView,
+  riskTone,
+  type RiskTone,
+  type MessageView,
+} from "@pet-health/shared";
 import { useSessionStore } from "../stores/session";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import SessionGate from "../components/SessionGate.vue";
@@ -121,6 +125,49 @@ async function transfer(): Promise<void> {
  */
 const latest = createLatestGuard();
 
+/**
+ * 问候卡与快捷标签（交付文档 4.16.3 的第 1、2 块）。
+ *
+ * **「今天状态不错」这句话不编**：稿子上写的是它，但我们能证明的只是「有没有需要关注的事」——
+ * 所以文案按真实数据分两岔（有 N 项 / 暂时没有），不去替它下「状态不错」这个结论。
+ * 「需要关注」的口径与首页同一处：未读的健康提醒（`/messages/highlights`）。
+ */
+const attention = ref<MessageView[]>([]);
+
+/** 按服务端时区的钟点问候。上午/下午/晚上三档足够，不必更细。 */
+const greeting = computed(() => {
+  const hour = new Date().getHours();
+  if (hour < 6) return "夜深了";
+  if (hour < 12) return "早上好";
+  if (hour < 18) return "下午好";
+  return "晚上好";
+});
+
+const petName = computed(() => session.activePet?.name ?? "毛孩子");
+
+/** 快捷标签：点一下**直接发送**（稿子原话「点击即作为提问内容发送」）——比让用户再点一次发送快。 */
+const QUICK = ["皮肤问题", "呕吐", "疫苗", "行为异常"];
+
+onMounted(() => {
+  void loadAttention();
+});
+
+async function loadAttention(): Promise<void> {
+  if (!session.isLoggedIn) return;
+  try {
+    attention.value = (await cApp.getMessageHighlights()) ?? [];
+  } catch {
+    // 取不到就不显示「需要关注」那半句：宁可少说一句，也不要瞎说一句
+    attention.value = [];
+  }
+}
+
+/** 点快捷标签：填进输入框立刻发出去（发送函数里还会做一次宠物与长度的校验）。 */
+function askQuick(word: string): void {
+  draft.value = word;
+  void send();
+}
+
 async function send(): Promise<void> {
   const question = draft.value.trim();
   if (!question || sending.value) return;
@@ -163,6 +210,33 @@ async function send(): Promise<void> {
 
     <SessionGate forbidden-description="AI 咨询会结合宠物的健康档案，所以需要先登录。">
       <div class="ph-ai">
+        <!-- 问候卡（4.16.3 第 1 块）：主色浅底 + 宠物名 + 「需要关注」的真实条数 -->
+        <div class="ph-card ph-ai__greet">
+          <span class="ph-ai__greet-avatar" aria-hidden="true">🐾</span>
+          <div class="ph-ai__greet-text">
+            <p class="ph-ai__greet-title">{{ greeting }}，{{ petName }}</p>
+            <p class="ph-text-sub">
+              {{ attention.length > 0
+                ? `有 ${attention.length} 项需要关注：${attention.map((item) => item.title).join("；")}`
+                : "暂时没有需要特别关注的事，有异常随时问我。" }}
+            </p>
+          </div>
+        </div>
+
+        <!-- 快捷标签（同第 2 块）：点一下直接作为提问发送 -->
+        <div class="ph-ai__quick">
+          <button
+            v-for="word in QUICK"
+            :key="word"
+            type="button"
+            class="ph-ai__quick-chip"
+            :disabled="sending"
+            @click="askQuick(word)"
+          >
+            {{ word }}
+          </button>
+        </div>
+
         <!-- 对话区 -->
         <div class="ph-card ph-ai__chat">
           <StateEmpty
@@ -318,6 +392,67 @@ async function send(): Promise<void> {
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: var(--ph-space-4);
   align-items: start;
+}
+
+/* 问候卡与快捷标签（4.16.3 的第 1、2 块）：贴在同一栏的顶部，对话区在下面 */
+.ph-ai__greet {
+  /* 这一页是两栏网格（ADR-0016）：问候卡与标签在**对话区之上**、横跨整行，
+     否则网格会把标签排到右栏去（截图核实过）。 */
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--ph-space-3);
+  margin-bottom: var(--ph-space-3);
+  background: var(--ph-color-primary-light);
+}
+
+.ph-ai__greet-avatar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--ph-color-surface);
+  font-size: 18px;
+}
+
+.ph-ai__greet-text {
+  min-width: 0;
+}
+
+.ph-ai__greet-title {
+  margin: 0 0 2px;
+  font-weight: 600;
+}
+
+.ph-ai__quick {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ph-space-2);
+  margin-bottom: var(--ph-space-3);
+}
+
+.ph-ai__quick-chip {
+  padding: var(--ph-space-2) var(--ph-space-3);
+  border: 1px solid var(--ph-color-border);
+  border-radius: 999px;
+  background: var(--ph-color-surface);
+  font: inherit;
+  color: var(--ph-color-text-sub);
+  cursor: pointer;
+}
+
+.ph-ai__quick-chip:hover:not(:disabled) {
+  border-color: var(--ph-color-primary);
+  color: var(--ph-color-primary);
+}
+
+.ph-ai__quick-chip:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .ph-ai__chat {
