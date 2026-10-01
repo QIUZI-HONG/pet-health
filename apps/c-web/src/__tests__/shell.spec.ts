@@ -37,8 +37,12 @@ vi.mock("@pet-health/shared", async () => {
       save: vi.fn(),
       clear: vi.fn(),
     },
-    // 网络出口留空：这一层不验请求，页面自己会把失败收敛成错误态
-    http: {},
+    // 网络出口只放一个「空页」的桩：这一层不验请求，页面自己会把结果收敛成空态。
+    // **不能留 `{}`**：页面在异步路径里调 `http.get` 时会当场抛 TypeError，
+    // 那一抛会变成未处理 rejection，让 vitest 以退出码 1 收场（D-20 的「我的」高亮卡片就踩到了）。
+    http: {
+      get: vi.fn().mockResolvedValue({ list: [], page: 1, page_size: 20, total: 0, has_more: false }),
+    },
   };
 });
 
