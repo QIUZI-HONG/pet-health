@@ -2899,14 +2899,11 @@ export interface components {
             redeemed_at?: string | null;
             created_at?: string;
             /**
-             * @description 这张券**能不能用在这一单**（与 C 端同一份判定）。只在查询带了 `provider_id` 时才有值，
-             *     否则为 null——**没判 ≠ 判过不能用**。
+             * @description **本侧恒为 null**：可用性判定是给 C 端下单页用的（见 `contract/app.yaml` 的 `CouponView`），
+             *     运营 / 服务者侧的券列表不判、也不该判——服务者看的是自己券的核销状态，不是「能不能用」。
              */
             applies?: boolean | null;
-            /**
-             * @description 服务端挑出的**最优可用券**（每个列表最多一张）。不带 `provider_id` 时为 null。
-             *     这个字段是给 C 端下单页用的，运营 / 服务者侧恒为 null（它们不选券）。
-             */
+            /** @description **本侧恒为 null**：它只服务 C 端下单页的默认选券 */
             recommended?: boolean | null;
         };
         /** @description 服务者侧的订单列表行。**不含核销码**（门店凭用户出示的码，或按手机号 / 订单号定位订单） */

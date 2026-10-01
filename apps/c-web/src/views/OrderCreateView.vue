@@ -73,7 +73,10 @@ const coupons = ref<CouponView[]>([]);
  * 取不到就不带——那时券只按门店判，门槛留给下单复核（与改造前的行为一致，不会更差）。
  */
 const serviceOffer = ref<ProviderServiceOfferView | null>(null);
+/** 取到过报价才置 true：失败要留给下一次（重新加载 / 重试）再试，不能一次失败就永久不带金额。 */
 let serviceOfferLoaded = false;
+/** 用户是否亲手选过券（含「不用券」）。选过之后不再自动改他的选择。 */
+let couponChosen = false;
 const slotsLoading = ref(false);
 const couponsLoading = ref(false);
 const loadError = ref("");
@@ -135,10 +138,16 @@ async function loadCoupons(): Promise<void> {
       amount: serviceOffer.value?.price ?? null,
       serviceCode: serviceOffer.value?.service_code ?? undefined,
     });
-    coupons.value = (result.list ?? []).filter((coupon) => coupon.applies === true);
-    // 默认选中服务端挑出的最优券（用户仍可改选，包括改回「不用券」）；
-    // 已选的券不在新列表里（换了门店 / 券过期）时也走这里，免得留下一个看不见的选择
-    if (!coupons.value.some((coupon) => coupon.id === form.couponId)) {
+    // 只剔除**判过不能用**的（false）；服务端没判（null）时按可用处理——
+    // 把「没判」当「不能用」会让页面在服务端少给参数时直接说「没有可用券」，比不给结论还糟
+    coupons.value = (result.list ?? []).filter((coupon) => coupon.applies !== false);
+    if (couponChosen) {
+      // 用户自己选过：他选的券不在列表里了就清掉，但**不替他挑一张**（「不用券」也是一种选择）
+      if (!coupons.value.some((coupon) => coupon.id === form.couponId)) {
+        form.couponId = null;
+      }
+    } else {
+      // 默认选中服务端挑出的最优券（用户随时可改选）
       form.couponId = coupons.value.find((coupon) => coupon.recommended === true)?.id ?? null;
     }
   } catch (error) {
@@ -150,6 +159,12 @@ async function loadCoupons(): Promise<void> {
   }
 }
 
+/** 用户选券（含「不用券」）：记下「他选过」，免得后续重新加载把选择改回推荐券。 */
+function chooseCoupon(id: number | null): void {
+  couponChosen = true;
+  form.couponId = id;
+}
+
 /** 取本单的服务项（报价 + 编码）。失败不阻断下单，只是券那边少判门槛与范围。 */
 async function loadServiceOffer(): Promise<void> {
   if (!hasTarget.value || serviceOfferLoaded) return;
@@ -157,7 +172,9 @@ async function loadServiceOffer(): Promise<void> {
   try {
     const detail = await providers.detail(providerId.value);
     serviceOffer.value = (detail.services ?? []).find((offer) => offer.id === serviceId.value) ?? null;
+    serviceOfferLoaded = true;
   } catch {
+    // 取不到就不带金额（门槛与范围留给下单复核），并且**不记「取过」**——下次重试还会再试
     serviceOffer.value = null;
   }
 }
@@ -362,7 +379,7 @@ function slotText(slot: AppointmentSlotView): string {
                     type="button"
                     class="ph-order-form__no-coupon"
                     :class="{ 'ph-order-form__no-coupon--active': form.couponId === null }"
-                    @click="form.couponId = null"
+                    @click="chooseCoupon(null)"
                   >
                     不用券
                   </button>
@@ -373,7 +390,7 @@ function slotText(slot: AppointmentSlotView): string {
                     selectable
                     :selected="form.couponId === coupon.id"
                     :selected-text="coupon.recommended ? '已选 · 服务端推荐' : '已选'"
-                    @select="form.couponId = coupon.id ?? null"
+                    @select="chooseCoupon(coupon.id ?? null)"
                   />
                 </li>
               </ul>

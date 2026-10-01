@@ -145,7 +145,8 @@ public final class CouponDtos {
      *
      * <p><b>{@code applies} / {@code recommended} 只在查询带了门店 / 金额时才有值</b>
      * （契约 {@code GET /coupons} 的 {@code provider_id} / {@code amount} / {@code service_code}）：
-     * 前者是「这张券能不能用在这一单」的**完整判定**（状态、有效期、门槛、门店、服务项范围，
+     * 前者是「这张券能不能用在这一单」的判定（状态、到期、门槛、门店、服务项范围——
+     * 金额与服务项没给时后两项不判），
      * 与下单时那条 80001 复核**同一份实现**），后者标记「服务端挑出的最优可用券」——每个列表最多一张。
      * 不带那几个参数时为 {@code null}；`null` 与 `false` 是两件事（没判 vs 判过不能用）。
      */

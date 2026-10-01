@@ -9,6 +9,7 @@ import com.pethealth.privilege.api.InviteAttributionApi;
 import com.pethealth.privilege.api.PointsApi;
 import com.pethealth.privilege.api.RightsApi;
 import com.pethealth.privilege.domain.Coupon;
+import com.pethealth.privilege.domain.CouponTemplate;
 import com.pethealth.privilege.domain.InviteCode;
 import com.pethealth.privilege.domain.InviteLadderAchievement;
 import com.pethealth.privilege.domain.InviteLadderTier;
@@ -16,6 +17,7 @@ import com.pethealth.privilege.domain.InviteeRewardRule;
 import com.pethealth.privilege.domain.InviteRelation;
 import com.pethealth.privilege.domain.PointBehavior;
 import com.pethealth.privilege.domain.RightsGrant;
+import com.pethealth.privilege.mapper.CouponTemplateMapper;
 import com.pethealth.privilege.mapper.InviteCodeMapper;
 import com.pethealth.privilege.mapper.InviteLadderAchievementMapper;
 import com.pethealth.privilege.mapper.InviteLadderTierMapper;
@@ -63,6 +65,7 @@ public class InviteService implements InviteAttributionApi {
     private final InviteLadderTierMapper tierMapper;
     private final InviteLadderAchievementMapper achievementMapper;
     private final InviteeRewardRuleMapper inviteeRewardRuleMapper;
+    private final CouponTemplateMapper templateMapper;
     private final PointRecordMapper pointRecordMapper;
     private final InviteRiskGuard riskGuard;
     private final ProviderInviteCodeService providerCodes;
@@ -75,6 +78,7 @@ public class InviteService implements InviteAttributionApi {
                          InviteLadderTierMapper tierMapper,
                          InviteLadderAchievementMapper achievementMapper,
                          InviteeRewardRuleMapper inviteeRewardRuleMapper,
+                         CouponTemplateMapper templateMapper,
                          PointRecordMapper pointRecordMapper, InviteRiskGuard riskGuard,
                          ProviderInviteCodeService providerCodes,
                          PointsApi pointsApi, CouponApi couponApi, RightsApi rightsApi,
@@ -84,6 +88,7 @@ public class InviteService implements InviteAttributionApi {
         this.tierMapper = tierMapper;
         this.achievementMapper = achievementMapper;
         this.inviteeRewardRuleMapper = inviteeRewardRuleMapper;
+        this.templateMapper = templateMapper;
         this.pointRecordMapper = pointRecordMapper;
         this.riskGuard = riskGuard;
         this.providerCodes = providerCodes;
@@ -333,17 +338,27 @@ public class InviteService implements InviteAttributionApi {
     /**
      * 按 {@code invitee_reward_rule}（单行）给被邀请人发券；未配置 / 已停用就不发。
      *
-     * <p><b>发放失败不拖垮结算</b>（与 {@link #grantLadderRewards} 同一口径）：有效邀请的计数是硬的，
-     * 奖励物是可配的——一处配置错误（模板被停用、id 填错）抛出去会让整个结算事务回滚，
-     * 那一批邀请永远停在「待生效」，而且每小时重试一次、每次都失败。
+     * <p>**只认平台补贴券**：这张券是平台给的奖励，与服务者的贡献额度无关。指到一张服务者成本券上
+     * 会消耗某个门店的额度、并把券锁死在那家店——那是配错了，跳过并留一条 WARN，
+     * 不去猜运营想干什么（`issueSubsidyCoupon` 对同一件事有同样的校验）。
      *
-     * <p><b>与阶梯奖的一处不同</b>：阶梯奖有一张达成记录做凭据，配置修好后下次批算会自动补发；
-     * 这里没有那份凭据（关系判有效是一次性的状态流转），所以**失败不会自动补**。日志按这个事实写，
-     * 不写成「稍后会自动补」。
+     * <p><b>发放失败不会自动补</b>：这里没有阶梯奖那样的达成记录做凭据（关系判有效是一次性的
+     * 状态流转），所以日志按这个事实写，不写成「稍后会自动补」。
+     *
+     * <p><b>它也不是「不与结算一起失败」</b>：`couponApi.issue` 是默认传播的事务方法，
+     * 它抛错会把当前事务标成 rollback-only，`settle` 提交时整批回滚（与 {@link #grantLadderRewards}
+     * 同一处境，缺陷计划里记为 D-42）。catch 在这里只是让日志说清楚是哪一条关系出的问题，
+     * **不要**据此以为结算能继续——要真隔离得把发奖移到 AFTER_COMMIT（与打卡发券同一手法）。
      */
     private void grantInviteeCoupon(InviteRelation relation) {
         InviteeRewardRule rule = inviteeRewardRuleMapper.selectById(InviteeRewardRule.SINGLETON_ID);
         if (rule == null || !rule.isEnabled() || rule.getCouponTemplateId() == null) {
+            return;
+        }
+        CouponTemplate template = templateMapper.selectById(rule.getCouponTemplateId());
+        if (template == null || !template.isPlatformSubsidy()) {
+            log.warn("被邀请人奖励券的模板不是平台补贴券，跳过发放（这一条不会自动补）：templateId={}",
+                    rule.getCouponTemplateId());
             return;
         }
         int count = rule.getCouponCount() == null ? 1 : rule.getCouponCount();
@@ -354,8 +369,7 @@ public class InviteService implements InviteAttributionApi {
                         Coupon.SOURCE_INVITE, count == 1 ? ref : ref + ":" + (i + 1), null, "被邀请注册"));
             }
         } catch (RuntimeException e) {
-            log.warn("被邀请人奖励券发放失败，**不会自动补**（关系已判有效，没有达成记录这类凭据）："
-                    + "relationId={} 被邀请人={} 原因={}",
+            log.warn("被邀请人奖励券发放失败（这一条不会自动补）：relationId={} 被邀请人={} 原因={}",
                     relation.getId(), relation.getInviteeUserId(), e.getMessage());
         }
     }

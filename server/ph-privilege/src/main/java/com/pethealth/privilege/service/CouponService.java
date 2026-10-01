@@ -291,7 +291,11 @@ public class CouponService implements CouponApi, CouponFactsApi {
     }
 
     /**
-     * 「这张券能不能用在这一单」的**唯一实现**：状态、有效期、门槛、门店、服务项范围。
+     * 「这张券能不能用在这一单」的**唯一实现**：状态、**到期**、门槛、门店、服务项范围。
+     *
+     * <p>`valid_from` **不判**：券的生效时刻就是发放时刻（`valid_from` 与 `issued_at` 同值），
+     * 而 MySQL 的 `DATETIME`（0 位小数）会把带毫秒的插入**四舍五入**到下一秒——加一条
+     * 「未到生效时间」的判定会得到最多半秒的假拒绝（实测：刚发的券立刻被拒）。
      *
      * <p>下单前的 {@link #check}（80001 那条路径）与 C 端券列表的自动选优都走这里。
      * 两处各写一份的结果是「券包说能用、下单报不能用」——用户看到的是一句解释不通的错，
@@ -330,42 +334,64 @@ public class CouponService implements CouponApi, CouponFactsApi {
     private static final Availability AVAILABLE = new Availability(true, null, "");
 
     /**
-     * 这张券对这一单可用吗——{@link #check} 的布尔版（自动选优用它筛候选，不抛异常）。
+     * 一次判定一批券：**每张能不能用 + 挑出的最优券**（同一份 `availability` 的两个出口）。
      *
-     * <p>调用方持有的必须**是这个用户的**券（本方法只判「能不能用」，不判「是不是他的」）。
+     * <p>为什么要一次算完，而不是「先挑最优、再逐张判可用」：后者会把每张券判两遍
+     * （挑的那一遍 + 渲染的那一遍），而 `scopeAllows` 在按分类限定时要查一次目录
+     * （`catalog.findItem`）——一页 100 张就是 200 次查询，白搭一倍。
+     *
+     * <p>调用方没给门店时**不要调用本方法**：没有门店就没有「这一单」，
+     * 判不了也不该假装判过（两个字段留 null，与 false 是两件事）。
      */
-    public boolean applies(Coupon coupon, Long providerId, String serviceCode, BigDecimal orderAmount) {
-        return availability(coupon, providerId, serviceCode, orderAmount).available();
+    public CouponSelection select(List<Coupon> coupons, Long providerId, String serviceCode,
+                                  BigDecimal orderAmount) {
+        Map<Long, Boolean> applies = new HashMap<>();
+        Coupon best = null;
+        for (Coupon coupon : coupons) {
+            boolean usable = availability(coupon, providerId, serviceCode, orderAmount).available();
+            applies.put(coupon.getId(), usable);
+            if (usable && (best == null || better(coupon, best))) {
+                best = coupon;
+            }
+        }
+        return new CouponSelection(applies, best == null ? null : best.getId());
     }
 
     /**
-     * 从一批券里挑**最优可用券**：先按 {@link #applies} 筛，再按 面额降序 → 到期升序 → id 升序。
-     *
-     * <p>「先筛条件、后比大小」是刻意的：反过来会挑出一张门槛更高的券，用户点下去才发现不可用。
-     * 面额相同时选**先过期**的那张（用户少浪费）；面额与到期都一样时按 id——给一个确定的答案，
-     * 不把「数据库碰巧返回的顺序」当业务规则。
-     *
-     * <p>没有可用券时返回空：调用方（C 端券列表）据此把 {@code recommended} 全置 false，
-     * 而不是挑一张「最不差」的券出来。
+     * 一次判定的结果：`applies` 是逐张的结论，`recommendedId` 是最优券（没有可用券时为 null）。
      */
-    public Optional<Long> bestCouponId(List<Coupon> coupons, Long providerId, String serviceCode,
-                                       BigDecimal orderAmount) {
-        if (coupons == null || coupons.isEmpty()) {
-            return Optional.empty();
-        }
-        return coupons.stream()
-                .filter(coupon -> applies(coupon, providerId, serviceCode, orderAmount))
-                .min(Comparator
-                        // 面额降序（大的先）；面额为 null 的排最后，不然「没有面额」会赢
-                        .comparing(Coupon::getFaceValue,
-                                Comparator.nullsLast(Comparator.<BigDecimal>reverseOrder()))
-                        // 面额相同：先过期的先用（少浪费用户的券）
-                        .thenComparing(Coupon::getValidUntil, Comparator.nullsLast(Comparator.naturalOrder()))
-                        // 都一样：按 id 升序——确定的答案，不是「碰巧的顺序」
-                        .thenComparing(Coupon::getId))
-                .map(Coupon::getId);
+    public record CouponSelection(Map<Long, Boolean> applies, Long recommendedId) {
     }
 
+    /**
+     * a 比 b 更适合当「最优券」吗：**面额大的赢 → 面额相同先过期的赢 → 再相同按 id 小的赢**。
+     *
+     * <p>三条的顺序是刻意的：先比面额（用户省得多），面额相同才比到期（少浪费一张券），
+     * 最后按 id 给一个确定的答案——不把「数据库碰巧返回的顺序」当业务规则。
+     * 面额为 null 的排最后（「没有面额」不该赢）。
+     */
+    private static boolean better(Coupon a, Coupon b) {
+        int byFace = compareNullsLast(a.getFaceValue(), b.getFaceValue());
+        if (byFace != 0) {
+            return byFace > 0;
+        }
+        int byExpiry = compareNullsLast(b.getValidUntil(), a.getValidUntil());
+        if (byExpiry != 0) {
+            return byExpiry > 0;
+        }
+        return (a.getId() == null ? 0 : a.getId().compareTo(b.getId() == null ? 0 : b.getId())) < 0;
+    }
+
+    /** null 排最后（大），其余按自然序：给 {@link #better} 用。 */
+    private static <T extends Comparable<T>> int compareNullsLast(T left, T right) {
+        if (left == null) {
+            return right == null ? 0 : -1;
+        }
+        if (right == null) {
+            return 1;
+        }
+        return left.compareTo(right);
+    }
     /** {@inheritDoc} */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)

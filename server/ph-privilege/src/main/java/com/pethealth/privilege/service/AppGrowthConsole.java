@@ -161,15 +161,15 @@ public class AppGrowthConsole {
         Map<Long, CouponTemplate> templates = templatesOf(coupons);
         Map<Long, String> providerNames = providerNamesOf(coupons);
         // 「能不能用 / 是不是最优」只在调用方给了门店时算：没有门店就没有「这一单」，
-        // 判不了也不假装判过（两个字段留 null，与 false 是两件事）——这是 C 端下单页的默认选券依据
-        Long bestId = providerId == null ? null
-                : couponService.bestCouponId(coupons, providerId, serviceCode, amount).orElse(null);
+        // 判不了也不假装判过（两个字段留 null，与 false 是两件事）——这是 C 端下单页的默认选券依据。
+        // 一次算完：`select` 内部对每张券只判一遍（逐张判两遍会让按分类限定的券多查一倍目录）
+        CouponService.CouponSelection selection = providerId == null
+                ? null : couponService.select(coupons, providerId, serviceCode, amount);
         List<CouponDtos.CouponView> views = new ArrayList<>(coupons.size());
         for (Coupon coupon : coupons) {
-            Boolean applies = providerId == null ? null
-                    : couponService.applies(coupon, providerId, serviceCode, amount);
+            Boolean applies = selection == null ? null : selection.applies().get(coupon.getId());
             // recommended 与 applies 同进同出：没给门店时两个都是 null（没判），不是 false（判过不能用）
-            Boolean recommended = providerId == null ? null : coupon.getId().equals(bestId);
+            Boolean recommended = selection == null ? null : coupon.getId().equals(selection.recommendedId());
             views.add(PrivilegeViews.toCouponView(coupon, templates.get(coupon.getTemplateId()),
                     coupon.getProviderId() == null ? null : providerNames.get(coupon.getProviderId()),
                     applies, recommended));
