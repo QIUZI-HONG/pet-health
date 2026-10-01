@@ -273,7 +273,7 @@ async function reject(): Promise<void> {
               <td>
                 <!-- 审核时直接看得到图，不必逐个点开；点图仍然可以看原尺寸（ADR-0053） -->
                 <a v-if="item.file_url" :href="item.file_url" target="_blank" rel="noreferrer">
-                  <img :src="item.file_url" class="ph-review__thumb" alt="材料图片" />
+                  <img :src="item.file_url" class="ph-thumb" alt="材料图片" />
                 </a>
                 <span v-else class="ph-text-weak">未上传</span>
               </td>
@@ -352,15 +352,6 @@ async function reject(): Promise<void> {
   margin-top: var(--ph-space-5);
 }
 
-/* 材料图缩略图：与照片墙、服务者侧保持同一个尺寸（96×96 裁切） */
-.ph-review__thumb {
-  width: 96px;
-  height: 96px;
-  object-fit: cover;
-  border-radius: var(--ph-radius-input);
-  border: 1px solid var(--ph-color-border);
-  background: var(--ph-color-surface);
-}
 
 .ph-review__retry {
   margin-left: var(--ph-space-3);

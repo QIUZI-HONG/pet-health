@@ -15,7 +15,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
-import java.time.LocalDateTime;
 import java.util.Optional;
 
 /**
@@ -158,10 +157,5 @@ public class ProviderInviteCodeService {
             sb.append(ALPHABET[RANDOM.nextInt(ALPHABET.length)]);
         }
         return sb.toString();
-    }
-
-    /** 归因时要记的时间（与用户邀请码同一条口径：归因时间 = 注册那一刻）。 */
-    static LocalDateTime now() {
-        return com.pethealth.common.time.AppTime.now();
     }
 }

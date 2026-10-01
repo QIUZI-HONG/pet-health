@@ -411,3 +411,14 @@ a {
   flex-direction: column;
   gap: var(--ph-space-4);
 }
+
+/* ===== 96×96 缩略图（材料图 / 照片墙 / 审核预览：同一张图在这些页面上是同一个东西）=====
+   原先四个面板各写一份逐字相同的规则，改一处就漏三处——尺寸与裁切口径只留这一份。 */
+.ph-thumb {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: var(--ph-radius-input);
+  border: 1px solid var(--ph-color-border);
+  background: var(--ph-color-surface);
+}

@@ -19,11 +19,14 @@ import com.pethealth.common.persistence.BaseEntity;
 @TableName("provider_invite_code")
 public class ProviderInviteCode extends BaseEntity {
 
-    public static final int STATUS_ENABLED = 1;
     public static final int STATUS_DISABLED = 0;
 
     /** 门店码前缀。改它等于让已印出去的二维码全部失效，别改。 */
     public static final String CODE_PREFIX = "PV";
+
+    /** 码的状态：1 启用（唯一会被归因命中的状态）。停用没有写入口——`status` 的读点只有归因，
+     *  而门店码一旦发出就代表「这家店的拉新入口是开着的」（V44 的决定）。 */
+    public static final int STATUS_ENABLED = 1;
 
     private Long providerId;
     private String code;
@@ -53,7 +56,4 @@ public class ProviderInviteCode extends BaseEntity {
         this.status = status;
     }
 
-    public boolean isEnabled() {
-        return status != null && status == STATUS_ENABLED;
-    }
 }

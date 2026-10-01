@@ -14,6 +14,7 @@ import com.pethealth.privilege.domain.InviteCode;
 import com.pethealth.privilege.domain.InviteLadderAchievement;
 import com.pethealth.privilege.domain.InviteLadderTier;
 import com.pethealth.privilege.domain.InviteeRewardRule;
+import com.pethealth.privilege.domain.ProviderInviteCode;
 import com.pethealth.privilege.domain.InviteRelation;
 import com.pethealth.privilege.domain.PointBehavior;
 import com.pethealth.privilege.domain.RightsGrant;
@@ -162,13 +163,31 @@ public class InviteService implements InviteAttributionApi {
             return Attribution.rejected(hit.get());
         }
 
-        InviteRelation relation = new InviteRelation();
+        InviteRelation relation = newRelation(command, inviteCode.getCode());
         relation.setInviterUserId(inviteCode.getUserId());
+        return insertRelation(relation);
+    }
+
+    /**
+     * 一条归因关系的骨架：**两个入口只差「谁邀请的」**（`inviter_user_id` 或 `inviter_provider_id`），
+     * 其余字段与落库方式一模一样——收在这里，免得改一个字段时漏掉另一半
+     * （两张码表并存之后，这正是最容易分叉的地方）。
+     */
+    private static InviteRelation newRelation(AttributionCommand command, String inviteCode) {
+        InviteRelation relation = new InviteRelation();
         relation.setInviteeUserId(command.inviteeUserId());
-        relation.setInviteCode(inviteCode.getCode());
+        relation.setInviteCode(inviteCode);
         relation.setChannel(command.channel() == null ? InviteRelation.CHANNEL_LINK : command.channel());
         relation.setStatus(InviteRelation.STATUS_PENDING);
         relation.setAttributedAt(command.registeredAt() == null ? AppTime.now() : command.registeredAt());
+        return relation;
+    }
+
+    /**
+     * 落库并翻译结果：**先查重在调用方**（那句 `ALREADY_ATTRIBUTED` 要给用户看），
+     * 这里再用唯一键兜住并发——两个同时到达的注册只有一个能成，另一个也是 `ALREADY_ATTRIBUTED`。
+     */
+    private Attribution insertRelation(InviteRelation relation) {
         try {
             relationMapper.insert(relation);
         } catch (DuplicateKeyException e) {
@@ -196,7 +215,7 @@ public class InviteService implements InviteAttributionApi {
      * </ul>
      */
     private Attribution attributeToProvider(String raw, AttributionCommand command) {
-        Optional<com.pethealth.privilege.domain.ProviderInviteCode> hit = providerCodes.findByCode(raw);
+        Optional<ProviderInviteCode> hit = providerCodes.findByCode(raw);
         if (hit.isEmpty()) {
             return Attribution.rejected("CODE_NOT_FOUND");
         }
@@ -205,19 +224,11 @@ public class InviteService implements InviteAttributionApi {
         if (existing != null) {
             return Attribution.rejected("ALREADY_ATTRIBUTED");
         }
-        InviteRelation relation = new InviteRelation();
+        // 门店码那条关系**没有邀请人账号**（V44）：`inviter_user_id` 留空、`inviter_provider_id` 填门店，
+        // 两者由 CHECK 约束保证恰好有一个
+        InviteRelation relation = newRelation(command, hit.get().getCode());
         relation.setInviterProviderId(hit.get().getProviderId());
-        relation.setInviteeUserId(command.inviteeUserId());
-        relation.setInviteCode(hit.get().getCode());
-        relation.setChannel(command.channel() == null ? InviteRelation.CHANNEL_LINK : command.channel());
-        relation.setStatus(InviteRelation.STATUS_PENDING);
-        relation.setAttributedAt(command.registeredAt() == null ? AppTime.now() : command.registeredAt());
-        try {
-            relationMapper.insert(relation);
-        } catch (DuplicateKeyException e) {
-            return Attribution.rejected("ALREADY_ATTRIBUTED");
-        }
-        return Attribution.ok(relation.getId());
+        return insertRelation(relation);
     }
 
     // ---------------------------------------------------------------- 建档与结算

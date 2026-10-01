@@ -24,6 +24,7 @@ import {
   type OnboardingApplicationView,
   type OnboardingRow,
 } from "../api/providerApi";
+import { useImagePicker } from "../composables/useImagePicker";
 import { usePagedList, useSubmitAction } from "@pet-health/ui";
 import { providerTypeLabel, qualificationTypeLabel, reviewStatusLabel, reviewStatusTone } from "@pet-health/shared";
 
@@ -97,10 +98,10 @@ const form = reactive({
 const categoryText = ref("由平台审核时归类");
 
 /** 正在上传的是第几行（-1 = 没有在传）；一份材料一张图，所以只需记一个下标。 */
-const uploadingIndex = ref(-1);
-const uploadError = ref("");
+/** 选图机制：与材料编辑面板共用一份（一个隐藏 input、读完清空、失败带请求 ID） */
 const qualificationFileInput = ref<HTMLInputElement | null>(null);
-let pickingIndex = -1;
+const picker = useImagePicker(qualificationFileInput);
+const { uploadingIndex, uploadError } = picker;
 
 /** 「现在能做什么」由列表整体决定：有待审核的不能提交，有被驳回的只能改那一份。 */
 const pendingExists = computed(() => applications.items.value.some((item) => item.status === 0));
@@ -191,36 +192,14 @@ function addQualification(): void {
   form.qualifications.push(emptyQualification());
 }
 
-/** 点「选择图片」：记住是哪一行，再把同一个隐藏 input 叫起来（一个 input 服务所有行）。 */
+/** 点「选择图片」：把这一行的落点交给 composable（它负责叫 input 与处理失败）。 */
 function chooseQualificationImage(index: number): void {
-  uploadError.value = "";
-  pickingIndex = index;
-  qualificationFileInput.value?.click();
-}
-
-async function onQualificationPicked(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const picked = input.files?.[0] ?? null;
-  // 读完必须清空：不清的话，连续两次选**同一个文件**不会触发 change（照片墙踩过同一个坑）
-  input.value = "";
-  const index = pickingIndex;
-  pickingIndex = -1;
-  const row = form.qualifications[index];
-  if (!picked || !row) return;
-
-  uploadError.value = "";
-  uploadingIndex.value = index;
-  try {
-    row.fileId = await uploadQualificationImage(picked);
-    row.previewUrl = URL.createObjectURL(picked);
-  } catch (error) {
-    const failure = toApiFailure(error, "图片上传失败，请重试");
-    uploadError.value = failure.requestId
-      ? `${failure.message}（请求 ID：${failure.requestId}）`
-      : failure.message;
-  } finally {
-    uploadingIndex.value = -1;
-  }
+  picker.pick(index, async (file) => {
+    const row = form.qualifications[index];
+    if (!row) return;
+    row.fileId = await uploadQualificationImage(file);
+    row.previewUrl = URL.createObjectURL(file);
+  });
 }
 
 /** 撤掉这一行的图：只清表单里的引用，已上传的文件留在文件域（本端没有删除接口）。 */
@@ -261,10 +240,26 @@ const localError = computed(() => {
   return "";
 });
 
+/**
+ * 填了材料图的那几行（类型守卫：`fileId` 从 `number | null` 收成 `number`）。
+ *
+ * <p>不用 `item.fileId!`：断言掉之后，真漏图时发出去的 `file_id` 是 null，
+ * 服务端只会回一句「参数错误」——而本地的 `localError` 本来就把「哪一份没传图」说清楚了。
+ */
+function completeQualifications(): (typeof form.qualifications[number] & { fileId: number })[] {
+  return form.qualifications.filter(
+    (item): item is typeof item & { fileId: number } => item.fileId !== null,
+  );
+}
+
 /** 本地校验先跑（省一次注定 40001 的往返）；editingId 决定走 POST 新建还是 PUT 重提原单。 */
 async function confirmSubmit(): Promise<void> {
   if (localError.value !== "") {
     submit.errorMessage.value = localError.value;
+    return;
+  }
+  if (completeQualifications().length !== form.qualifications.length) {
+    submit.errorMessage.value = "有材料还没有上传图片";
     return;
   }
   const body: OnboardingApplicationRequest = {
@@ -275,11 +270,12 @@ async function confirmSubmit(): Promise<void> {
     address: form.address.trim(),
     contact_phone: form.contactPhone.trim(),
     applicant_name: form.applicantName.trim(),
-    qualifications: form.qualifications.map((item) => ({
+    // 同材料编辑面板：类型守卫代替 `!` 断言——真漏图时不该发一个 null 上去
+    qualifications: completeQualifications().map((item) => ({
       type: Number(item.type),
       name: item.name.trim() === "" ? undefined : item.name.trim(),
       cert_no: item.certNo.trim() === "" ? null : item.certNo.trim(),
-      file_id: item.fileId!,
+      file_id: item.fileId,
       valid_from: item.validFrom === "" ? null : item.validFrom,
       valid_until: item.validUntil === "" ? null : item.validUntil,
     })),
@@ -541,7 +537,7 @@ onMounted(reload);
         class="ph-onboarding__file"
         type="file"
         accept="image/jpeg,image/png"
-        @change="onQualificationPicked"
+        @change="picker.handleChange"
       />
       <div v-for="(item, index) in form.qualifications" :key="index" class="ph-onboarding__material">
         <select v-model="item.type" class="ph-select ph-onboarding__material-type" aria-label="材料类型">
@@ -565,7 +561,7 @@ onMounted(reload);
           删除
         </button>
         <div class="ph-onboarding__material-image">
-          <img v-if="item.previewUrl" :src="item.previewUrl" class="ph-onboarding__thumb" alt="材料图片预览" />
+          <img v-if="item.previewUrl" :src="item.previewUrl" class="ph-thumb" alt="材料图片预览" />
           <button
             type="button"
             class="ph-button ph-button--secondary"
@@ -665,15 +661,6 @@ onMounted(reload);
   gap: var(--ph-space-3);
 }
 
-/* 缩略图尺寸与照片墙保持一致（96×96 裁切），两处的「一张图」在界面上就是同一个东西 */
-.ph-onboarding__thumb {
-  width: 96px;
-  height: 96px;
-  object-fit: cover;
-  border-radius: var(--ph-radius-input);
-  border: 1px solid var(--ph-color-border);
-  background: var(--ph-color-surface);
-}
 
 .ph-onboarding__alert {
   margin: var(--ph-space-4) 0 0;

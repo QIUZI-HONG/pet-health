@@ -14,7 +14,10 @@
 | ✅ **D-28 AI 用量（成本测算的只读那一半）**（2026-10-01） | `GET /admin/ai/usage?period=yyyy-MM`：按「模型 × 版本」聚合调用数 / 输入输出 token / 红线短路 / 降级 + 合计行；运营数据看板加一格，**单价与补贴比例由页面参数化**（不建假设表——ADR-0050 第五节）。金额仍缺，等甲方商务价 |
 | ✅ **D-31 演示数据种子**（2026-10-01） | `server/scripts/demo-seed.sh`（幂等）：C 端演示账号 / 宠物 / 打卡走**接口**；运营侧配置（成本券模板 + 考核达标线 + 知识条目复核 + 一张演示券）走 SQL——脚本里没有运营令牌（独立登录域 + 白名单），理由写在脚本头部。已实跑两遍验证 |
 | ✅ **D-34 / D-35**（2026-10-01） | V47 把审核流水的 `action` 注释补到 10（那份注释是这一列唯一的说明书）；两个服务层方法按 `conventions.md` 的命名约定改名（`listCategories` / `viewInviteCode`） |
-| ⬜ 未动 | D-08 / D-11 / D-13 / D-14、D-16 ~ D-26（Wave 2）、D-27 / D-29 / D-30（Wave 3）、D-36 ~ D-40（Wave 4） |
+| ✅ **D-36 重复代码收敛**（2026-10-01） | ① 两处归因落库收成 `newRelation` + `insertRelation`（用户码 / 门店码只差「谁邀请的」）；② `categoryName` 三处——复核时发现**已经收敛**（都走 `AllianceCategoryService.nameOf/namesOf`），无需改；③ 两个面板的选图机制收成 `useImagePicker` composable（版式不同、机制相同，所以是 composable 不是组件）；④ 96×96 缩略图四份逐字相同的样式收进 `packages/ui` 的 `.ph-thumb` |
+| ✅ **D-37 零碎卫生**（除一条，见 D-44） | 删掉两个零调用成员（`ProviderInviteCodeService#now`、`ProviderInviteCode#isEnabled`）；三处内联全限定名补 import；两处 `fileId!` 断言改成类型守卫（断言掉之后真漏图会发 null 上去，报错与现场无关） |
+| 🆕 **D-44 模板里的 Markdown 强调不渲染**（复核 D-37 时发现） | 全仓 `apps/*/src` 里 **78 行**模板文案写着 `**强调**`，而界面不解析 Markdown——用户看到的是字面的星号。这不是「一处漏了」而是全仓的一个习惯（我自己新写的两处也跟着写了）。建议：统一换成 `<strong>`（或给提示类文案一个 `v-html` 白名单渲染），并加一条构建期检查防回潮 | 2.0 |
+| ⬜ 未动 | D-08 / D-11 / D-13 / D-14、D-16 ~ D-26（Wave 2）、D-27 / D-29 / D-30（Wave 3）、D-38 / D-40（Wave 4） |
 
 **外部输入的裁决记录（2026-10-01，项目所有者）**：
 

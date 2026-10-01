@@ -278,6 +278,7 @@ onMounted(load);
           <div v-if="photosOf(entry).length > 0" class="ph-wall__photos">
             <figure v-for="photo in photosOf(entry)" :key="photo.id" class="ph-wall__photo">
               <img
+                class="ph-thumb"
                 :src="photo.thumb_url ?? photo.url"
                 :alt="`${photoSlotName(entry.no, entry.view.slot_name)}照片`"
               />
@@ -419,14 +420,7 @@ onMounted(load);
   gap: 2px;
 }
 
-.ph-wall__photo img {
-  width: 96px;
-  height: 96px;
-  object-fit: cover;
-  border-radius: var(--ph-radius-input);
-  border: 1px solid var(--ph-color-border);
-  background: var(--ph-color-surface);
-}
+/* 尺寸与裁切走共享的 .ph-thumb（packages/ui/src/console.css）：模板上是 `class="ph-thumb"` */
 
 .ph-wall__empty {
   margin: var(--ph-space-2) 0 0;

@@ -25,6 +25,7 @@ import {
   type ProviderQualificationRequest,
   type ProviderQualificationView,
 } from "../api/providerApi";
+import { useImagePicker } from "../composables/useImagePicker";
 import { useSubmitAction } from "@pet-health/ui";
 import { qualificationStatusLabel, qualificationTypeLabel } from "@pet-health/shared";
 import { countsAsValid, expiryText, expiryTone, hasNoValidQualification } from "../utils/labels";
@@ -61,10 +62,10 @@ const rows = ref<MaterialRow[]>([emptyRow()]);
 const submit = useSubmitAction("材料提交失败，请稍后重试");
 
 /** 正在上传的是第几行（-1 = 没有在传）。一份材料一张图，所以只需要记一个下标。 */
-const uploadingIndex = ref(-1);
-const uploadError = ref("");
+/** 选图机制（一个隐藏 input 服务所有行、读完清空、失败带请求 ID）：两处表单共用一份 */
 const fileInput = ref<HTMLInputElement | null>(null);
-let pickingIndex = -1;
+const picker = useImagePicker(fileInput);
+const { uploadingIndex, uploadError } = picker;
 
 function emptyRow(): MaterialRow {
   return { type: "1", name: "", certNo: "", validFrom: "", validUntil: "", fileId: null, previewUrl: "" };
@@ -132,36 +133,14 @@ function removeRow(index: number): void {
   rows.value.splice(index, 1);
 }
 
-/** 点「选择图片」：记住是哪一行，再把同一个隐藏 input 叫起来（一个 input 服务所有行）。 */
+/** 点「选择图片」：把这一行的落点交给 composable（它负责叫 input 与处理失败）。 */
 function chooseImage(index: number): void {
-  uploadError.value = "";
-  pickingIndex = index;
-  fileInput.value?.click();
-}
-
-async function onPicked(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const picked = input.files?.[0] ?? null;
-  // 读完必须清空：不清的话，连续两次选**同一个文件**不会触发 change（照片墙踩过同一个坑）
-  input.value = "";
-  const index = pickingIndex;
-  pickingIndex = -1;
-  const row = rows.value[index];
-  if (!picked || !row) return;
-
-  uploadError.value = "";
-  uploadingIndex.value = index;
-  try {
-    row.fileId = await uploadQualificationImage(picked);
-    row.previewUrl = URL.createObjectURL(picked);
-  } catch (error) {
-    const failure = toApiFailure(error, "图片上传失败，请重试");
-    uploadError.value = failure.requestId
-      ? `${failure.message}（请求 ID：${failure.requestId}）`
-      : failure.message;
-  } finally {
-    uploadingIndex.value = -1;
-  }
+  picker.pick(index, async (file) => {
+    const row = rows.value[index];
+    if (!row) return;
+    row.fileId = await uploadQualificationImage(file);
+    row.previewUrl = URL.createObjectURL(file);
+  });
 }
 
 /** 撤掉这一行的图：只清表单里的引用，已上传的文件留在文件域（本端没有删除接口）。 */
@@ -193,11 +172,19 @@ async function confirmSubmit(): Promise<void> {
     submit.errorMessage.value = localError.value;
     return;
   }
-  const body = rows.value.map<ProviderQualificationRequest>((row) => ({
+  // 只把**带图的行**放进请求体：类型守卫让 `file_id` 是 number 而不是 `number | null`。
+  // 这里不用 `row.fileId!` 断言——断言掉之后，真漏图时发出去的是 null，
+  // 报错会变成服务端一句与现场无关的「参数错误」（上面那道 localError 才是给人看的）
+  const complete = rows.value.filter((row): row is MaterialRow & { fileId: number } => row.fileId !== null);
+  if (complete.length !== rows.value.length) {
+    submit.errorMessage.value = "有材料行还没有上传图片";
+    return;
+  }
+  const body = complete.map<ProviderQualificationRequest>((row) => ({
     type: Number(row.type),
     name: row.name.trim() === "" ? undefined : row.name.trim(),
     cert_no: row.certNo.trim() === "" ? null : row.certNo.trim(),
-    file_id: row.fileId!,
+    file_id: row.fileId,
     valid_from: row.validFrom === "" ? null : row.validFrom,
     valid_until: row.validUntil === "" ? null : row.validUntil,
   }));
@@ -263,7 +250,7 @@ async function confirmSubmit(): Promise<void> {
               <td>{{ item.cert_no ?? "—" }}</td>
               <td>
                 <a v-if="item.file_url" :href="item.file_url" target="_blank" rel="noreferrer">
-                  <img :src="item.file_url" class="ph-qual__thumb" alt="材料图片" />
+                  <img :src="item.file_url" class="ph-thumb" alt="材料图片" />
                 </a>
                 <span v-else class="ph-text-weak">未上传</span>
               </td>
@@ -303,7 +290,7 @@ async function confirmSubmit(): Promise<void> {
         class="ph-qual__file"
         type="file"
         accept="image/jpeg,image/png"
-        @change="onPicked"
+        @change="picker.handleChange"
       />
 
       <div v-for="(row, index) in rows" :key="index" class="ph-qual__row">
@@ -325,7 +312,7 @@ async function confirmSubmit(): Promise<void> {
           </button>
         </div>
         <div class="ph-qual__image">
-          <img v-if="row.previewUrl" :src="row.previewUrl" class="ph-qual__thumb" alt="材料图片预览" />
+          <img v-if="row.previewUrl" :src="row.previewUrl" class="ph-thumb" alt="材料图片预览" />
           <button
             type="button"
             class="ph-button ph-button--secondary"
@@ -392,15 +379,6 @@ async function confirmSubmit(): Promise<void> {
   margin-top: var(--ph-space-2);
 }
 
-/* 缩略图尺寸与照片墙保持一致（96×96 裁切），两处的「一张图」在界面上就是同一个东西 */
-.ph-qual__thumb {
-  width: 96px;
-  height: 96px;
-  object-fit: cover;
-  border-radius: var(--ph-radius-input);
-  border: 1px solid var(--ph-color-border);
-  background: var(--ph-color-surface);
-}
 
 .ph-qual__alert {
   margin-top: var(--ph-space-4);

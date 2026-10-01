@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 运营侧的服务者视图与经营状态处置，契约见 contract/admin.yaml 的 {@code /providers}。
@@ -151,7 +152,7 @@ public class ProviderAdminService {
         Provider provider = access.requireById(providerId);
         String region = Text.trimToNull(request.regionCode());
         String current = provider.getRegionCode();
-        if (java.util.Objects.equals(current, region)) {
+        if (Objects.equals(current, region)) {
             throw BusinessException.conflict(region == null
                     ? "该服务者当前没有区域编码，无需清空"
                     : "该服务者已经归属区域「" + region + "」，无需变更");
