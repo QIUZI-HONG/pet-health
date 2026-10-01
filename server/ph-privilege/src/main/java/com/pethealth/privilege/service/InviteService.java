@@ -12,12 +12,14 @@ import com.pethealth.privilege.domain.Coupon;
 import com.pethealth.privilege.domain.InviteCode;
 import com.pethealth.privilege.domain.InviteLadderAchievement;
 import com.pethealth.privilege.domain.InviteLadderTier;
+import com.pethealth.privilege.domain.InviteeRewardRule;
 import com.pethealth.privilege.domain.InviteRelation;
 import com.pethealth.privilege.domain.PointBehavior;
 import com.pethealth.privilege.domain.RightsGrant;
 import com.pethealth.privilege.mapper.InviteCodeMapper;
 import com.pethealth.privilege.mapper.InviteLadderAchievementMapper;
 import com.pethealth.privilege.mapper.InviteLadderTierMapper;
+import com.pethealth.privilege.mapper.InviteeRewardRuleMapper;
 import com.pethealth.privilege.mapper.InviteRelationMapper;
 import com.pethealth.privilege.mapper.PointRecordMapper;
 import com.pethealth.api.reminder.BusinessMessageApi;
@@ -60,6 +62,7 @@ public class InviteService implements InviteAttributionApi {
     private final InviteRelationMapper relationMapper;
     private final InviteLadderTierMapper tierMapper;
     private final InviteLadderAchievementMapper achievementMapper;
+    private final InviteeRewardRuleMapper inviteeRewardRuleMapper;
     private final PointRecordMapper pointRecordMapper;
     private final InviteRiskGuard riskGuard;
     private final ProviderInviteCodeService providerCodes;
@@ -71,6 +74,7 @@ public class InviteService implements InviteAttributionApi {
     public InviteService(InviteCodeMapper codeMapper, InviteRelationMapper relationMapper,
                          InviteLadderTierMapper tierMapper,
                          InviteLadderAchievementMapper achievementMapper,
+                         InviteeRewardRuleMapper inviteeRewardRuleMapper,
                          PointRecordMapper pointRecordMapper, InviteRiskGuard riskGuard,
                          ProviderInviteCodeService providerCodes,
                          PointsApi pointsApi, CouponApi couponApi, RightsApi rightsApi,
@@ -79,6 +83,7 @@ public class InviteService implements InviteAttributionApi {
         this.relationMapper = relationMapper;
         this.tierMapper = tierMapper;
         this.achievementMapper = achievementMapper;
+        this.inviteeRewardRuleMapper = inviteeRewardRuleMapper;
         this.pointRecordMapper = pointRecordMapper;
         this.riskGuard = riskGuard;
         this.providerCodes = providerCodes;
@@ -299,16 +304,60 @@ public class InviteService implements InviteAttributionApi {
             // 不查阶梯、不通知「邀请人」，也不给门店发积分——门店的收获是这一条关系本身
             // （考核的拉新项按它计数，见 ProviderGrowthFactsService）。
             // 用同一套幂等引用（invitee:{关系 id}），与用户邀请码那条路径不会重复发。
-            pointsApi.award(new PointsApi.AwardCommand(relation.getInviteeUserId(), PointBehavior.INVITE_INVITEE,
-                    "invitee:" + relation.getId(), "被邀请注册（门店推广码）"));
+            rewardInvitee(relation, "被邀请注册（门店推广码）");
             return;
         }
         pointsApi.award(new PointsApi.AwardCommand(relation.getInviterUserId(), PointBehavior.INVITE,
                 "invite:" + relation.getId(), "有效邀请：" + relation.getInviteeUserId()));
-        pointsApi.award(new PointsApi.AwardCommand(relation.getInviteeUserId(), PointBehavior.INVITE_INVITEE,
-                "invitee:" + relation.getId(), "被邀请注册"));
+        rewardInvitee(relation, "被邀请注册");
         grantLadderRewards(relation.getInviterUserId());
         notifyInviter(relation);
+    }
+
+    /**
+     * 被邀请人的那一份：**积分 + 券，两条路径各自独立、都读配置**。
+     *
+     * <p>券是交付文档 BPM-2 的口径（「双方各得 20 元洗护券」），积分是与邀请人「对等」的那一份
+     * （邀请人拿 20 分 + 阶梯券）。哪一条生效、发多少，全在配置里：
+     * {@code point_behavior.INVITE_INVITEE}（分值 / 启停）与 {@code invitee_reward_rule}（券 / 张数 / 启停）。
+     *
+     * <p>两条路径都进入这里，是因为**门店推广码那条路径也有被邀请人**——被邀请人拿的是自己的奖励，
+     * 与他被谁邀请无关。
+     */
+    private void rewardInvitee(InviteRelation relation, String reason) {
+        pointsApi.award(new PointsApi.AwardCommand(relation.getInviteeUserId(), PointBehavior.INVITE_INVITEE,
+                "invitee:" + relation.getId(), reason));
+        grantInviteeCoupon(relation);
+    }
+
+    /**
+     * 按 {@code invitee_reward_rule}（单行）给被邀请人发券；未配置 / 已停用就不发。
+     *
+     * <p><b>发放失败不拖垮结算</b>（与 {@link #grantLadderRewards} 同一口径）：有效邀请的计数是硬的，
+     * 奖励物是可配的——一处配置错误（模板被停用、id 填错）抛出去会让整个结算事务回滚，
+     * 那一批邀请永远停在「待生效」，而且每小时重试一次、每次都失败。
+     *
+     * <p><b>与阶梯奖的一处不同</b>：阶梯奖有一张达成记录做凭据，配置修好后下次批算会自动补发；
+     * 这里没有那份凭据（关系判有效是一次性的状态流转），所以**失败不会自动补**。日志按这个事实写，
+     * 不写成「稍后会自动补」。
+     */
+    private void grantInviteeCoupon(InviteRelation relation) {
+        InviteeRewardRule rule = inviteeRewardRuleMapper.selectById(InviteeRewardRule.SINGLETON_ID);
+        if (rule == null || !rule.isEnabled() || rule.getCouponTemplateId() == null) {
+            return;
+        }
+        int count = rule.getCouponCount() == null ? 1 : rule.getCouponCount();
+        String ref = "invitee-coupon:" + relation.getId();
+        try {
+            for (int i = 0; i < count; i++) {
+                couponApi.issue(new CouponApi.IssueCommand(relation.getInviteeUserId(), rule.getCouponTemplateId(),
+                        Coupon.SOURCE_INVITE, count == 1 ? ref : ref + ":" + (i + 1), null, "被邀请注册"));
+            }
+        } catch (RuntimeException e) {
+            log.warn("被邀请人奖励券发放失败，**不会自动补**（关系已判有效，没有达成记录这类凭据）："
+                    + "relationId={} 被邀请人={} 原因={}",
+                    relation.getId(), relation.getInviteeUserId(), e.getMessage());
+        }
     }
 
     /**

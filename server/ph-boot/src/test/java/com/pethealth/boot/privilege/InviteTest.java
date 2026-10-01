@@ -3,6 +3,7 @@ package com.pethealth.boot.privilege;
 import com.pethealth.privilege.api.InviteAttributionApi;
 import com.pethealth.boot.support.ApiClient;
 import com.pethealth.privilege.api.PointsApi;
+import com.pethealth.privilege.domain.Coupon;
 import com.pethealth.privilege.domain.PointBehavior;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -339,6 +340,55 @@ class InviteTest extends PrivilegeTestSupport {
      * 看**分值之和**而不是流水条数：这张表里 `points = 0` 是「记行为不发分」的合法编码
      * （种子里 `AI_ADVICE` / `SHARE` 就是 0 分），所以「未配置」下也可能有流水，但一定是 0 分。
      */
+    @Test
+    @DisplayName("被邀请人得券：按 invitee_reward_rule 发一张券、引用可追；重复结算不重复发；停用后不发")
+    void inviteeGetsCouponByRule() {
+        String admin = adminToken();
+        // 奖励券自己造一张（基座每个用例都会清空券模板表，种子里那两张不在）
+        long templateId = api.post("/api/v1/admin/coupon-templates", Map.of(
+                        "code", "CP-301", "name", "被邀请人奖励券", "face_value", "20.00", "min_amount", "0.00",
+                        "valid_days", 30, "cost_bearer", 2), admin)
+                .data().path("id").asLong();
+        jdbc.update("UPDATE `invitee_reward_rule` SET `coupon_template_id` = ?, `coupon_count` = 1, `status` = 1",
+                templateId);
+
+        long inviter = 820_200L;
+        String code = inviteApi.ensureInviteCode(inviter, 1, "dev-c1", "10.2.0.1", "1380020");
+        long invitee = 820_201L;
+        arrive(code, invitee, "dev-c2", "10.2.0.2", "1390020");
+
+        // 券到了被邀请人手里，而且来源可追：source=邀请、引用=invitee-coupon:{关系 id}
+        long relationId = jdbc.queryForObject("SELECT `id` FROM `invite_relation` WHERE `invitee_user_id` = ?",
+                Long.class, invitee);
+        Map<String, Object> coupon = jdbc.queryForMap("SELECT `template_id`, `source`, `source_ref` "
+                + "FROM `coupon` WHERE `user_id` = ?", invitee);
+        // 用 Number 比较：JdbcTemplate 给回来的 `template_id` / `source` 是 Integer，
+        // 而 `templateId` 是 Long（接口返回的 id）——直接 isEqualTo 会栽在类型上而不是值上
+        assertThat(((Number) coupon.get("template_id")).longValue()).isEqualTo(templateId);
+        assertThat(((Number) coupon.get("source")).intValue()).isEqualTo(Coupon.SOURCE_INVITE);
+        assertThat(coupon.get("source_ref")).isEqualTo("invitee-coupon:" + relationId);
+        // 邀请人那一份照旧（第 1 档这里没配奖励，所以只有他的 20 分）
+        assertThat(pointsApi.balanceOf(inviter)).isEqualTo(20);
+
+        // 幂等：再结算一次不会多发（关系已结算，券侧 `(source, source_ref)` 再兜一道）
+        inviteApi.settle(100);
+        assertThat(countCoupons(invitee)).isEqualTo(1);
+
+        // 停用规则：下一对邀请不发券——**积分那条路径不受影响**（它由 `point_behavior` 管，
+        // 两条路径各自独立；这正是「机制在、奖励物由配置决定」的分工）
+        jdbc.update("UPDATE `invitee_reward_rule` SET `status` = 0");
+        long inviterB = 820_202L;
+        String codeB = inviteApi.ensureInviteCode(inviterB, 1, "dev-c3", "10.2.0.3", "1380021");
+        long inviteeB = 820_203L;
+        arrive(codeB, inviteeB, "dev-c4", "10.2.0.4", "1390021");
+        assertThat(countCoupons(inviteeB)).isZero();
+    }
+
+    /** 某人手里有几张券。 */
+    private int countCoupons(long userId) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM `coupon` WHERE `user_id` = ?", Integer.class, userId);
+    }
+
     private int rewardPoints(long userId) {
         Integer sum = jdbc.queryForObject(
                 "SELECT COALESCE(SUM(`change_amount`), 0) FROM `point_record` "

@@ -57,6 +57,9 @@ public abstract class PrivilegeTestSupport extends ProviderApiTestSupport {
                 + "`rights_code` = NULL, `reward_count` = 1, `status` = 1");
         jdbc.execute("DELETE FROM `point_ladder_grant`");
         jdbc.execute("DELETE FROM `point_ladder_tier`");
+        // 被邀请人奖励（V46）复位成「未配置」：上面把券模板整表清了，那个 template_id 一定指向
+        // 不存在的一行——用例要用就自己造一张模板再打开（`status = 0` 时这一行不会被读）
+        jdbc.execute("UPDATE `invitee_reward_rule` SET `status` = 0, `coupon_count` = 1");
         jdbc.execute("DELETE FROM `point_exchange_option`");
         jdbc.execute("DELETE FROM `point_record`");
         jdbc.execute("DELETE FROM `user_point`");
