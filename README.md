@@ -134,6 +134,9 @@ cd server && cp .env.example .env    # 至少填 JWT_SECRET / FIELD_ENC_KEY / FI
 # 4. 前端
 pnpm install
 pnpm --filter c-web dev
+
+# 5. 演示数据（可选，幂等，可重复跑）
+bash server/scripts/demo-seed.sh      # 演示账号 + 打卡 + 成本券 + 达标线 + 知识条目复核 + 一张演示券
 ```
 
 跑后端测试（**需要 Docker**：测试自己用 Testcontainers 起 MySQL/Redis，不依赖上面那两个容器）：
