@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,6 +33,21 @@ class RightsEngineTest extends PrivilegeTestSupport {
 
     @Autowired
     private RightsExpiryJob expiryJob;
+
+    /**
+     * 请求体里的时间必须用**线上格式**（`yyyy-MM-dd HH:mm:ss`）显式格式化。
+     *
+     * <p>别用 `LocalDateTime.toString().replace('T', ' ')`：秒为 0 时 toString() 会省掉 `:00`
+     * （变成 "2026-11-01 16:19"），后端按契约格式解析会在 index 16 处失败，回 40001
+     * 「请求体格式不正确（不是合法的 JSON）」。于是用例只在「每分钟的第一秒」跑才红——
+     * 2026-10-01 16:19 的一次全量 verify 实测踩到，同一份代码 30 秒后单跑就绿（时钟依赖假红）。
+     */
+    private static final DateTimeFormatter WIRE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    /** 秒以下的精度对契约没有意义，统一截到秒 */
+    private static String wireTime(LocalDateTime time) {
+        return time.withNano(0).format(WIRE_TIME);
+    }
 
     @Test
     @DisplayName("来源优先：邀请永久 + 打卡当月 → 取邀请；再加订阅月度 → 取订阅")
@@ -116,7 +132,7 @@ class RightsEngineTest extends PrivilegeTestSupport {
         // 运营手动授予（订阅：线下签约 + 后台标记，ADR-0036 之后没有支付载体）
         ApiClient.ApiCall granted = api.post("/api/v1/admin/rights/grants", Map.of(
                 "user_id", user, "code", "report.full", "source", 1,
-                "expire_at", LocalDateTime.now().plusMonths(1).withNano(0).toString().replace('T', ' '),
+                "expire_at", wireTime(LocalDateTime.now().plusMonths(1)),
                 "source_ref", "sub-2026-09", "remark", "线下签约"), admin);
         assertCodeOk(granted, "手动授予");
         long grantId = granted.data().path("id").asLong();
@@ -133,7 +149,7 @@ class RightsEngineTest extends PrivilegeTestSupport {
         // 到期时间不能早于当前（授一条立刻过期的权益是调用方算错了）
         assertThat(api.post("/api/v1/admin/rights/grants", Map.of(
                 "user_id", user, "code", "report.full", "source", 4,
-                "expire_at", LocalDateTime.now().minusDays(1).withNano(0).toString().replace('T', ' ')),
+                "expire_at", wireTime(LocalDateTime.now().minusDays(1))),
                 admin).code()).isEqualTo(40001);
 
         // 回收一条：只回收这一条，别的来源不受影响
