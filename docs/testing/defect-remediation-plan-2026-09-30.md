@@ -20,6 +20,8 @@
 | ✅ **D-40 引入 lint**（2026-10-01） | 根 `eslint.config.mjs`（flat，**只查正确性、不管格式**——不引 Prettier 是因为它会把整个仓库重排一遍，那种 diff 只有噪音）+ `pnpm lint` + `web.yml` 加一步。**首跑基线：0 error / 68 warning**，68 条全是同一个规则 `no-non-null-assertion`（既有的 `!` 断言，D-37 只清了 provider 侧那两处）——这是一个**量化**的待办，不是一团模糊的警告；`require-atomic-updates` 刻意不开（在 Vue 的 `ref().value` 模式下 9 条全是误报，理由写在配置里） |
 | ⬜ 未动 | D-08 / D-11 / D-13 / D-14、D-16 ~ D-26（Wave 2）、D-27 / D-29 / D-30（Wave 3）、D-38、D-44 |
 
+**这一批的评审（重构不改行为）**：结论「可以接受」。逐字段核对了两处归因的等价性、`useImagePicker` 的四个细节（input 清空 / 失败带请求 ID / 两个下标复位）与两处字符串 ref 的名字对应、`.ph-thumb` 与删掉的四份逐字相同、lint 基线可复现（68 条全是 `no-non-null-assertion`，`no-explicit-any` 命中 0）。评审揪出两条**注释与事实不符**，已改：`ProviderInviteCode.STATUS_ENABLED` 那句「唯一会被归因命中」是反的（归因根本不读 status，真读点只有服务者侧视图——这正是 D-08 记的死开关）；`eslint.config.mjs` 的说明里写了「补的是漏 await 的 promise」，而那条规则（`no-floating-promises`）**并没有开**——已改成「还没做」。
+
 **外部输入的裁决记录（2026-10-01，项目所有者）**：
 
 | 项 | 裁决 | 后果 |

@@ -10,8 +10,11 @@
  *    与 Vue SFC 打架的、以及纯风格的，都显式关掉（各条都写了理由）。
  *    一条常年红的 lint 等于没有 lint——那正是这个仓库至今没接 lint 的现状。
  *
- * 它补的是**类型检查与测试都看不见的那一类**：漏 `await` 的 promise、意外的 `any`、
+ * 它补的是**类型检查与测试都看不见的那一类**：意外的 `any`、未使用的变量、
  * Vue 模板里写错的指令、`vue/no-mutating-props` 这类改了也能跑的写法。
+ *
+ * **还没做**：`@typescript-eslint/no-floating-promises`（漏 await）需要类型感知的 lint，
+ * 跑得慢一倍——等这条流水线稳定后单开一刀。别把这一条当成已经覆盖了。
  */
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
@@ -56,6 +59,17 @@ export default tseslint.config(
       "vue/html-indent": "off",
       "vue/html-closing-bracket-newline": "off",
       "vue/first-attribute-linebreak": "off",
+      // `flat/recommended` 里还剩一批纯格式的（引号风格、等号两侧空格、插值两侧空格…）：
+      // 它们与 .editorconfig 的既有习惯重叠，开着只会在每次小改动时报一堆与正确性无关的警告
+      "vue/html-quotes": "off",
+      "vue/v-bind-style": "off",
+      "vue/v-on-style": "off",
+      "vue/mustache-interpolation-spacing": "off",
+      "vue/no-spaces-around-equal-signs-in-attribute": "off",
+      "vue/multiline-html-element-content-newline": "off",
+      "vue/attribute-hyphenation": "off",
+      "vue/order-in-components": "off",
+      "vue/this-in-template": "off",
 
       // —— TypeScript 口径 ——
       // 与 vue-tsc 的 noUnusedLocals 重叠但更快暴露；允许 `_` 前缀显式忽略
