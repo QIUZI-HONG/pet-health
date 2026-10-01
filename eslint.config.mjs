@@ -103,6 +103,9 @@ export default tseslint.config(
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
       "no-console": "off",
+      // 测试里 `wrapper.findAll(...)!.trigger(...)` 是惯用写法：断言失败会当场报错，
+      // 换成守卫反而把「这个元素不存在」变成一句更难读的报错
+      "@typescript-eslint/no-non-null-assertion": "off",
     },
   },
 );
