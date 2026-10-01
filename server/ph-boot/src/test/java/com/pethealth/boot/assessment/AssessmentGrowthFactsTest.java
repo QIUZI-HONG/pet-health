@@ -42,7 +42,7 @@ class AssessmentGrowthFactsTest extends AssessmentTestSupport {
         long providerId = provider.providerId();
 
         // 平台给了拉新入口（推广码）+ 达标线 5 人；券池里有一张可贡献的服务者成本券
-        jdbc.update("INSERT INTO `provider_invite_code` (`provider_id`, `code`, `status`) VALUES (?, ?, 1)",
+        jdbc.update("INSERT INTO `provider_invite_code` (`provider_id`, `code`) VALUES (?, ?)",
                 providerId, "PVTESTGROW");
         jdbc.update("UPDATE `assessment_rule` SET `invite_weight` = 40, `coupon_weight` = 40, "
                 + "`process_weight` = 20, `invite_target` = 5, `coupon_target` = 10.00, "
@@ -96,7 +96,7 @@ class AssessmentGrowthFactsTest extends AssessmentTestSupport {
     @DisplayName("有入口但一条有效邀请都没有 → 记 0 分（该做而没做），不是「未参与」")
     void entryWithoutEffectiveInvitesScoresZero() {
         ApprovedProvider provider = createApprovedProvider("LIC-GROWTH-002");
-        jdbc.update("INSERT INTO `provider_invite_code` (`provider_id`, `code`, `status`) VALUES (?, ?, 1)",
+        jdbc.update("INSERT INTO `provider_invite_code` (`provider_id`, `code`) VALUES (?, ?)",
                 provider.providerId(), "PVTESTZERO");
         jdbc.update("UPDATE `assessment_rule` SET `invite_target` = 5 WHERE `id` = 1");
         seedOrder(provider.providerId(), 1, null, 10, LocalDate.of(2026, 8, 3));

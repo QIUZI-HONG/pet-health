@@ -2521,12 +2521,16 @@ export interface components {
             /** @description yyyy-MM-dd HH:mm:ss */
             updated_at?: string;
         };
-        /** @description 门店推广码与拉新战况；`code` 为 null 表示还没生成过（不是错误） */
+        /**
+         * @description 门店推广码与拉新战况；`code` 为 null 表示还没生成过（不是错误）。
+         *
+         *     **没有「停用」这个状态**：码一旦发出就代表这家店的拉新入口是开着的（V44 的设计本意）。
+         *     原先有一列 `status`，但它没有任何写入点、归因也不读——V48 已按「删掉死开关」处理；
+         *     真要做停用得先定业务规则（已发出的码怎么办、观察窗内的归因算不算）
+         */
         ProviderInviteCodeView: {
             /** @description 形如 PVXXXXXXXX（前缀 PV + 8 位，与用户邀请码的 8 位不同长） */
             code?: string | null;
-            /** @description 1 启用 / 0 停用；没有码时为 null */
-            status?: number | null;
             created_at?: string | null;
             /**
              * Format: int64

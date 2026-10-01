@@ -57,7 +57,19 @@ _L1_INTENTS: dict[str, tuple[str, ...]] = {
     "vaccine": ("疫苗", "接种", "打针", "免疫", "几针", "加强针"),
     "antiparasitic": ("驱虫", "体内虫", "体外虫", "跳蚤", "蜱虫", "蛔虫", "绦虫", "滴虫"),
     "nutrition": ("误食", "吃了", "中毒", "能不能吃", "可以吃", "葡萄", "巧克力", "百合", "木糖醇", "洋葱"),
+    # 急救：文档 §2.2 与八大类表都把它归在 L1（步骤型、答案唯一），而实现里一直缺这一条——
+    # 于是 first_aid 的结构化步骤**永远走不到 L1**。红线的四类（中暑/中毒/窒息/持续呕吐）
+    # 在更前面的硬红线短路就返回了，这里的触发词针对的是它的补集（外伤/烫伤/出血/卡喉）。
+    "first_aid": ("急救", "烫伤", "烧伤", "出血", "止血", "外伤", "伤口", "骨折", "卡喉", "包扎"),
 }
+
+#: 条目的有效期过滤（交付文档与知识库方案 §2.3 都要求「过期即停用」）：
+#: `effective_from/to` 为空表示两端都不限。**在 SQL 里过滤**而不是查回 Python 再筛——
+#: 与状态过滤同一层，条件也少一层「哪一步漏了」的可能。
+_EFFECTIVE_WINDOW = (
+    "AND (effective_from IS NULL OR effective_from <= CURDATE()) "
+    "AND (effective_to IS NULL OR effective_to >= CURDATE()) "
+)
 
 #: 布尔模式里这些字符有语法含义（`+ - > < ( ) ~ * " @`）。术语在拼 SQL 前先洗一遍，
 #: 洗不干净就会变成语法错误或语义漂移（例如用户输入 `-呕吐` 会变成「排除呕吐」）。
@@ -720,6 +732,7 @@ def _query_entries(terms: list[str], species_scope: str | None, age_stage: str) 
         "FROM knowledge_entry "
         "WHERE MATCH(title, summary, body) AGAINST (%s IN BOOLEAN MODE) "
         f"AND review_status IN {RETRIEVABLE_STATUSES} AND is_deleted = 0 "
+        f"{_EFFECTIVE_WINDOW}"
         "AND species_scope IN ('all', %s) AND age_stage_scope IN ('all', %s) "
         "ORDER BY relevance DESC, code ASC LIMIT %s"
     )
@@ -736,6 +749,7 @@ def _query_facts(intents: list[str], species_scope: str | None, age_stage: str) 
         "structured_payload FROM knowledge_entry "
         "WHERE category_code IN (" + placeholders + ") AND structured_payload IS NOT NULL "
         f"AND review_status IN {RETRIEVABLE_STATUSES} AND is_deleted = 0 "
+        f"{_EFFECTIVE_WINDOW}"
         "AND species_scope IN ('all', %s) AND age_stage_scope IN ('all', %s) "
         "ORDER BY code ASC LIMIT %s"
     )
@@ -776,6 +790,7 @@ def _query_entries_by_codes(codes: list[str], species_scope: str | None, age_sta
         "structured_payload FROM knowledge_entry "
         "WHERE code IN (" + placeholders + ") AND is_deleted = 0 "
         f"AND review_status IN {RETRIEVABLE_STATUSES} "
+        f"{_EFFECTIVE_WINDOW}"
         "AND species_scope IN ('all', %s) AND age_stage_scope IN ('all', %s) "
         "ORDER BY code ASC"
     )

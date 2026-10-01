@@ -78,7 +78,6 @@ public class ProviderInviteCodeService {
         }
         ProviderInviteCode created = new ProviderInviteCode();
         created.setProviderId(providerId);
-        created.setStatus(ProviderInviteCode.STATUS_ENABLED);
         for (int attempt = 0; attempt < 5; attempt++) {
             created.setCode(randomCode());
             try {
@@ -137,7 +136,6 @@ public class ProviderInviteCodeService {
     private ProviderInviteCodeView viewOf(long providerId, ProviderInviteCode code) {
         return new ProviderInviteCodeView(
                 code == null ? null : code.getCode(),
-                code == null ? null : code.getStatus(),
                 code == null ? null : code.getCreatedAt(),
                 count(providerId, InviteRelation.STATUS_EFFECTIVE),
                 count(providerId, InviteRelation.STATUS_PENDING),

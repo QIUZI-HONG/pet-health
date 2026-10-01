@@ -20,7 +20,6 @@ import java.time.LocalDateTime;
  */
 public record ProviderInviteCodeView(
         String code,
-        Integer status,
         LocalDateTime createdAt,
         long effectiveInvites,
         long pendingInvites,

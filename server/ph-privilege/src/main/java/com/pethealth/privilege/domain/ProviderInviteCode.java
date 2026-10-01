@@ -24,19 +24,9 @@ public class ProviderInviteCode extends BaseEntity {
     /** 门店码前缀。改它等于让已印出去的二维码全部失效，别改。 */
     public static final String CODE_PREFIX = "PV";
 
-    /**
-     * 码的状态：1 启用（库里只会出现这一个值——`setStatus` 只在取码时写 1）。
-     *
-     * <p>**归因不看它**：`InviteService` 按码查表就直接建关系，停用的码照样能归因
-     * （缺陷计划 D-08 记着这条：`status` 是个死开关，要么接线要么删列）。
-     * 当前唯一的读点是服务者侧读自己推广码的视图（`ProviderInviteCodeService#viewOf`），
-     * 它把状态原样给前端显示——所以这个常量现在的作用只是「把 1 命名出来」。
-     */
-    public static final int STATUS_ENABLED = 1;
 
     private Long providerId;
     private String code;
-    private Integer status;
 
     public Long getProviderId() {
         return providerId;
@@ -54,12 +44,6 @@ public class ProviderInviteCode extends BaseEntity {
         this.code = code;
     }
 
-    public Integer getStatus() {
-        return status;
-    }
 
-    public void setStatus(Integer status) {
-        this.status = status;
-    }
 
 }
