@@ -35,6 +35,16 @@ public class AccountStatus {
     private static final Duration POSITIVE_TTL = Duration.ofSeconds(60);
     /** 「禁用」的长缓存：注销后不再用改回来，足够久即可（到期后由查库兜底）。 */
     private static final Duration DISABLED_TTL = Duration.ofDays(30);
+    /**
+     * 「库里查无此人」的负面缓存时长——**故意短**，与「禁用」分开。
+     *
+     * <p>禁用是终态（注销之后不会再用回来），所以能给 30 天；但「查无此人」不是终态：
+     * 本地库重建、备份恢复、清库重来都会让自增 id 被**重新分配**，如果也按禁用记 30 天，
+     * 新注册的账号会一上来就继承同 id 的「禁用」缓存——2026-10-01 实测：
+     * 注册返回 200、此后每个请求 401「账号已注销或禁用」，而库里那条记录明明是正常状态。
+     * 短缓存仍能替旧令牌挡掉库查询，新账号最多等一分钟自愈。
+     */
+    private static final Duration ABSENT_TTL = Duration.ofMinutes(1);
     private static final String ACTIVE = "active";
     private static final String DISABLED = "disabled";
 
@@ -65,18 +75,27 @@ public class AccountStatus {
         } catch (DataAccessException e) {
             // Redis 抖一下不该让所有在线用户被登出：退回查库（慢，但结论正确）
             log.warn("账号状态缓存不可用，退回查库 user_id={}", userId, e);
-            return activeInDb(userId);
+            return statusInDb(userId) == Status.ACTIVE;
         }
 
-        boolean active = activeInDb(userId);
+        Status status = statusInDb(userId);
         try {
-            redis.opsForValue().set(key(userId), active ? ACTIVE : DISABLED,
-                    active ? POSITIVE_TTL : DISABLED_TTL);
+            // 三种结论、三种时长：只有「禁用」是长缓存（终态）；「可用」与「查无此人」都是短缓存，
+            // 后者是 2026-10-01 的修复——理由见 ABSENT_TTL 的注释
+            Duration ttl = switch (status) {
+                case ACTIVE -> POSITIVE_TTL;
+                case DISABLED -> DISABLED_TTL;
+                case ABSENT -> ABSENT_TTL;
+            };
+            redis.opsForValue().set(key(userId), status == Status.ACTIVE ? ACTIVE : DISABLED, ttl);
         } catch (DataAccessException e) {
             log.warn("账号状态写缓存失败（不影响本次结论）user_id={}", userId, e);
         }
-        return active;
+        return status == Status.ACTIVE;
     }
+
+    /** 查库的三种结论：可用 / 已禁用 / 查无此人。后两者对鉴权都是「不认」，但**缓存时长不同**。 */
+    private enum Status { ACTIVE, DISABLED, ABSENT }
 
     /** 注销时调一次：让已签发的 Access Token 立刻作废（不等它的 2 小时过期）。 */
     public void markDisabled(long userId) {
@@ -87,10 +106,14 @@ public class AccountStatus {
         }
     }
 
-    private boolean activeInDb(long userId) {
+    private Status statusInDb(long userId) {
         // selectById 会带上逻辑删除条件：被删的账号也当作不可用
         User user = userMapper.selectById(userId);
-        return user != null && (user.getStatus() == null || user.getStatus() != User.STATUS_DISABLED);
+        if (user == null) {
+            return Status.ABSENT;
+        }
+        return (user.getStatus() == null || user.getStatus() != User.STATUS_DISABLED)
+                ? Status.ACTIVE : Status.DISABLED;
     }
 
     private String key(long userId) {
