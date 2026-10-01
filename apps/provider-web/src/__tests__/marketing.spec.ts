@@ -59,7 +59,6 @@ const DETAIL: AssessmentView = {
 
 const CODE: ProviderInviteCodeView = {
   code: "PVABCDEFGH",
-  status: 1,
   created_at: "2026-09-25 10:00:00",
   effective_invites: 4,
   pending_invites: 2,
@@ -68,7 +67,6 @@ const CODE: ProviderInviteCodeView = {
 
 const NO_CODE: ProviderInviteCodeView = {
   code: null,
-  status: null,
   created_at: null,
   effective_invites: 0,
   pending_invites: 0,
