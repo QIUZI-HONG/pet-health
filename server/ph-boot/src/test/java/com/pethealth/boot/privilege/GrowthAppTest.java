@@ -1,5 +1,6 @@
 package com.pethealth.boot.privilege;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.pethealth.boot.support.ApiClient;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -203,5 +204,57 @@ class GrowthAppTest extends PrivilegeTestSupport {
         }
 
         assertThat(api.post("/api/v1/app/points/sign-in", null, null).code()).as("未登录").isEqualTo(40100);
+    }
+
+    @Test
+    @DisplayName("自动选优：给了门店与金额就带 applies / recommended；门槛不满足不推荐，面额大的、先过期的优先")
+    void couponAutoSelectForOrder() {
+        String admin = adminToken();
+        Actor actor = registerAppUser();
+        // 三张券的差别只在面额 / 门槛 / 有效期——选优的三条判据各占一条
+        issueCoupon(admin, actor.userId(), "CP-911", "20.00", "0.00", 30);       // 小而晚过期
+        issueCoupon(admin, actor.userId(), "CP-912", "50.00", "0.00", 7);        // 大而先过期
+        issueCoupon(admin, actor.userId(), "CP-913", "50.00", "100.00", 60);     // 大但门槛高
+
+        // ① 本单 50 元：满 100 的那张**判过但不能用**；两张能用的面额都是 50 → 先过期的当选
+        ApiClient.ApiCall at50 = api.get("/api/v1/app/coupons?status=1&provider_id=1&amount=50.00", actor.token());
+        assertCodeOk(at50, "带门店与金额查券");
+        assertThat(coupon(at50.data().path("list"), "CP-913").path("applies").asBoolean())
+                .as("门槛 100 对本单 50 不满足").isFalse();
+        assertThat(coupon(at50.data().path("list"), "CP-911").path("applies").asBoolean()).isTrue();
+        assertThat(coupon(at50.data().path("list"), "CP-912").path("recommended").asBoolean()).isTrue();
+        assertThat(coupon(at50.data().path("list"), "CP-911").path("recommended").asBoolean())
+                .as("面额 20 的不该压过 50 的").isFalse();
+
+        // ② 本单 150 元：门槛过了，推荐仍是「面额最大 → 先过期」的那张（两张 50 元里 7 天的先到）
+        ApiClient.ApiCall at150 = api.get("/api/v1/app/coupons?status=1&provider_id=1&amount=150.00", actor.token());
+        assertThat(coupon(at150.data().path("list"), "CP-913").path("applies").asBoolean()).isTrue();
+        assertThat(coupon(at150.data().path("list"), "CP-912").path("recommended").asBoolean()).isTrue();
+
+        // ③ 不给门店：**没判 ≠ 判过不能用**，两个字段留 null（前端据此决定要不要显示「不适用」）
+        ApiClient.ApiCall withoutProvider = api.get("/api/v1/app/coupons?status=1", actor.token());
+        assertThat(coupon(withoutProvider.data().path("list"), "CP-911").path("applies").isNull()).isTrue();
+        assertThat(coupon(withoutProvider.data().path("list"), "CP-911").path("recommended").isNull()).isTrue();
+    }
+
+    /** 建一张平台补贴券模板并定向发给某人（券靠模板编码在断言里定位）。 */
+    private void issueCoupon(String admin, long userId, String code, String faceValue, String minAmount,
+                             int validDays) {
+        long templateId = api.post("/api/v1/admin/coupon-templates", Map.of(
+                        "code", code, "name", "选优测试券 " + code, "face_value", faceValue,
+                        "min_amount", minAmount, "valid_days", validDays, "cost_bearer", 2), admin)
+                .data().path("id").asLong();
+        assertCodeOk(api.post("/api/v1/admin/coupons",
+                Map.of("user_id", userId, "template_id", templateId), admin), "定向发券 " + code);
+    }
+
+    /** 从券列表里取某一张（按**模板编码**找——券 id 与模板 id 是两套编号，用错了会静默失配）。 */
+    private static JsonNode coupon(JsonNode list, String templateCode) {
+        for (JsonNode node : list) {
+            if (templateCode.equals(node.path("template_code").asText())) {
+                return node;
+            }
+        }
+        throw new AssertionError("券列表里没有模板 " + templateCode + " 的那张：" + list);
     }
 }

@@ -5823,6 +5823,16 @@ export interface components {
             issued_at?: string;
             redeemed_at?: string | null;
             created_at?: string;
+            /**
+             * @description 这张券**能不能用在这一单**（与 C 端同一份判定）。只在查询带了 `provider_id` 时才有值，
+             *     否则为 null——**没判 ≠ 判过不能用**。
+             */
+            applies?: boolean | null;
+            /**
+             * @description 服务端挑出的**最优可用券**（每个列表最多一张）。不带 `provider_id` 时为 null。
+             *     这个字段是给 C 端下单页用的，运营 / 服务者侧恒为 null（它们不选券）。
+             */
+            recommended?: boolean | null;
         };
         IssueCouponRequest: {
             /**

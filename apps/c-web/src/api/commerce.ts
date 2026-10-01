@@ -149,14 +149,40 @@ export const commerce = {
 
   // ---- 我的券（切片 #110；决策见 ADR-0037 第三节 / ADR-0044）----
 
-  /** 我的券（按状态 / 来源筛选，发放时间倒序）。券由平台定向发放，**不做抢券**。 */
+  /**
+   * 我的券（按状态 / 来源筛选，发放时间倒序）。券由平台定向发放，**不做抢券**。
+   *
+   * <p>带上 {@code providerId}（可选再加 {@code amount} / {@code serviceCode}）时，服务端会额外
+   * 返回两个字段：`applies`（这张券能不能用在这一单）与 `recommended`（它挑出的最优券）。
+   * **选优不在这里实现**——下单页只读这两个字段，规则只有服务端一份（与下单时的 80001 复核同一实现）：
+   * 前端各写一套的结果是「页面说能用、下单被拒」。
+   */
   listCoupons(
-    params: { status?: number; source?: number; page?: number; pageSize?: number } = {},
+    params: {
+      status?: number;
+      source?: number;
+      /** 本单门店：给了它才会判「这一单能不能用」并给出最优券 */
+      providerId?: number;
+      /** 本单金额（两位小数字符串）：给了它门槛也一起判 */
+      amount?: string | null;
+      /** 本单服务项编码：券模板的适用范围按它判 */
+      serviceCode?: string;
+      page?: number;
+      pageSize?: number;
+    } = {},
     signal?: AbortSignal,
   ): Promise<CouponPage> {
     return http.get<CouponPage>(
       `${BASE}/coupons`,
-      { status: params.status, source: params.source, page: params.page, page_size: params.pageSize },
+      {
+        status: params.status,
+        source: params.source,
+        provider_id: params.providerId,
+        amount: params.amount ?? undefined,
+        service_code: params.serviceCode,
+        page: params.page,
+        page_size: params.pageSize,
+      },
       { signal },
     );
   },

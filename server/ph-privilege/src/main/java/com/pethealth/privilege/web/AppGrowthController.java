@@ -9,14 +9,17 @@ import com.pethealth.api.app.PointSignInView;
 import com.pethealth.api.app.PointsCenterView;
 import com.pethealth.api.privilege.CouponDtos;
 import com.pethealth.api.privilege.RightsDtos;
+import com.pethealth.catalog.api.Price;
 import com.pethealth.common.api.ApiResponse;
 import com.pethealth.common.api.PageResult;
 import com.pethealth.common.security.CurrentUser;
 import com.pethealth.common.security.LoginDomain;
 import com.pethealth.privilege.service.AppGrowthConsole;
+import java.math.BigDecimal;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -56,13 +59,21 @@ public class AppGrowthController {
             @RequestParam(required = false)
             @Min(value = 1, message = "来源只能是 1–5")
             @Max(value = 5, message = "来源只能是 1–5") Integer source,
+            @RequestParam(name = "provider_id", required = false)
+            @Positive(message = "门店 id 必须是正数") Long providerId,
+            @RequestParam(required = false) String amount,
+            @RequestParam(name = "service_code", required = false) String serviceCode,
             @RequestParam(defaultValue = "1") @Min(value = 1, message = "页码从 1 开始") long page,
             @RequestParam(name = "page_size", defaultValue = "20")
             @Min(value = 1, message = "每页至少 1 条")
             @Max(value = PageResult.MAX_PAGE_SIZE, message = "每页最多 " + PageResult.MAX_PAGE_SIZE + " 条")
             long pageSize) {
         long userId = CurrentUser.requireDomain(LoginDomain.APP);
-        return ApiResponse.ok(console.listMyCoupons(userId, status, source, page, pageSize));
+        // 门店 / 金额 / 服务项三个参数一起决定「这一单能用的券是哪张」（契约里写明了口径）：
+        // 只给门店时判门店与状态，同时给出金额就再判门槛，给了服务项再判适用范围
+        BigDecimal orderAmount = amount == null || amount.isBlank() ? null : Price.parse(amount, "本单金额");
+        return ApiResponse.ok(console.listMyCoupons(userId, status, source, providerId, orderAmount,
+                serviceCode, page, pageSize));
     }
 
     /** 积分中心：账户 + 任务进度 + 行为分值表 + 兑换档位。 */

@@ -2144,6 +2144,20 @@ paths:
           in: query
           description: 1 邀请 / 2 打卡任务 / 3 积分兑换 / 4 平台补贴 / 5 月度阶梯；不传表示全部
           schema: { type: integer, minimum: 1, maximum: 5 }
+        - name: provider_id
+          in: query
+          description: |
+            本单的门店：用来算「这张券能不能用在这家店」，同时给出 `applies` 与 `recommended`。
+            不给就不判（两个字段为 null）——服务者贡献的券只能在其本店核销（ADR-0037 第三节）。
+          schema: { type: integer, format: int64 }
+        - name: amount
+          in: query
+          description: 本单金额（两位小数字符串）：给了它门槛也一起判。金额是**展示与抵扣口径**，不产生资金流（ADR-0036）
+          schema: { type: string }
+        - name: service_code
+          in: query
+          description: 本单的服务项编码：券模板的适用范围按它判（目录项的 `code`，如 `HE-004`）
+          schema: { type: string }
         - $ref: "./common.yaml#/components/parameters/Page"
         - $ref: "./common.yaml#/components/parameters/PageSize"
       responses:
@@ -4087,6 +4101,20 @@ components:
         issued_at: { type: string }
         redeemed_at: { type: string, nullable: true }
         created_at: { type: string }
+        applies:
+          type: boolean
+          nullable: true
+          description: |
+            这张券**能不能用在这一单**：状态、有效期、门槛、门店、服务项范围一起判。
+            只在查询带了 `provider_id` 时才有值——判定与下单时那条 80001 复核是**同一份实现**，
+            所以这里说能用、下单就不会被拒（券包与下单不再各判一套）。不带 `provider_id` 时为 null：
+            **没判 ≠ 判过不能用**。
+        recommended:
+          type: boolean
+          nullable: true
+          description: |
+            服务端挑出的**最优可用券**（每个列表最多一张）：先筛 `applies`，再按「面额大 → 先过期 → id 小」。
+            下单页据此默认选中它（用户仍可改选）；没有可用券时全为 false。不带 `provider_id` 时为 null。
 
     # ------------------------------------------------------------------ 积分（切片 #113）
 

@@ -53,6 +53,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -100,6 +101,7 @@ public class AppGrowthConsole {
     private final PointsApi pointsApi;
     private final RightsApi rightsApi;
     private final InviteAttributionApi inviteApi;
+    private final CouponService couponService;
     private final ProviderConsole providerConsole;
     private final UserQueryApi accounts;
 
@@ -112,7 +114,8 @@ public class AppGrowthConsole {
                             InviteLadderTierMapper ladderTierMapper,
                             InviteLadderAchievementMapper ladderAchievementMapper,
                             PointsApi pointsApi, RightsApi rightsApi, InviteAttributionApi inviteApi,
-                            ProviderConsole providerConsole, UserQueryApi accounts) {
+                            CouponService couponService, ProviderConsole providerConsole,
+                            UserQueryApi accounts) {
         this.couponMapper = couponMapper;
         this.templateMapper = templateMapper;
         this.pointAccountMapper = pointAccountMapper;
@@ -130,6 +133,7 @@ public class AppGrowthConsole {
         this.pointsApi = pointsApi;
         this.rightsApi = rightsApi;
         this.inviteApi = inviteApi;
+        this.couponService = couponService;
         this.providerConsole = providerConsole;
         this.accounts = accounts;
     }
@@ -145,6 +149,7 @@ public class AppGrowthConsole {
      */
     @Transactional(readOnly = true)
     public PageResult<CouponDtos.CouponView> listMyCoupons(long userId, Integer status, Integer source,
+                                                           Long providerId, BigDecimal amount, String serviceCode,
                                                            long page, long pageSize) {
         IPage<Coupon> result = couponMapper.selectPage(new Page<>(page, pageSize),
                 Wrappers.<Coupon>lambdaQuery()
@@ -155,10 +160,19 @@ public class AppGrowthConsole {
         List<Coupon> coupons = result.getRecords();
         Map<Long, CouponTemplate> templates = templatesOf(coupons);
         Map<Long, String> providerNames = providerNamesOf(coupons);
+        // 「能不能用 / 是不是最优」只在调用方给了门店时算：没有门店就没有「这一单」，
+        // 判不了也不假装判过（两个字段留 null，与 false 是两件事）——这是 C 端下单页的默认选券依据
+        Long bestId = providerId == null ? null
+                : couponService.bestCouponId(coupons, providerId, serviceCode, amount).orElse(null);
         List<CouponDtos.CouponView> views = new ArrayList<>(coupons.size());
         for (Coupon coupon : coupons) {
+            Boolean applies = providerId == null ? null
+                    : couponService.applies(coupon, providerId, serviceCode, amount);
+            // recommended 与 applies 同进同出：没给门店时两个都是 null（没判），不是 false（判过不能用）
+            Boolean recommended = providerId == null ? null : coupon.getId().equals(bestId);
             views.add(PrivilegeViews.toCouponView(coupon, templates.get(coupon.getTemplateId()),
-                    coupon.getProviderId() == null ? null : providerNames.get(coupon.getProviderId())));
+                    coupon.getProviderId() == null ? null : providerNames.get(coupon.getProviderId()),
+                    applies, recommended));
         }
         return PageResult.of(views, result.getCurrent(), result.getSize(), result.getTotal());
     }

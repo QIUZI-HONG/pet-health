@@ -27,10 +27,12 @@ import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -280,31 +282,88 @@ public class CouponService implements CouponApi, CouponFactsApi {
     @Transactional(readOnly = true)
     public CouponCheck check(long couponId, Long providerId, String serviceCode, BigDecimal orderAmount) {
         Coupon coupon = requireCoupon(couponId);
-        LocalDateTime now = AppTime.now();
+        Availability availability = availability(coupon, providerId, serviceCode, orderAmount);
+        if (!availability.available()) {
+            throw new BusinessException(availability.errorCode(), availability.message());
+        }
+        return new CouponCheck(coupon.getId(), coupon.getCode(), coupon.getFaceValue(),
+                coupon.getMinAmount(), coupon.getProviderId());
+    }
 
+    /**
+     * 「这张券能不能用在这一单」的**唯一实现**：状态、有效期、门槛、门店、服务项范围。
+     *
+     * <p>下单前的 {@link #check}（80001 那条路径）与 C 端券列表的自动选优都走这里。
+     * 两处各写一份的结果是「券包说能用、下单报不能用」——用户看到的是一句解释不通的错，
+     * 而这种分叉在改门槛/改范围时最容易出现。
+     */
+    private Availability availability(Coupon coupon, Long providerId, String serviceCode, BigDecimal orderAmount) {
+        LocalDateTime now = AppTime.now();
         if (coupon.getStatus() != null && coupon.getStatus() == Coupon.STATUS_REDEEMED) {
-            throw new BusinessException(ErrorCode.COUPON_REDEEMED, "该券已核销");
+            return new Availability(false, ErrorCode.COUPON_REDEEMED, "该券已核销");
         }
         if (coupon.isExpiredAt(now)) {
-            throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE, "该券已过期");
+            return new Availability(false, ErrorCode.COUPON_UNAVAILABLE, "该券已过期");
         }
         if (coupon.getStatus() != null && coupon.getStatus() == Coupon.STATUS_LOCKED) {
-            throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE, "该券正在被其它订单使用");
+            return new Availability(false, ErrorCode.COUPON_UNAVAILABLE, "该券正在被其它订单使用");
         }
         if (coupon.getMinAmount() != null && orderAmount != null
                 && orderAmount.compareTo(coupon.getMinAmount()) < 0) {
-            throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE,
+            return new Availability(false, ErrorCode.COUPON_UNAVAILABLE,
                     "该券需满 ¥" + coupon.getMinAmount().toPlainString() + " 可用");
         }
         // 服务者贡献的券**只在其本店核销**（ADR-0037 第三节）
         if (coupon.getProviderId() != null && !coupon.getProviderId().equals(providerId)) {
-            throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE, "该券仅限出券门店使用");
+            return new Availability(false, ErrorCode.COUPON_UNAVAILABLE, "该券仅限出券门店使用");
         }
         if (!scopeAllows(coupon, serviceCode)) {
-            throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE, "该券不适用于这个服务项");
+            return new Availability(false, ErrorCode.COUPON_UNAVAILABLE, "该券不适用于这个服务项");
         }
-        return new CouponCheck(coupon.getId(), coupon.getCode(), coupon.getFaceValue(),
-                coupon.getMinAmount(), coupon.getProviderId());
+        return AVAILABLE;
+    }
+
+    /** 判定结果：能用，或不能用（原因 + 错误码）。 */
+    private record Availability(boolean available, ErrorCode errorCode, String message) {
+    }
+
+    private static final Availability AVAILABLE = new Availability(true, null, "");
+
+    /**
+     * 这张券对这一单可用吗——{@link #check} 的布尔版（自动选优用它筛候选，不抛异常）。
+     *
+     * <p>调用方持有的必须**是这个用户的**券（本方法只判「能不能用」，不判「是不是他的」）。
+     */
+    public boolean applies(Coupon coupon, Long providerId, String serviceCode, BigDecimal orderAmount) {
+        return availability(coupon, providerId, serviceCode, orderAmount).available();
+    }
+
+    /**
+     * 从一批券里挑**最优可用券**：先按 {@link #applies} 筛，再按 面额降序 → 到期升序 → id 升序。
+     *
+     * <p>「先筛条件、后比大小」是刻意的：反过来会挑出一张门槛更高的券，用户点下去才发现不可用。
+     * 面额相同时选**先过期**的那张（用户少浪费）；面额与到期都一样时按 id——给一个确定的答案，
+     * 不把「数据库碰巧返回的顺序」当业务规则。
+     *
+     * <p>没有可用券时返回空：调用方（C 端券列表）据此把 {@code recommended} 全置 false，
+     * 而不是挑一张「最不差」的券出来。
+     */
+    public Optional<Long> bestCouponId(List<Coupon> coupons, Long providerId, String serviceCode,
+                                       BigDecimal orderAmount) {
+        if (coupons == null || coupons.isEmpty()) {
+            return Optional.empty();
+        }
+        return coupons.stream()
+                .filter(coupon -> applies(coupon, providerId, serviceCode, orderAmount))
+                .min(Comparator
+                        // 面额降序（大的先）；面额为 null 的排最后，不然「没有面额」会赢
+                        .comparing(Coupon::getFaceValue,
+                                Comparator.nullsLast(Comparator.<BigDecimal>reverseOrder()))
+                        // 面额相同：先过期的先用（少浪费用户的券）
+                        .thenComparing(Coupon::getValidUntil, Comparator.nullsLast(Comparator.naturalOrder()))
+                        // 都一样：按 id 升序——确定的答案，不是「碰巧的顺序」
+                        .thenComparing(Coupon::getId))
+                .map(Coupon::getId);
     }
 
     /** {@inheritDoc} */

@@ -139,6 +139,17 @@ final class PrivilegeViews {
     }
 
     static CouponDtos.CouponView toCouponView(Coupon coupon, CouponTemplate template, String providerName) {
+        return toCouponView(coupon, template, providerName, null, null);
+    }
+
+    /**
+     * 同上，但带上「这一单能不能用 / 是不是最优」两个判定（C 端券列表在带了门店与金额时才有）。
+     *
+     * <p>两处都是 {@code null} 表示**没判**——与 {@code false}（判过、不能用）不是一回事，
+     * 前端据此决定要不要显示「不适用」。
+     */
+    static CouponDtos.CouponView toCouponView(Coupon coupon, CouponTemplate template, String providerName,
+                                              Boolean applies, Boolean recommended) {
         return new CouponDtos.CouponView(
                 coupon.getId(),
                 coupon.getCode(),
@@ -157,7 +168,9 @@ final class PrivilegeViews {
                 coupon.getValidUntil(),
                 coupon.getIssuedAt(),
                 coupon.getRedeemedAt(),
-                coupon.getCreatedAt());
+                coupon.getCreatedAt(),
+                applies,
+                recommended);
     }
 
     /**

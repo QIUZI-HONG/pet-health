@@ -501,7 +501,9 @@ public abstract class OrderTestSupport extends ProviderApiTestSupport {
                                 rs.getInt("source"), (Long) rs.getObject("contribution_id"), rs.getInt("status"),
                                 toLocal(rs.getTimestamp("valid_from")), toLocal(rs.getTimestamp("valid_until")),
                                 toLocal(rs.getTimestamp("issued_at")), toLocal(rs.getTimestamp("redeemed_at")),
-                                toLocal(rs.getTimestamp("created_at")))),
+                                toLocal(rs.getTimestamp("created_at")),
+                                // 桩不判「能不能用 / 是不是最优」：那两个字段只在下单页查券时才由服务端算
+                                null, null)),
                         couponIds.toArray());
                 return coupons;
             };

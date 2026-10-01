@@ -19,6 +19,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { createLatestGuard, formatDate, newIdempotencyKey, todayIso, toApiFailure } from "@pet-health/shared";
 import { commerce, type AppointmentSlotView, type CouponView, type OrderView } from "../api/commerce";
+import { providers, type ProviderServiceOfferView } from "../api/providers";
 import { useSessionStore } from "../stores/session";
 import CouponCard from "../components/CouponCard.vue";
 import OrderAmountCard from "../components/OrderAmountCard.vue";
@@ -26,7 +27,6 @@ import SessionGate from "../components/SessionGate.vue";
 import StateEmpty from "../components/states/StateEmpty.vue";
 import StateError from "../components/states/StateError.vue";
 import StateLoading from "../components/states/StateLoading.vue";
-import { appliesToProvider } from "../utils/coupon";
 import { formatAmount } from "../utils/money";
 import { useSubmitAction } from "@pet-health/ui";
 
@@ -65,6 +65,15 @@ const form = reactive({
 
 const slots = ref<AppointmentSlotView[]>([]);
 const coupons = ref<CouponView[]>([]);
+/**
+ * 本单的服务项（门店报价 + 目录项编码）。
+ *
+ * 取它是为了把**金额与服务项编码**带给券接口：门槛与适用范围都要服务端判，
+ * 而这一页在提交之前本来不知道价格（金额是提交后由服务端算的）。
+ * 取不到就不带——那时券只按门店判，门槛留给下单复核（与改造前的行为一致，不会更差）。
+ */
+const serviceOffer = ref<ProviderServiceOfferView | null>(null);
+let serviceOfferLoaded = false;
 const slotsLoading = ref(false);
 const couponsLoading = ref(false);
 const loadError = ref("");
@@ -108,19 +117,48 @@ async function loadSlots(): Promise<void> {
   }
 }
 
-/** 只取「待使用」的券，再按门店过滤：契约没有按门店查的入参，服务者贡献券只能在本店核销。 */
+/**
+ * 取本单能用的券：**判定与选优都在服务端**（`applies` / `recommended`），这里只读结果。
+ *
+ * 筛选、门槛、范围各写一套是这条链路最容易出错的地方——「券包说能用、下单报 80001」
+ * 就是这么来的（契约把两个字段的判定与下单复核定成同一份实现）。
+ */
 async function loadCoupons(): Promise<void> {
   couponsLoading.value = true;
   try {
+    await loadServiceOffer();
     // 只取「待使用」的券：已锁定 / 已核销 / 已过期的券不能再用（契约的 status 筛选）
-    const result = await commerce.listCoupons({ status: 1, pageSize: 100 });
-    coupons.value = (result.list ?? []).filter((coupon) => appliesToProvider(coupon, providerId.value));
+    const result = await commerce.listCoupons({
+      status: 1,
+      pageSize: 100,
+      providerId: providerId.value,
+      amount: serviceOffer.value?.price ?? null,
+      serviceCode: serviceOffer.value?.service_code ?? undefined,
+    });
+    coupons.value = (result.list ?? []).filter((coupon) => coupon.applies === true);
+    // 默认选中服务端挑出的最优券（用户仍可改选，包括改回「不用券」）；
+    // 已选的券不在新列表里（换了门店 / 券过期）时也走这里，免得留下一个看不见的选择
+    if (!coupons.value.some((coupon) => coupon.id === form.couponId)) {
+      form.couponId = coupons.value.find((coupon) => coupon.recommended === true)?.id ?? null;
+    }
   } catch (error) {
     const failure = toApiFailure(error, "加载可用券失败，请稍后重试");
     loadError.value = failure.message;
     loadRequestId.value = failure.requestId;
   } finally {
     couponsLoading.value = false;
+  }
+}
+
+/** 取本单的服务项（报价 + 编码）。失败不阻断下单，只是券那边少判门槛与范围。 */
+async function loadServiceOffer(): Promise<void> {
+  if (!hasTarget.value || serviceOfferLoaded) return;
+  serviceOfferLoaded = true;
+  try {
+    const detail = await providers.detail(providerId.value);
+    serviceOffer.value = (detail.services ?? []).find((offer) => offer.id === serviceId.value) ?? null;
+  } catch {
+    serviceOffer.value = null;
   }
 }
 
@@ -334,7 +372,7 @@ function slotText(slot: AppointmentSlotView): string {
                     :coupon="coupon"
                     selectable
                     :selected="form.couponId === coupon.id"
-                    selected-text="已选"
+                    :selected-text="coupon.recommended ? '已选 · 服务端推荐' : '已选'"
                     @select="form.couponId = coupon.id ?? null"
                   />
                 </li>

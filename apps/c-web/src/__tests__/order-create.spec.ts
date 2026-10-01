@@ -17,12 +17,18 @@ import { apiFailure, mountPage } from "./support";
 const listAppointmentSlots = vi.fn();
 const listCoupons = vi.fn();
 const createOrder = vi.fn();
+const providerDetail = vi.fn();
 vi.mock("../api/commerce", () => ({
   commerce: {
     listAppointmentSlots: (...args: unknown[]) => listAppointmentSlots(...args),
     listCoupons: (...args: unknown[]) => listCoupons(...args),
     createOrder: (...args: unknown[]) => createOrder(...args),
   },
+}));
+// 门店详情：下单页从它取本单服务项的**报价与目录项编码**（门槛与适用范围都要服务端判，
+// 而这一页在提交之前不知道价格）。取不到不阻断下单，所以它在用例里也可以失败——见下面的用例。
+vi.mock("../api/providers", () => ({
+  providers: { detail: (...args: unknown[]) => providerDetail(...args) },
 }));
 
 const CREATE_PATH = "/orders/new?provider_id=3&service_id=21&service_name=%E6%B4%97%E6%8A%A4%E5%A5%97%E9%A4%90";
@@ -44,10 +50,19 @@ const COUPON_LOCAL: CouponView = {
   status: 1,
   valid_from: "2026-09-01",
   valid_until: "2026-10-31",
+  applies: true,
+  recommended: false,
 };
 
-/** 别家门店的券：**不能**出现在本单的可选券里（服务者贡献券只能在本店核销）。 */
-const COUPON_OTHER: CouponView = { ...COUPON_LOCAL, id: 6, code: "C-OTHER", provider_id: 99, provider_name: "别家洗护" };
+/** 别家门店的券：服务端判 `applies=false`（服务者贡献券只能在本店核销），**不能**出现在可选券里。 */
+const COUPON_OTHER: CouponView = {
+  ...COUPON_LOCAL,
+  id: 6,
+  code: "C-OTHER",
+  provider_id: 99,
+  provider_name: "别家洗护",
+  applies: false,
+};
 
 /** 平台补贴券：没有门店，按适用范围核销，所以可以备选。 */
 const COUPON_PLATFORM: CouponView = {
@@ -59,6 +74,8 @@ const COUPON_PLATFORM: CouponView = {
   template_name: "平台补贴券",
   face_value: "10.00",
   min_amount: "0.00",
+  // 服务端挑出来的最优券（面额 10 元、无门槛、范围不限）
+  recommended: true,
 };
 
 const CREATED: OrderView = {
@@ -79,7 +96,14 @@ beforeEach(() => {
   listAppointmentSlots.mockReset();
   listCoupons.mockReset();
   createOrder.mockReset();
+  providerDetail.mockReset();
   listAppointmentSlots.mockResolvedValue(SLOTS);
+  providerDetail.mockResolvedValue({
+    id: 3,
+    name: "安心宠物医院",
+    rating: "4.80",
+    services: [{ id: 21, service_code: "GR-001", service_name: "洗护套餐", price: "128.00" }],
+  });
   listCoupons.mockResolvedValue({ list: [COUPON_LOCAL, COUPON_OTHER, COUPON_PLATFORM], page: 1, page_size: 100, total: 3, has_more: false });
 });
 
@@ -140,6 +164,42 @@ describe("下单页：时段与选券", () => {
     expect(wrapper.text()).not.toContain("别家洗护");
     // 明确给「不用券」这个选项，而不是把券当成必选
     expect(wrapper.text()).toContain("不用券");
+  });
+
+  it("判定与选优都由服务端给：请求带上门店 / 金额 / 服务项编码，列表按 applies 过滤", async () => {
+    await mountPage(OrderCreateView, CREATE_PATH);
+
+    const [params] = listCoupons.mock.calls[0] as [Record<string, unknown>];
+    expect(params.provider_id ?? (params as { providerId?: number }).providerId).toBe(3);
+    expect((params as { amount?: string }).amount).toBe("128.00");
+    expect((params as { serviceCode?: string }).serviceCode).toBe("GR-001");
+  });
+
+  it("默认选中服务端推荐的那张券（用户不点也能用上最优券，仍可改选）", async () => {
+    createOrder.mockResolvedValue(CREATED);
+
+    const { wrapper } = await mountPage(OrderCreateView, CREATE_PATH);
+
+    // 一个券都没点：推荐的那张已经是选中态，并且标出了它是服务端推荐的
+    expect(wrapper.text()).toContain("服务端推荐");
+    expect(wrapper.get(".ph-coupon--selected").text()).toContain("平台补贴券");
+
+    await wrapper.findAll(".ph-order-form__slot")[0]?.trigger("click");
+    await wrapper.get(".ph-order-form__submit").trigger("click");
+    await flushPromises();
+
+    const [body] = createOrder.mock.calls[0] as [Record<string, unknown>];
+    expect(body.coupon_id).toBe(7);            // COUPON_PLATFORM：服务端标了 recommended
+  });
+
+  it("门店详情取不到报价时照常可选券：只是门槛留给下单复核（不带金额）", async () => {
+    providerDetail.mockRejectedValue(apiFailure(50000, "服务器内部错误", "req-detail"));
+
+    const { wrapper } = await mountPage(OrderCreateView, CREATE_PATH);
+
+    const [params] = listCoupons.mock.calls[0] as [{ amount?: string | null }];
+    expect(params.amount ?? null).toBeNull();
+    expect(wrapper.text()).toContain("洗护满减券");
   });
 
   it("选中的券会显示面额（字符串原样，不做算术）", async () => {
