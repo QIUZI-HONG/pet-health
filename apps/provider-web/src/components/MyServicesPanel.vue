@@ -126,6 +126,9 @@ async function toggleStatus(row: ServiceRow, next: 1 | 2): Promise<void> {
 function outOfRange(row: ServiceRow): boolean {
   return isWithinRange(row.price, row.price_min, row.price_max) === false;
 }
+
+// 首屏加载一次：我的服务列表「打开就该有内容」，等用户点刷新等于空页
+void services.load();
 </script>
 
 <template>

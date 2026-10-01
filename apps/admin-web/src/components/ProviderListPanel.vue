@@ -176,6 +176,8 @@ function canUnfreeze(status?: number): boolean {
 }
 
 void loadAllianceOptions();
+// 首屏加载一次：服务者列表「打开就该有内容」，等用户点搜索等于空页
+void providers.load();
 </script>
 
 <template>

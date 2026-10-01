@@ -72,6 +72,9 @@ async function confirmReject(): Promise<void> {
 function outOfRange(row: ListingRow): boolean {
   return isWithinRange(row.price, row.price_min, row.price_max) === false;
 }
+
+// 首屏加载一次：服务上架审核队列「打开就该有内容」，等用户点刷新等于空页
+void listings.load();
 </script>
 
 <template>

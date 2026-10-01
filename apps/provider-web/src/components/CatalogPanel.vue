@@ -100,6 +100,9 @@ async function confirmCreate(): Promise<void> {
   price.value = "";
   emit("created");
 }
+
+// 首屏加载一次：目录项列表（默认「全部分类」）「打开就该有内容」，等用户点分类等于空页
+void items.load();
 </script>
 
 <template>

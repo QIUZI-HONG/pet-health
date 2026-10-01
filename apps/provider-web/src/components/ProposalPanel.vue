@@ -119,6 +119,9 @@ async function confirmSubmit(): Promise<void> {
   formVisible.value = false;
   reload();
 }
+
+// 首屏加载一次：提案列表「打开就该有内容」，等用户点刷新等于空页
+void proposals.load();
 </script>
 
 <template>

@@ -107,6 +107,10 @@ async function reject(): Promise<void> {
   detail.value = outcome.value;
   reload();
 }
+
+// 首屏加载一次：审核队列是「打开就该有内容」的列表，等用户点刷新才发请求等于空页
+// （同族的 ProposalReviewPanel / CouponTemplatePanel 就是这个写法，这里原先漏了）
+void applications.load();
 </script>
 
 <template>
