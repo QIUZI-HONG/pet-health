@@ -59,9 +59,11 @@ server/data/
 .run/
 
 # ---- 本地环境 ----
-# 上面 Node 段的 `*.local` 已经覆盖 `.env.local` 这类带前缀的写法，这里只留最常写的那两个。
+# 上面 Node 段的 `*.local` 已经覆盖 `.env.local` 这类带前缀的写法；`.env.*` 再兜一层
+# （防 `.env.production` 这类名字漏网）——但 `.env.example` 是模板、必须入库，用否定规则放行。
 .env
-.env.local
+.env.*
+!.env.example
 deploy/data/
 
 # ---- 本机工具的忽略文件（不属于仓库）----
