@@ -7,10 +7,12 @@
  * 与 C 端、服务者后台的区别是**准入**：本端是名单制，不在 `app.console.admin-user-ids`
  * 里的账号登录会拿到 40300（不是 40100——口令是对的，别让用户以为密码错了）。
  */
-import type { AppSchemas } from "@pet-health/shared";
+import type { AdminSchemas, AppSchemas } from "@pet-health/shared";
 import { adminHttp } from "./client";
 
 type LoginRequest = AppSchemas["LoginRequest"];
+type RegisterRequest = AppSchemas["RegisterRequest"];
+type AdminRegisterView = AdminSchemas["AdminRegisterView"];
 type LogoutRequest = AppSchemas["LogoutRequest"];
 type TokenPair = AppSchemas["TokenPair"];
 
@@ -18,6 +20,14 @@ const BASE = "/api/v1/admin/auth";
 
 export const adminAuth = {
   /** 手机号 + 密码登录；拿到的是 **admin 域**令牌。 */
+  /**
+   * 注册（运营后台）：账号与 C 端**同一批**（ADR-0035），但**不发令牌**——运营后台是名单制
+   * （`CONSOLE_ADMIN_USER_IDS`，fail-closed），注册只把账号建出来，响应里的 `notice` 说明还差什么。
+   */
+  register(body: RegisterRequest): Promise<AdminRegisterView> {
+    return adminHttp.post<AdminRegisterView>(`${BASE}/register`, body);
+  },
+
   login(body: LoginRequest): Promise<TokenPair> {
     return adminHttp.post<TokenPair>(`${BASE}/login`, body);
   },

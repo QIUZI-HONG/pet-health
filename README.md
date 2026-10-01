@@ -6,7 +6,7 @@
 
 ## 现在处于什么阶段
 
-**C 端、服务者后台、运营后台三端的功能面已经铺满**（找店 / 看店 / 按项目找服务 / AI 找服务 / 社区 / 交易与增长 / 后台 22 个模块），**两个后台的登录入口也已补上**（契约 auth 路径 + 两端登录页 + 按登录域签发令牌）；服务者侧的拍照报工与订单→档案回流、C 端知识库页也已落地。剩余缺口见下面的清单。 路线图与逐项裁决见[地图 #52](https://github.com/QIUZI-HONG/pet-health/issues/52)；逐项完成状态见 [`docs/testing/acceptance-2026-09-30-round5.md`](docs/testing/acceptance-2026-09-30-round5.md)（**取代第四轮**），缺陷与排期见 [`docs/testing/defect-remediation-plan-2026-09-30.md`](docs/testing/defect-remediation-plan-2026-09-30.md) 与 issue [#127](https://github.com/QIUZI-HONG/pet-health/issues/127)。
+**C 端、服务者后台、运营后台三端的功能面已经铺满**（找店 / 看店 / 按项目找服务 / AI 找服务 / 社区 / 交易与增长 / 后台 22 个模块），**三个端都有注册与登录入口**（C 端登录页可注册；两个后台的登录页也有注册——服务者后台注册即登录、运营后台只建账号，能不能进由名单决定；契约 auth 路径 + 按登录域签发令牌）；服务者侧的拍照报工与订单→档案回流、C 端知识库页也已落地。剩余缺口见下面的清单。 路线图与逐项裁决见[地图 #52](https://github.com/QIUZI-HONG/pet-health/issues/52)；逐项完成状态见 [`docs/testing/acceptance-2026-09-30-round5.md`](docs/testing/acceptance-2026-09-30-round5.md)（**取代第四轮**），缺陷与排期见 [`docs/testing/defect-remediation-plan-2026-09-30.md`](docs/testing/defect-remediation-plan-2026-09-30.md) 与 issue [#127](https://github.com/QIUZI-HONG/pet-health/issues/127)。
 
 每一段都有跑在真实 MySQL/Redis 上的接口测试（共 437 个后端用例）：
 

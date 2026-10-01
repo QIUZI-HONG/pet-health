@@ -2,6 +2,8 @@ package com.pethealth.account.service;
 
 import com.pethealth.account.config.ConsoleProperties;
 import com.pethealth.account.domain.User;
+import com.pethealth.api.admin.AdminRegisterView;
+import com.pethealth.api.app.RegisterRequest;
 import com.pethealth.api.app.LoginRequest;
 import com.pethealth.api.app.LogoutRequest;
 import com.pethealth.api.app.RefreshRequest;
@@ -68,6 +70,34 @@ public class ConsoleAuthService {
             log.warn("运营后台没有任何账号可登录：CONSOLE_ADMIN_USER_IDS 为空（fail-closed）。"
                     + "把运维账号的 id 填进去并重启，否则 /api/v1/admin/** 的页面全部进不去");
         }
+    }
+
+    /**
+     * 服务者后台注册：建账号 + **直接签发本域令牌**。
+     *
+     * <p>本端不设准入（见 {@link #login} 的说明：BPM-4 的第一步就是提交入驻申请，
+     * 而申请要先能进这个控制台）。`AccountService.register` 返回的是 **C 端域**的令牌对，
+     * 这里不能直接转交——令牌不跨域通用（ADR-0012），拿 app 域的令牌调 provider 接口等于没登录。
+     * 所以注册成功后按本域重新签一份，语义就是「注册即登录」。
+     */
+    @Transactional
+    public TokenPair registerProvider(RegisterRequest request) {
+        accounts.register(request);
+        return login(LoginDomain.PROVIDER, new LoginRequest(request.phone().trim(), request.password()));
+    }
+
+    /**
+     * 运营后台注册：**只建账号，不签发令牌**。
+     *
+     * <p>名单制下「注册即登录」做不到（登录那条路径会当场以 40300 拒绝不在名单里的账号），
+     * 所以这里如实返回「账号已建 + 还差把账号加入名单这一步」——给了令牌反而误导
+     * （用户会以为已经能进后台了）。
+     */
+    @Transactional
+    public AdminRegisterView registerAdmin(RegisterRequest request) {
+        TokenPair created = accounts.register(request);
+        return new AdminRegisterView(created.user(),
+                "账号已创建。运营后台是名单制：需要平台管理员把该账号加入名单（CONSOLE_ADMIN_USER_IDS）之后才能登录。");
     }
 
     @Transactional(readOnly = true)

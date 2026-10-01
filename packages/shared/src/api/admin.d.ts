@@ -4,6 +4,76 @@
  */
 
 export interface paths {
+    "/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 注册账号（运营后台）
+         * @description 账号与 C 端是**同一批**（ADR-0035）。**注册成功不发令牌**：运营后台是名单制
+         *     （`CONSOLE_ADMIN_USER_IDS`，fail-closed）——能不能进由名单决定，注册只负责把账号建出来，
+         *     响应里的 `notice` 就是给用户看的那句话。名单由平台管理员配置（ADR-0012 / ADR-0035）。
+         *
+         *     手机号在库中加密存储、响应一律脱敏（ADR-0013）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RegisterRequest"];
+                };
+            };
+            responses: {
+                /** @description 账号已创建（**不含令牌**） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AdminRegisterView"];
+                        };
+                    };
+                };
+                /** @description 参数错误（40001：手机号格式 / 口令强度） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 手机号已被注册（40900） */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 尝试过于频繁（42900） */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -6554,6 +6624,12 @@ export interface components {
              */
             degraded_calls?: number;
         };
+        /** @description 运营后台注册的结果。**没有令牌**——能不能进这个后台由名单决定（fail-closed） */
+        AdminRegisterView: {
+            user: components["schemas"]["UserProfile"];
+            /** @description 给用户看的一句话（账号已建、还差把账号加入运营后台名单这一步） */
+            notice: string;
+        };
         /** @description 知识条目（运营复核用）。**不含正文与载荷**——列表是给人扫的，检索素材不进这里 */
         AdminKnowledgeEntryView: {
             /** Format: int64 */
@@ -6937,15 +7013,16 @@ export interface components {
             /** @description 覆盖理由（必填，服务者可见） */
             reason: string;
         };
-        /**
-         * @description **登录不做口令格式校验**（不设 minLength 之类）：格式规则只属于注册，
-         *     登录只有「匹配 / 不匹配」两种结果，不匹配一律 40100。
-         */
-        LoginRequest: {
-            /** @example 13800138000 */
+        RegisterRequest: {
+            /**
+             * @description 中国大陆手机号
+             * @example 13800138000
+             */
             phone: string;
-            /** @example pet12345 */
+            /** @description 8–32 位，至少含一个字母与一个数字 */
             password: string;
+            /** @description 可选；不传时按「宠物主人」生成 */
+            nickname?: string;
         };
         ApiResponse: {
             /** @description 0=成功，非 0=业务错误码（见文件末尾的 x-error-codes） */
@@ -6986,6 +7063,16 @@ export interface components {
             active_pet_id?: number;
             /** @example 2026-09-27 10:00:00 */
             created_at?: string;
+        };
+        /**
+         * @description **登录不做口令格式校验**（不设 minLength 之类）：格式规则只属于注册，
+         *     登录只有「匹配 / 不匹配」两种结果，不匹配一律 40100。
+         */
+        LoginRequest: {
+            /** @example 13800138000 */
+            phone: string;
+            /** @example pet12345 */
+            password: string;
         };
         TokenPair: {
             /** @description JWT；请求时放 Authorization: Bearer 请求头 */

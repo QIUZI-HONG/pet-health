@@ -21,10 +21,13 @@ import { apiFailure, mountPage } from "./support";
 const login = vi.fn();
 const logout = vi.fn();
 
+const register = vi.fn();
+
 vi.mock("../api/auth", () => ({
   adminAuth: {
     login: (...args: unknown[]) => login(...args),
     logout: (...args: unknown[]) => logout(...args),
+    register: (...args: unknown[]) => register(...args),
   },
 }));
 
@@ -38,6 +41,7 @@ const TOKENS = {
 describe("运营后台 · 登录", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    register.mockReset();
     adminTokenStore.clear();
     initAdminSession();
   });
@@ -119,5 +123,46 @@ describe("运营后台 · 外壳的账号区", () => {
 
     const signedIn = await mountShell("authenticated");
     expect(signedIn.text()).toContain("退出登录");
+  });
+});
+
+describe("运营后台 · 注册（权限后置）", () => {
+  it("注册**不发令牌**：只展示服务端那句「还差加入名单」，并切回登录态", async () => {
+    register.mockResolvedValue({
+      user: { id: 9, phone: "138****0000", nickname: "张运营", gender: 0, avatar: null },
+      notice: "账号已创建。运营后台是名单制：需要平台管理员把该账号加入名单（CONSOLE_ADMIN_USER_IDS）之后才能登录。",
+    });
+
+    const { wrapper } = await mountPage(LoginView, "/login", "anonymous");
+    // 切到注册态（文字链，与另两端同一个手感）
+    await wrapper.findAll("button").find((b) => b.text().includes("去注册"))!.trigger("click");
+    await flushPromises();
+
+    await wrapper.get('input[type="tel"]').setValue("13800000000");
+    await wrapper.get('input[type="password"]').setValue("pet12345");
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+
+    expect(register).toHaveBeenCalledWith({ phone: "13800000000", password: "pet12345", nickname: undefined });
+    expect(wrapper.text()).toContain("名单");
+    // **不落盘、也不跳转**：注册不发令牌，给了令牌反而误导（用户以为已经能进后台）
+    expect(adminTokenStore.get()).toBeNull();
+    // 注册成功后切回登录态：按钮又变回「登录」——用户下一步就是去登录（等名单加完）
+    expect(wrapper.find('button[type="submit"]').text()).toContain("登录");
+  });
+
+  it("注册失败照常说话（40900 手机号已注册由服务端给文案）", async () => {
+    register.mockRejectedValue(apiFailure(40900, "该手机号已注册", "req-409"));
+
+    const { wrapper } = await mountPage(LoginView, "/login", "anonymous");
+    await wrapper.findAll("button").find((b) => b.text().includes("去注册"))!.trigger("click");
+    await flushPromises();
+
+    await wrapper.get('input[type="tel"]').setValue("13800000000");
+    await wrapper.get('input[type="password"]').setValue("pet12345");
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("该手机号已注册");
   });
 });

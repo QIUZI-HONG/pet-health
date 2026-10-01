@@ -74,6 +74,38 @@ paths:
   # 请求/响应的形状复用 app.yaml 的 LoginRequest / RefreshRequest / LogoutRequest / TokenPair——
   # 后台与 C 端用的是同一批账号（ADR-0035 决定 4：「绑定现有账号 id」），凭据形状是同一个东西，
   # 再定义一份只会让两侧漂移。
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: 注册账号（服务者后台）
+      description: |
+        账号与 C 端是**同一批**（ADR-0035）：这里注册出来的就是一个普通账号，注册成功后提交
+        入驻申请即成为服务者。与 C 端 `/auth/register` 的唯一差别是**直接签发本域的令牌**
+        （ADR-0012：令牌不跨域通用，C 端那份在不带 `provider` 权限的接口上用不了）。
+
+        手机号在库中加密存储、响应一律脱敏（ADR-0013）。本端**不设准入**——理由与
+        `/auth/register` 之后能不能做事由入驻状态决定，见 `/auth/login` 的说明。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./app.yaml#/components/schemas/RegisterRequest" }
+      responses:
+        "200":
+          description: 注册成功；`data` 里的令牌登录域是 provider
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "./app.yaml#/components/schemas/TokenPair" }
+        "400": { description: 参数错误（40001：手机号格式 / 口令强度） }
+        "409": { description: 手机号已被注册（40900） }
+        "429": { description: 尝试过于频繁（42900） }
+
   /auth/login:
     post:
       tags: [auth]

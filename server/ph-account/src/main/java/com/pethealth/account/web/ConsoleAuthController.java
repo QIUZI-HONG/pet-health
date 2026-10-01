@@ -1,6 +1,8 @@
 package com.pethealth.account.web;
 
 import com.pethealth.account.service.ConsoleAuthService;
+import com.pethealth.api.admin.AdminRegisterView;
+import com.pethealth.api.app.RegisterRequest;
 import com.pethealth.api.app.LoginRequest;
 import com.pethealth.api.app.LogoutRequest;
 import com.pethealth.api.app.RefreshRequest;
@@ -48,6 +50,16 @@ public class ConsoleAuthController {
         return ApiResponse.ok(consoleAuth.login(LoginDomain.PROVIDER, request));
     }
 
+    /**
+     * 服务者后台注册：注册即登录（令牌是 provider 域）。
+     *
+     * <p>账号与 C 端同一批（ADR-0035）——注册出来的是普通账号，提交入驻申请即成为服务者。
+     */
+    @PostMapping("/provider/auth/register")
+    public ApiResponse<TokenPair> providerRegister(@Valid @RequestBody RegisterRequest request) {
+        return ApiResponse.ok(consoleAuth.registerProvider(request));
+    }
+
     @PostMapping("/provider/auth/refresh")
     public ApiResponse<TokenPair> providerRefresh(@Valid @RequestBody RefreshRequest request) {
         return ApiResponse.ok(consoleAuth.refresh(LoginDomain.PROVIDER, request));
@@ -71,6 +83,14 @@ public class ConsoleAuthController {
     @PostMapping("/admin/auth/login")
     public ApiResponse<TokenPair> adminLogin(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.ok(consoleAuth.login(LoginDomain.ADMIN, request));
+    }
+
+    /**
+     * 运营后台注册：**只建账号，不发令牌**（名单制，fail-closed；见 login 的说明）。
+     */
+    @PostMapping("/admin/auth/register")
+    public ApiResponse<AdminRegisterView> adminRegister(@Valid @RequestBody RegisterRequest request) {
+        return ApiResponse.ok(consoleAuth.registerAdmin(request));
     }
 
     @PostMapping("/admin/auth/refresh")

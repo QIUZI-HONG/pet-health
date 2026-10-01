@@ -13,6 +13,7 @@ import type { AppSchemas } from "@pet-health/shared";
 import { providerHttp } from "./client";
 
 type LoginRequest = AppSchemas["LoginRequest"];
+type RegisterRequest = AppSchemas["RegisterRequest"];
 type LogoutRequest = AppSchemas["LogoutRequest"];
 type TokenPair = AppSchemas["TokenPair"];
 
@@ -20,6 +21,14 @@ const BASE = "/api/v1/provider/auth";
 
 export const providerAuth = {
   /** 手机号 + 密码登录；拿到的是 **provider 域**令牌（域不通用，见契约的说明）。 */
+  /**
+   * 注册（服务者后台）：账号与 C 端**同一批**（ADR-0035），注册成功直接拿到 **provider 域**令牌
+   * ——与登录同一手感，不需要再登一次。
+   */
+  register(body: RegisterRequest): Promise<TokenPair> {
+    return providerHttp.post<TokenPair>(`${BASE}/register`, body);
+  },
+
   login(body: LoginRequest): Promise<TokenPair> {
     return providerHttp.post<TokenPair>(`${BASE}/login`, body);
   },

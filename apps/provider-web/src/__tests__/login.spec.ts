@@ -19,11 +19,13 @@ import { apiFailure, mountPage, seedSession } from "./support";
 
 const login = vi.fn();
 const logout = vi.fn();
+const register = vi.fn();
 
 vi.mock("../api/auth", () => ({
   providerAuth: {
     login: (...args: unknown[]) => login(...args),
     logout: (...args: unknown[]) => logout(...args),
+    register: (...args: unknown[]) => register(...args),
   },
 }));
 
@@ -37,6 +39,7 @@ const TOKENS = {
 describe("服务者后台 · 登录", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    register.mockReset();
     providerTokenStore.clear();
     initProviderSession();
   });
@@ -129,5 +132,43 @@ describe("服务者后台 · 外壳的账号区", () => {
 
     const signedIn = await mountShell("authenticated");
     expect(signedIn.text()).toContain("退出登录");
+  });
+});
+
+describe("服务者后台 · 注册", () => {
+  it("注册即登录：拿到的 provider 域令牌落盘并跳今日概览（与登录同一手感）", async () => {
+    register.mockResolvedValue(TOKENS);
+
+    const { wrapper, router } = await mountPage(LoginView, "/login", "anonymous");
+    await wrapper.findAll("button").find((b) => b.text().includes("去注册"))!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("注册一个账号就能提交入驻申请");
+    await wrapper.find('input[type="tel"]').setValue("13800139501");
+    await wrapper.find('input[type="password"]').setValue("pet12345");
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+
+    // 契约里注册返回的就是本域令牌对（provider.yaml 的 /auth/register），
+    // 所以这里与登录完全同一条路径：落盘 + 跳预
+    expect(register).toHaveBeenCalledWith({ phone: "13800139501", password: "pet12345", nickname: undefined });
+    expect(providerTokenStore.get()?.accessToken).toBe("provider-access");
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("dashboard"));
+  });
+
+  it("注册失败照常说话（40900 手机号已注册由服务端给文案），且不落令牌", async () => {
+    register.mockRejectedValue(apiFailure(40900, "该手机号已注册"));
+
+    const { wrapper } = await mountPage(LoginView, "/login", "anonymous");
+    await wrapper.findAll("button").find((b) => b.text().includes("去注册"))!.trigger("click");
+    await flushPromises();
+
+    await wrapper.find('input[type="tel"]').setValue("13800139502");
+    await wrapper.find('input[type="password"]').setValue("pet12345");
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("该手机号已注册");
+    expect(providerTokenStore.get()).toBeNull();
   });
 });

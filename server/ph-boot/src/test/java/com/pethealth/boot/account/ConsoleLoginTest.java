@@ -157,4 +157,71 @@ class ConsoleLoginTest extends IntegrationTestBase {
         assertThat(api.get("/api/v1/provider/onboarding/applications", access).code())
                 .as("provider 域接口认它").isZero();
     }
+
+    // ------------------------------------------------------------ 两个后台的注册（权限后置）
+
+    @Test
+    @DisplayName("服务者后台注册：注册即登录，拿到的是 **provider 域** 的令牌（不是 app 域那份）")
+    void providerRegisterIssuesProviderToken() {
+        String phone = nextPhone();
+
+        ApiClient.ApiCall registered = api.post("/api/v1/provider/auth/register",
+                Map.of("phone", phone, "password", "pet12345", "nickname", "新服务者"), null);
+        assertThat(registered.code()).as("服务者后台注册：%s", registered.body()).isZero();
+        String accessToken = registered.data().path("access_token").asText();
+        assertThat(accessToken).isNotBlank();
+        // 手机号脱敏（ADR-0013）：响应里给的是 138****xxxx，不是原文
+        assertThat(registered.data().path("user").path("phone").asText()).contains("****");
+
+        // 令牌能用在本域：`/provider/profile` 对未绑定的账号是 40400（「还没有绑定门店」）
+        // ——不是 40100。40100 说明拿到的是别的域的令牌（ADR-0012：令牌不跨域通用）
+        ApiClient.ApiCall profile = api.get("/api/v1/provider/profile", accessToken);
+        assertThat(profile.code()).as("应是本域令牌：未绑定门店返回 40400 而不是 40100").isEqualTo(40400);
+
+        // 同一个手机号再注册：40900（账号是同一批，C 端也一样）
+        assertThat(api.post("/api/v1/provider/auth/register",
+                Map.of("phone", phone, "password", "pet12345"), null).code()).isEqualTo(40900);
+    }
+
+    @Test
+    @DisplayName("运营后台注册：**只建账号不发令牌**，响应说明还差「加入名单」这一步；随后登录仍是 40300")
+    void adminRegisterCreatesAccountWithoutToken() {
+        String phone = nextPhone();
+
+        ApiClient.ApiCall registered = api.post("/api/v1/admin/auth/register",
+                Map.of("phone", phone, "password", "pet12345", "nickname", "新运营"), null);
+        assertThat(registered.code()).as("运营后台注册：%s", registered.body()).isZero();
+        // 刻意不给令牌：给了会误导（用户以为已经能进后台）
+        assertThat(registered.data().has("access_token")).as("注册响应里不该有令牌").isFalse();
+        assertThat(registered.data().path("notice").asText()).contains("名单");
+        assertThat(registered.data().path("user").path("phone").asText()).contains("****");
+
+        // 权限后置的现状：账号建出来了，但登不进运营后台（名单制，fail-closed）
+        ApiClient.ApiCall login = api.post("/api/v1/admin/auth/login",
+                Map.of("phone", phone, "password", "pet12345"), null);
+        assertThat(login.code()).as("不在名单里 = 40300（等平台加名单，ADR-0012）").isEqualTo(40300);
+    }
+
+    @Test
+    @DisplayName("两个后台的注册都走同一套账号规则：弱口令 40001、重复手机号 40900")
+    void consoleRegisterReusesAccountRules() {
+        String phone = nextPhone();
+        // 口令规则只属于注册（ADR-0027）：8–32 位且至少一个字母与一个数字
+        assertThat(api.post("/api/v1/provider/auth/register",
+                Map.of("phone", phone, "password", "abcdefgh"), null).code()).isEqualTo(40001);
+        assertThat(api.post("/api/v1/admin/auth/register",
+                Map.of("phone", phone, "password", "12345678"), null).code()).isEqualTo(40001);
+        // 手机号格式
+        assertThat(api.post("/api/v1/admin/auth/register",
+                Map.of("phone", "12345", "password", "pet12345"), null).code()).isEqualTo(40001);
+    }
+
+    /** 每个用例自己造一个手机号：控制台注册用的是同一批账号表，固定号会互相撞（40900）。 */
+    private String nextPhone() {
+        int seq = PHONE_SEQ.incrementAndGet() % 100_000_000;
+        return "137" + String.format("%08d", (int) ((System.nanoTime() / 1000 + seq) % 100_000_000));
+    }
+
+    private static final java.util.concurrent.atomic.AtomicInteger PHONE_SEQ =
+            new java.util.concurrent.atomic.AtomicInteger(0);
 }
