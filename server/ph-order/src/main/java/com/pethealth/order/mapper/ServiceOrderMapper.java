@@ -2,6 +2,7 @@ package com.pethealth.order.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.pethealth.order.domain.ServiceOrder;
+import com.pethealth.order.domain.OrderStatusStat;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -301,4 +302,21 @@ public interface ServiceOrderMapper extends BaseMapper<ServiceOrder> {
             ORDER BY appointment_date ASC, start_time ASC, id ASC
             """)
     List<ServiceOrder> findAwaitingVisitBetween(@Param("from") LocalDate from, @Param("to") LocalDate to);
+    /**
+     * 运营看板的订单聚合：按状态分组数条数与「预估实付」合计（ADR-0036 的展示口径）。
+     *
+     * <p>窗口按**创建时间**取：运营看的是「这段时间下了多少单」，而不是「这段时间履约了多少」——
+     * 后者要按 appointment_date 取，是本接口的另一个问题（真需要时再加参数，不在这里混着判）。
+     */
+    @Select("""
+            SELECT status,
+                   COUNT(*)                    AS `count`,
+                   IFNULL(SUM(estimated_pay_amount), 0) AS payAmount
+              FROM `order`
+             WHERE is_deleted = 0
+               AND created_at >= #{from} AND created_at < #{to}
+             GROUP BY status
+             ORDER BY status
+            """)
+    List<OrderStatusStat> statsByStatus(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 }

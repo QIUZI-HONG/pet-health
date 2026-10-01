@@ -34,6 +34,15 @@ const invites = useSection<Awaited<ReturnType<typeof adminApp.getInviteOverview>
 /** 积分：GET /api/v1/admin/points/overview */
 const pointsOverview = useSection<Awaited<ReturnType<typeof adminApp.getPointsOverview>>>();
 
+/** 订单统计：GET /api/v1/admin/orders/stats（按状态分组 + 金额 + 取消率） */
+const orders = useSection<Awaited<ReturnType<typeof adminApp.getOrderStats>>>();
+const ordersPeriod = ref("");
+
+async function loadOrders(): Promise<void> {
+  await orders.load(() => adminApp.getOrderStats(ordersPeriod.value.trim() || undefined),
+      "订单统计加载失败，请稍后重试");
+}
+
 /** AI 用量：GET /api/v1/admin/ai/usage（按账期 × 模型，只有事实、没有金额） */
 const usage = useSection<Awaited<ReturnType<typeof adminApp.getAiUsage>>>();
 /** 用量账期：留空 = 当月（看正在发生的花销，而不是已结账的月份） */
@@ -111,6 +120,7 @@ async function loadExams(): Promise<void> {
 }
 
 function loadAll(): void {
+  void loadOrders();
   void loadUsage();
   void loadPool();
   void loadInvites();
@@ -341,6 +351,64 @@ function ladderText(): string {
         </p>
       </ConsoleListState>
 
+      <!-- 订单与履约（来源：GET /api/v1/admin/orders/stats） -->
+      <h4 class="ph-card__title ph-stats__sub">
+        订单与履约
+        <span class="ph-text-weak">来源：GET /api/v1/admin/orders/stats</span>
+      </h4>
+      <ConsoleListState
+        :loading="orders.loading.value"
+        :forbidden="orders.forbidden.value"
+        :error-message="orders.errorMessage.value"
+        :request-id="orders.requestId.value"
+        :is-empty="false"
+        loading-title="正在加载订单统计"
+        forbidden-title="暂无权限"
+        forbidden-description="这个运营账号的令牌不能读取订单统计。"
+        @retry="loadOrders"
+      >
+        <div class="ph-toolbar">
+          <label class="ph-field ph-stats__filter" for="orders-period">
+            <span class="ph-field__label">账期</span>
+            <input id="orders-period" v-model="ordersPeriod" class="ph-input ph-stats__period"
+                   placeholder="yyyy-MM，留空 = 当月" @keyup.enter="loadOrders" />
+          </label>
+          <button type="button" class="ph-button ph-button--secondary" @click="loadOrders">查订单</button>
+        </div>
+        <div class="ph-stats__cards">
+          <div class="ph-stats__cell">
+            <span class="ph-stats__label">订单总数</span>
+            <span class="ph-stats__num">{{ orders.data.value?.total ?? 0 }}</span>
+          </div>
+          <div class="ph-stats__cell">
+            <span class="ph-stats__label">预估实付合计（门店应收）</span>
+            <span class="ph-stats__num">¥{{ orders.data.value?.pay_amount ?? "0.00" }}</span>
+          </div>
+          <div class="ph-stats__cell">
+            <span class="ph-stats__label">取消率</span>
+            <span class="ph-stats__num">{{ orders.data.value?.cancel_rate ?? "0.00" }}</span>
+          </div>
+        </div>
+        <div class="ph-table-wrap">
+          <table class="ph-table">
+            <thead>
+              <tr><th>状态</th><th>条数</th><th>预估实付合计</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in orders.data.value?.by_status ?? []" :key="row.status">
+                <td>{{ row.label }}</td>
+                <td class="ph-table__num">{{ row.count }}</td>
+                <td class="ph-table__num">¥{{ row.pay_amount }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="ph-field__hint ph-stats__note">
+          账期：**{{ orders.data.value?.period ?? "—" }}**（按**创建时间**取窗口）。金额是**门店应收的合计**，
+          不是平台流水——平台不经手资金（ADR-0002 / ADR-0036），所以这一格看的是成交规模，不是收款。
+        </p>
+      </ConsoleListState>
+
       <!-- AI 用量（来源：GET /api/v1/admin/ai/usage） -->
       <h4 class="ph-card__title ph-stats__sub">
         AI 用量（按账期 × 模型）
@@ -430,7 +498,8 @@ function ladderText(): string {
           所以这一屏不编：造一个说不清来源的数字，比留一格空白危险得多。
         </p>
         <ul class="ph-stats__gaps">
-          <li>订单 / 履约：admin.yaml 里没有订单相关的路径（订单在 ph-order，管理端的聚合未进契约）。</li>
+          <li>订单的**履约质量**：条数、金额与取消率已经在上面那一格了，但「平均接单时长 / 报工完整率」这类
+            过程指标还没进契约（它们目前只服务考核，见 `/admin/assessments` 的明细）。</li>
           <li>
             AI 的**金额**：用量（token / 条数 / 降级）已经在上面那一格了，但契约里**没有金额**——
             单价与补贴比例是运营假设，页面参数化即可；要做成系统内的成本模型得先有甲方的商务价。

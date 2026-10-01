@@ -21,6 +21,7 @@ const getInviteOverview = vi.fn();
 const getPointsOverview = vi.fn();
 const listAssessments = vi.fn();
 const getAiUsage = vi.fn();
+const getOrderStats = vi.fn();
 
 vi.mock("../api/adminApi", () => ({
   adminApp: {
@@ -29,6 +30,7 @@ vi.mock("../api/adminApi", () => ({
     getPointsOverview: (...args: unknown[]) => getPointsOverview(...args),
     listAssessments: (...args: unknown[]) => listAssessments(...args),
     getAiUsage: (...args: unknown[]) => getAiUsage(...args),
+    getOrderStats: (...args: unknown[]) => getOrderStats(...args),
   },
 }));
 
@@ -38,6 +40,17 @@ function assessmentPage(total: number) {
 }
 
 beforeEach(() => {
+  getOrderStats.mockReset().mockResolvedValue({
+    period: "2026-10",
+    total: 3,
+    by_status: [
+      { status: 0, label: "待接单", count: 1, pay_amount: "128.00" },
+      { status: 2, label: "履约中", count: 1, pay_amount: "128.00" },
+      { status: 4, label: "已取消", count: 1, pay_amount: "128.00" },
+    ],
+    pay_amount: "384.00",
+    cancel_rate: "0.33",
+  });
   getAiUsage.mockReset().mockResolvedValue({
     period: "2026-03",
     models: [
@@ -194,5 +207,20 @@ describe("数据看板：AI 用量（D-28）", () => {
       const arg = call[0] as string | undefined;
       return arg === undefined || typeof arg === "string";
     })).toBe(true);
+  });
+});
+
+describe("数据看板：订单与履约（D-30）", () => {
+  it("按状态分组的条数与金额、合计与取消率都来自服务端，并写明金额是门店应收", async () => {
+    const { wrapper } = await mountPage(StatsView, "/admin/stats");
+
+    expect(getOrderStats).toHaveBeenCalled();
+    expect(wrapper.text()).toContain("订单与履约");
+    expect(wrapper.text()).toContain("待接单");
+    expect(wrapper.text()).toContain("履约中");
+    expect(wrapper.text()).toContain("¥384.00");
+    expect(wrapper.text()).toContain("0.33");
+    // 口径必须看得见：这是门店应收，不是平台收款（ADR-0002）
+    expect(wrapper.text()).toContain("门店应收");
   });
 });

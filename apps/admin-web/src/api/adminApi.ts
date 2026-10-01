@@ -18,6 +18,7 @@ import type { AdminSchemas as Schemas } from "@pet-health/shared";
 import { adminHttp } from "./client";
 
 export type AiUsageView = Schemas["AiUsageView"];
+export type AdminOrderStatsView = Schemas["AdminOrderStatsView"];
 export type ModelUsage = Schemas["ModelUsage"];
 export type ProviderProfileView = Schemas["ProviderProfileView"];
 export type ProviderStatusRequest = Schemas["ProviderStatusRequest"];
@@ -550,6 +551,15 @@ export const adminApp = {
    */
   updateAiSwitch(switchCode: string, enabled: boolean): Promise<SwitchView> {
     return adminHttp.put<SwitchView>(`${BASE}/ai/switches/${switchCode}`, { enabled });
+  },
+
+  /**
+   * 订单统计（运营看板）：按状态分组的条数与金额 + 合计 + 取消率。
+   *
+   * **金额是门店应收的合计**，不是平台流水——平台不经手资金（ADR-0002 / ADR-0036）。
+   */
+  getOrderStats(period?: string, signal?: AbortSignal): Promise<AdminOrderStatsView> {
+    return adminHttp.get<AdminOrderStatsView>(`${BASE}/orders/stats`, { period }, { signal });
   },
 
   /**

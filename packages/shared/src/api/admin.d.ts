@@ -4358,6 +4358,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/orders/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 订单统计（运营看板）
+         * @description 某账期（按**创建时间**）的订单统计：按状态分组的条数与金额 + 合计 + 取消率。
+         *
+         *     **金额是展示口径**：平台不经手资金（ADR-0002 / ADR-0036），`pay_amount` 是
+         *     「门店应收多少」的合计，不是平台流水。取消率 = 已取消 ÷ 总数（分母含进行中的单，
+         *     运营看的是趋势，不是终局）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 账期 `yyyy-MM`；不传按**当月** */
+                    period?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AdminOrderStatsView"];
+                        };
+                    };
+                };
+                /** @description 账期格式不对（40001） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai/usage": {
         parameters: {
             query?: never;
@@ -6590,6 +6645,30 @@ export interface components {
             /** @description true 启用 / false 停用；**读写同形状**（库里的列仍是 tinyint） */
             enabled: boolean;
             remark?: string | null;
+        };
+        /** @description 订单统计（运营看板）。**金额是门店应收的合计**，不是平台流水（ADR-0002） */
+        AdminOrderStatsView: {
+            /** @description 统计窗口 yyyy-MM（按创建时间） */
+            period?: string;
+            /**
+             * Format: int64
+             * @description 窗口内的订单总数（各状态之和）
+             */
+            total?: number;
+            /** @description 按状态分组（0 待接单 / 1 已预约 / 2 履约中 / 3 已完成 / 4 已取消），状态名由服务端给 */
+            by_status?: {
+                status?: number;
+                /** @description 状态中文名（服务端给，前端不再翻译一遍） */
+                label?: string;
+                /** Format: int64 */
+                count?: number;
+                /** @description 该状态的预估实付合计（两位小数） */
+                pay_amount?: string;
+            }[];
+            /** @description 窗口内预估实付合计（两位小数） */
+            pay_amount?: string;
+            /** @description 取消率（两位小数，如 "0.08"） */
+            cancel_rate?: string;
         };
         /** @description AI 用量（账期 × 模型）。**只有事实，没有金额**——单价由页面参数化（ADR-0050 第五节） */
         AiUsageView: {
