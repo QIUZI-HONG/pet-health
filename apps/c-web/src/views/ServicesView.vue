@@ -123,11 +123,20 @@ void load(1);
       按分类找门店，进店能看到在架的服务项与价格；选好项目再约时段，费用在门店直接付给服务者。
     </p>
 
+    <!-- 「AI 帮我找服务」入口卡（交付文档 4.16.5 的第 1 块）：主色浅底的整块入口，
+         不是一行文字链——它是这一页最该被点的东西（描述症状比翻分类快） -->
+    <RouterLink class="ph-services__ai" :to="{ name: 'service-finder' }">
+      <span class="ph-services__ai-icon" aria-hidden="true">🤖</span>
+      <span class="ph-services__ai-text">
+        <span class="ph-services__ai-title">AI 帮我找服务</span>
+        <span class="ph-text-sub">描述症状（部位、多久、有没有变化），帮你圈出该看什么、附近谁能做</span>
+      </span>
+      <span class="ph-services__ai-action">去描述 →</span>
+    </RouterLink>
+
     <p class="ph-services__cross">
       也可以<RouterLink class="ph-services__cross-link" :to="{ name: 'catalog' }">按项目找服务</RouterLink>
-      ——先选项目，再看哪些门店能做、各自多少钱；或者
-      <RouterLink class="ph-services__cross-link" :to="{ name: 'service-finder' }">说说它怎么了</RouterLink>
-      ，按症状帮你找。
+      ——先选项目，再看哪些门店能做、各自多少钱。
     </p>
 
     <div class="ph-services__search">
@@ -243,6 +252,41 @@ void load(1);
 </template>
 
 <style scoped>
+/* AI 入口卡：主色浅底 + 圆角，与「券提醒条」同一套语言（浅底 = 引导性入口，不是普通卡片） */
+.ph-services__ai {
+  display: flex;
+  align-items: center;
+  gap: var(--ph-space-3);
+  margin-bottom: var(--ph-space-4);
+  padding: var(--ph-space-4);
+  border-radius: var(--ph-radius-card);
+  background: var(--ph-color-primary-light);
+  text-decoration: none;
+  color: inherit;
+}
+
+.ph-services__ai-icon {
+  font-size: 22px;
+}
+
+.ph-services__ai-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.ph-services__ai-title {
+  font-weight: 600;
+  color: var(--ph-color-primary);
+}
+
+.ph-services__ai-action {
+  flex: none;
+  color: var(--ph-color-primary);
+  font-weight: 500;
+}
+
 .ph-services__cross {
   margin: 0 0 var(--ph-space-3);
   font-size: 13px;

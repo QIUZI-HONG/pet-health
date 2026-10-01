@@ -205,3 +205,15 @@ describe("服务页：四态", () => {
     expect(wrapper.text()).toContain("网络连接失败，请检查网络后重试");
   });
 });
+
+describe("服务页：AI 找服务入口卡（4.16.5 第 1 块）", () => {
+  it("是整块入口卡（不是一行文字链），指向按症状找服务", async () => {
+    const { wrapper } = await mountPage(ServicesView, "/services", "anonymous");
+
+    const card = wrapper.find(".ph-services__ai");
+    expect(card.exists()).toBe(true);
+    expect(card.attributes("href")).toBe("/service-finder");
+    expect(card.text()).toContain("AI 帮我找服务");
+    expect(card.text()).toContain("描述症状");
+  });
+});

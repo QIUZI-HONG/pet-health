@@ -63,7 +63,8 @@ describe("按项目找服务：分类与列表", () => {
     const { wrapper } = await mountPage(CatalogView, "/catalog", "anonymous");
 
     expect(wrapper.text()).toContain("医院（服务端给的名字）");
-    expect(wrapper.text()).toContain("（14）");
+    // 计数在标签墙的角标里（`.ph-catalog__chip-count`），值仍来自服务端的 `item_count`
+    expect(wrapper.find(".ph-catalog__chip-count").text()).toBe("14");
     expect(wrapper.text()).toContain("洗护美容");
   });
 
@@ -160,5 +161,18 @@ describe("按项目找服务：四态", () => {
     items.mockResolvedValue(page([BASIC_EXAM]));
     await wrapper.findAll("button").find((node) => node.text() === "重新加载")!.trigger("click");
     expect(wrapper.text()).toContain("基础体检");
+  });
+});
+
+describe("按项目找服务：分类标签墙（4.16.5 的第 2 块）", () => {
+  it("分类是标签墙（三列流式），带项目数；点一个就按它筛", async () => {
+    const { wrapper } = await mountPage(CatalogView, "/catalog", "anonymous");
+
+    const chips = wrapper.findAll(".ph-catalog__chip");
+    expect(chips.length).toBeGreaterThan(1);
+    expect(chips[0]!.text()).toContain("全部分类");
+    // 计数来自服务端的 item_count（前端不自己数）
+    expect(wrapper.find(".ph-catalog__chip-count").exists()).toBe(true);
+    expect(chips[0]!.classes()).toContain("ph-catalog__chip--active");
   });
 });

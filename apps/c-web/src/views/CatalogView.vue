@@ -126,11 +126,15 @@ void load(1);
       <button type="button" class="ph-button ph-button--primary" @click="submitSearch">搜索</button>
     </div>
 
-    <div v-if="categories.length > 0" class="ph-catalog__filters">
+    <!-- 分类标签墙（交付文档 4.16.5 的「按服务项目找」）：三列流式的分类标签，
+         点一个下钻到该分类的项目列表。**粒度与稿子差一层**：稿子的 chip 是项目、
+         我们的是分类——契约只给「分页的项目列表」，没有「按分类分组取项目」的出口，
+         为了不在前端硬凑（一次请求 ×N 个分类）就这么分了，差异记在缺陷计划里 -->
+    <div v-if="categories.length > 0" class="ph-catalog__wall">
       <button
         type="button"
-        class="ph-catalog__filter"
-        :class="{ 'ph-catalog__filter--active': category === '' }"
+        class="ph-catalog__chip"
+        :class="{ 'ph-catalog__chip--active': category === '' }"
         @click="selectCategory('')"
       >
         全部分类
@@ -139,11 +143,11 @@ void load(1);
         v-for="entry in categories"
         :key="entry.code"
         type="button"
-        class="ph-catalog__filter"
-        :class="{ 'ph-catalog__filter--active': category === entry.code }"
+        class="ph-catalog__chip"
+        :class="{ 'ph-catalog__chip--active': category === entry.code }"
         @click="selectCategory(entry.code ?? '')"
       >
-        {{ entry.name }}{{ entry.item_count ? `（${entry.item_count}）` : "" }}
+        {{ entry.name }}<span v-if="entry.item_count" class="ph-catalog__chip-count">{{ entry.item_count }}</span>
       </button>
     </div>
 
@@ -243,31 +247,41 @@ void load(1);
   color: var(--ph-color-text);
 }
 
-.ph-catalog__filters {
-  display: flex;
-  flex-wrap: wrap;
+.ph-catalog__wall {
+  display: grid;
+  /* 三列流式（稿子的形态）：窄屏自动降到两列/一列，不写死列数 */
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: var(--ph-space-2);
   margin-bottom: var(--ph-space-4);
 }
 
-.ph-catalog__filter {
-  height: 32px;
-  padding: 0 var(--ph-space-3);
-  background: var(--ph-color-surface);
+.ph-catalog__chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ph-space-2);
+  padding: var(--ph-space-2) var(--ph-space-3);
   border: 1px solid var(--ph-color-border);
-  border-radius: var(--ph-radius-button);
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--ph-color-text);
+  border-radius: var(--ph-radius-input);
+  background: var(--ph-color-surface);
+  font: inherit;
+  color: var(--ph-color-text-sub);
   cursor: pointer;
 }
 
-.ph-catalog__filter--active {
-  background: var(--ph-color-primary-light);
+.ph-catalog__chip--active {
   border-color: var(--ph-color-primary);
+  background: var(--ph-color-primary-light);
   color: var(--ph-color-primary);
-  font-weight: 600;
+  font-weight: 500;
 }
+
+.ph-catalog__chip-count {
+  color: var(--ph-color-text-weak);
+  font-size: 12px;
+}
+
+
 
 .ph-catalog__list {
   list-style: none;
