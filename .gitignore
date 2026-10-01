@@ -55,6 +55,9 @@ htmlcov/
 server/ph-boot/data/
 server/data/
 
+# ---- 本地开发进程（open.sh 起服务的日志与 PID）----
+.run/
+
 # ---- 本地环境 ----
 # 上面 Node 段的 `*.local` 已经覆盖 `.env.local` 这类带前缀的写法，这里只留最常写的那两个。
 .env
