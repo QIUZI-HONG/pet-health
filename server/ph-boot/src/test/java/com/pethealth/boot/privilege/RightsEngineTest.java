@@ -1,6 +1,7 @@
 package com.pethealth.boot.privilege;
 
 import com.pethealth.boot.support.ApiClient;
+import com.pethealth.common.time.AppTime;
 import com.pethealth.privilege.api.RightsApi;
 import com.pethealth.privilege.service.RightsExpiryJob;
 import org.junit.jupiter.api.DisplayName;
@@ -41,6 +42,11 @@ class RightsEngineTest extends PrivilegeTestSupport {
      * （变成 "2026-11-01 16:19"），后端按契约格式解析会在 index 16 处失败，回 40001
      * 「请求体格式不正确（不是合法的 JSON）」。于是用例只在「每分钟的第一秒」跑才红——
      * 2026-10-01 16:19 的一次全量 verify 实测踩到，同一份代码 30 秒后单跑就绿（时钟依赖假红）。
+     *
+     * <p>**取时间一律用 {@link AppTime#now()}（东八区），别用 {@code AppTime.now()}**——
+     * 后者取 JVM 默认时区（CI 是 UTC），而服务端按东八区判「到期不能早于当前」：
+     * `now().plusHours(1)` 在 UTC 的 JVM 里反而落在东八区「现在」的过去，grant 直接拒——
+     * 2026-10-01 的 CI（Server 流水线）实测踩到，本地（JVM +08）则一直绿。
      */
     private static final DateTimeFormatter WIRE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -53,7 +59,7 @@ class RightsEngineTest extends PrivilegeTestSupport {
     @DisplayName("来源优先：邀请永久 + 打卡当月 → 取邀请；再加订阅月度 → 取订阅")
     void sourcePriorityBeatsExpiry() {
         long user = 810_001L;
-        LocalDateTime monthEnd = LocalDateTime.now().plusDays(20).withNano(0);
+        LocalDateTime monthEnd = AppTime.now().plusDays(20).withNano(0);
 
         // 打卡（当月）先授
         rightsApi.grant(new RightsApi.GrantCommand(user, "community.post", 3, "checkin:2026-09",
@@ -68,7 +74,7 @@ class RightsEngineTest extends PrivilegeTestSupport {
         assertThat(state.expireAt()).isNull();
 
         // 订阅（月度，到期更近）优先级最高：即使它的到期时间比打卡那条早，也取它
-        LocalDateTime subscriptionEnd = LocalDateTime.now().plusDays(5).withNano(0);
+        LocalDateTime subscriptionEnd = AppTime.now().plusDays(5).withNano(0);
         rightsApi.grant(new RightsApi.GrantCommand(user, "community.post", 1, "sub:888", subscriptionEnd, null));
         RightsApi.RightsState withSub = rightsApi.evaluate(user).get("community.post");
         assertThat(withSub.source()).isEqualTo(1);
@@ -76,7 +82,7 @@ class RightsEngineTest extends PrivilegeTestSupport {
 
         // 订阅到期 → 只回收这一条，回落到邀请的永久权益
         jdbc.update("UPDATE rights_grant SET expire_at = ? WHERE user_id = ? AND source = 1",
-                LocalDateTime.now().minusMinutes(1), user);
+                AppTime.now().minusMinutes(1), user);
         assertThat(rightsApi.revokeExpired()).isEqualTo(1);
         RightsApi.RightsState afterExpiry = rightsApi.evaluate(user).get("community.post");
         assertThat(afterExpiry.effective()).isTrue();
@@ -98,12 +104,12 @@ class RightsEngineTest extends PrivilegeTestSupport {
         assertThat(rightsApi.evaluate(user).get("ai.unlimited").effective()).isFalse();
 
         rightsApi.grant(new RightsApi.GrantCommand(user, "ai.unlimited", 3, "checkin:2026-09",
-                LocalDateTime.now().plusHours(1), null));
+                AppTime.now().plusHours(1), null));
         assertThat(rightsApi.isEffective(user, "ai.unlimited")).isTrue();
 
         // 批算还没跑（状态仍是生效），但已过期的授予不该算生效——判定按时间实时算
         jdbc.update("UPDATE rights_grant SET expire_at = ? WHERE user_id = ?",
-                LocalDateTime.now().minusMinutes(1), user);
+                AppTime.now().minusMinutes(1), user);
         assertThat(rightsApi.isEffective(user, "ai.unlimited")).isFalse();
         assertThat(jdbc.queryForObject("SELECT status FROM rights_grant WHERE user_id = ?",
                 Integer.class, user)).isEqualTo(1);
@@ -132,7 +138,7 @@ class RightsEngineTest extends PrivilegeTestSupport {
         // 运营手动授予（订阅：线下签约 + 后台标记，ADR-0036 之后没有支付载体）
         ApiClient.ApiCall granted = api.post("/api/v1/admin/rights/grants", Map.of(
                 "user_id", user, "code", "report.full", "source", 1,
-                "expire_at", wireTime(LocalDateTime.now().plusMonths(1)),
+                "expire_at", wireTime(AppTime.now().plusMonths(1)),
                 "source_ref", "sub-2026-09", "remark", "线下签约"), admin);
         assertCodeOk(granted, "手动授予");
         long grantId = granted.data().path("id").asLong();
@@ -149,7 +155,7 @@ class RightsEngineTest extends PrivilegeTestSupport {
         // 到期时间不能早于当前（授一条立刻过期的权益是调用方算错了）
         assertThat(api.post("/api/v1/admin/rights/grants", Map.of(
                 "user_id", user, "code", "report.full", "source", 4,
-                "expire_at", wireTime(LocalDateTime.now().minusDays(1))),
+                "expire_at", wireTime(AppTime.now().minusDays(1))),
                 admin).code()).isEqualTo(40001);
 
         // 回收一条：只回收这一条，别的来源不受影响
