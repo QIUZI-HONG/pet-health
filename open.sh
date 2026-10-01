@@ -1,21 +1,20 @@
 #!/usr/bin/env bash
 # 一键打开：把本地全栈拉起来，然后在浏览器里打开。
 #
-# 为什么要有它：「打开项目」在这台机器上实际要做四件事——起中间件、起 AI 服务、起后端、
-# 起 C 端，再把地址敲进浏览器。这份脚本把它们固化成一条命令，**幂等**：已经在跑的会跳过，
-# 重复执行只补没起的那几个，最后打开浏览器。等价于 README「本地怎么跑」的第 1–4 步。
+# 为什么要有它：「打开项目」在这台机器上实际要做一串事——起中间件、起 AI 服务、起后端、
+# 起三个端，再把地址敲进浏览器。这份脚本把它们固化成一条命令，**幂等**：已经在跑的会跳过，
+# 重复执行只补没起的那几个，最后把三个端都打开。等价于 README「本地怎么跑」的 1–4 步（三端都起）。
 #
 # 它依次做（每一件都先探测、再启动、后等待健康）：
 #   1. 中间件    MySQL 8 :3307 + Redis :6379   （docker compose，随 --stop 也不停，见命令输出）
 #   2. AI 服务   http://127.0.0.1:8000         （ai/.venv/bin/uvicorn，不带 --reload：改 AI 代码要重跑本步）
 #   3. 后端      http://127.0.0.1:8080         （server/./mvnw spring-boot:run，自动读 server/.env；
 #                                              健康检查在独立管理端口 :9090/actuator/health）
-#   4. C 端      http://localhost:5173         （pnpm --filter c-web dev）
-#   5. 在 Windows 侧默认浏览器打开 C 端（--no-browser 可跳过）
+#   4. 三个端    C 端 :5173 / 服务者后台 :5174 / 运营后台 :5175（pnpm --filter <app> dev）
+#   5. 在 Windows 侧默认浏览器把三个端都打开（--no-browser 可跳过）
 #
 # 用法：
-#   ./open.sh                 起服务并打开 C 端（日常用这个）
-#   ./open.sh --all           连服务者后台(:5174)与运营后台(:5175)一起起、一起打开
+#   ./open.sh                 起全栈（三端都起）并打开三个地址（日常用这个）
 #   ./open.sh --no-browser    只起服务，不开浏览器
 #   ./open.sh --folder        不开服务，只在 Windows 资源管理器里打开项目文件夹
 #   ./open.sh --stop          停掉本脚本起的进程（中间件容器不动，停法见命令输出）
@@ -47,11 +46,10 @@ die()  { printf '  ✗ %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-一键打开：起本地全栈（中间件 → AI 服务 → 后端 → C 端）并在浏览器里打开。
+一键打开：起本地全栈（中间件 → AI 服务 → 后端 → 三个端）并在浏览器里打开。
 
 用法：
-  ./open.sh                 起服务并打开 C 端（日常用这个）
-  ./open.sh --all           连服务者后台(:5174)与运营后台(:5175)一起起、一起打开
+  ./open.sh                 起全栈（三端都起）并打开三个地址（日常用这个）
   ./open.sh --no-browser    只起服务，不开浏览器
   ./open.sh --folder        不开服务，只在 Windows 资源管理器里打开项目文件夹
   ./open.sh --stop          停掉本脚本起的进程（中间件容器不动）
@@ -149,12 +147,10 @@ open_url() { # open_url <url>
 # ---------------------------------------------------------------- 参数
 
 action="open"   # open | folder | stop
-open_all=0
 browser=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --all)         open_all=1 ;;
     --no-browser)  browser=0 ;;
     --folder)      action="folder" ;;
     --stop)        action="stop" ;;
@@ -239,46 +235,37 @@ else
   fi
 fi
 
-# 4/4 C 端
-say "[4/4] C 端（:5173）"
+# 4/4 三个端（C 端 + 两个后台，默认全起）
+say "[4/4] 三个端（C 端 :5173 / 服务者后台 :5174 / 运营后台 :5175）"
 [ -d "$ROOT/node_modules" ] || die "根 node_modules 不在——先在仓库根 pnpm install"
-if port_up 5173; then
-  ok "已在跑，跳过"
-else
-  start_bg c-web "$ROOT" pnpm --filter c-web dev
-  if wait_port 5173 90 dots; then ok "C 端就绪"; else warn "C 端 90 秒没起来，看 .run/c-web.log"; fi
-fi
 
-# 可选：两个后台
-if [ "$open_all" = 1 ]; then
-  say "[--all] 服务者后台（:5174）与运营后台（:5175）"
-  if port_up 5174; then ok "服务者后台已在跑，跳过"; else
-    start_bg provider-web "$ROOT" pnpm --filter provider-web dev
-    if wait_port 5174 90 dots; then ok "服务者后台就绪"; else warn "服务者后台没起来，看 .run/provider-web.log"; fi
+start_front() { # start_front <包名> <端口> <显示名>
+  local pkg="$1" port="$2" label="$3"
+  if port_up "$port"; then
+    ok "${label}已在跑，跳过"
+    return 0
   fi
-  if port_up 5175; then ok "运营后台已在跑，跳过"; else
-    start_bg admin-web "$ROOT" pnpm --filter admin-web dev
-    if wait_port 5175 90 dots; then ok "运营后台就绪"; else warn "运营后台没起来，看 .run/admin-web.log"; fi
-  fi
-fi
+  start_bg "$pkg" "$ROOT" pnpm --filter "$pkg" dev
+  if wait_port "$port" 90 dots; then ok "${label}就绪"; else warn "${label}没起来，看 .run/$pkg.log"; fi
+}
+
+start_front c-web        5173 "C 端"
+start_front provider-web 5174 "服务者后台"
+start_front admin-web    5175 "运营后台"
 
 # ---------------------------------------------------------------- 打开浏览器 + 汇总
 
 if [ "$browser" = 1 ]; then
   open_url "http://localhost:5173/"
-  if [ "$open_all" = 1 ]; then
-    open_url "http://localhost:5174/"
-    open_url "http://localhost:5175/"
-  fi
+  open_url "http://localhost:5174/"
+  open_url "http://localhost:5175/"
 fi
 
-consoles_hint="（要起：./open.sh --all）"
-[ "$open_all" = 1 ] && consoles_hint=""
 say ""
 say "地址："
 say "  C 端        http://localhost:5173   ← 主入口"
-say "  服务者后台  http://localhost:5174   $consoles_hint"
-say "  运营后台    http://localhost:5175   $consoles_hint"
+say "  服务者后台  http://localhost:5174"
+say "  运营后台    http://localhost:5175"
 say "  后端健康    http://127.0.0.1:9090/actuator/health（独立管理端口）"
 say "  AI 健康     http://127.0.0.1:8000/internal/health（要带 x-internal-token 头）"
 say ""
