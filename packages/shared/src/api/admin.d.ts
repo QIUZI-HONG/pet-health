@@ -4288,6 +4288,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * AI 用量（按账期 × 模型）
+         * @description 运营的 AI 成本页要的那份**事实**：某账期内按「模型 × 版本」聚合的调用数、
+         *     输入 / 输出 token、红线短路数（未经过模型的那部分）与降级数。
+         *
+         *     **没有金额字段**：单价与补贴比例是运营假设，页面上填参数乘一下即可——做一张「假设表」入库
+         *     只会让测算结果看起来比它实际的可信度高（ADR-0050 第五节）。所以这个接口回答的是
+         *     「这个月谁花了多少 token」，不是「这个月花了多少钱」。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 账期 `yyyy-MM`；不传按**当月**（看的是正在发生的花销，而不是已结账的月份） */
+                    period?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功（模型行按 token 总量降序；`totals` 是合计行） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"] & {
+                            data?: components["schemas"]["AiUsageView"];
+                        };
+                    };
+                };
+                /** @description 账期格式不对（40001，应为 yyyy-MM） */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai/knowledge-entries": {
         parameters: {
             query?: never;
@@ -6464,6 +6520,39 @@ export interface components {
             /** @description true 启用 / false 停用；**读写同形状**（库里的列仍是 tinyint） */
             enabled: boolean;
             remark?: string | null;
+        };
+        /** @description AI 用量（账期 × 模型）。**只有事实，没有金额**——单价由页面参数化（ADR-0050 第五节） */
+        AiUsageView: {
+            /** @description 账期 yyyy-MM（回显：页面上要知道看的是哪个月） */
+            period?: string;
+            /** @description 每个「模型 × 版本」一行，按 token 总量降序 */
+            models?: components["schemas"]["ModelUsage"][];
+            totals?: components["schemas"]["ModelUsage"];
+        };
+        /** @description 一个模型（或合计行）在一个账期里的用量。token 是真实留痕（`ai_consult` 的两列），不是估算 */
+        ModelUsage: {
+            /** @description 合计行是「合计」；红线短路那类不调模型的记录其值为 `rule:red_flag` */
+            model_name?: string;
+            model_version?: string;
+            /**
+             * Format: int64
+             * @description 咨询条数（含未调模型的短路与降级）
+             */
+            calls?: number;
+            /** Format: int64 */
+            prompt_tokens?: number;
+            /** Format: int64 */
+            completion_tokens?: number;
+            /**
+             * Format: int64
+             * @description 命中硬红线、未经模型的条数（ADR-0021）
+             */
+            red_flag_calls?: number;
+            /**
+             * Format: int64
+             * @description 降级条数（未拿到模型结论的那部分）
+             */
+            degraded_calls?: number;
         };
         /** @description 知识条目（运营复核用）。**不含正文与载荷**——列表是给人扫的，检索素材不进这里 */
         AdminKnowledgeEntryView: {

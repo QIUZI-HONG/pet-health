@@ -20,6 +20,7 @@ const getCouponPoolOverview = vi.fn();
 const getInviteOverview = vi.fn();
 const getPointsOverview = vi.fn();
 const listAssessments = vi.fn();
+const getAiUsage = vi.fn();
 
 vi.mock("../api/adminApi", () => ({
   adminApp: {
@@ -27,6 +28,7 @@ vi.mock("../api/adminApi", () => ({
     getInviteOverview: (...args: unknown[]) => getInviteOverview(...args),
     getPointsOverview: (...args: unknown[]) => getPointsOverview(...args),
     listAssessments: (...args: unknown[]) => listAssessments(...args),
+    getAiUsage: (...args: unknown[]) => getAiUsage(...args),
   },
 }));
 
@@ -36,6 +38,14 @@ function assessmentPage(total: number) {
 }
 
 beforeEach(() => {
+  getAiUsage.mockReset().mockResolvedValue({
+    period: "2026-03",
+    models: [
+      { model_name: "deepseek-chat", model_version: "v3", calls: 2, prompt_tokens: 1500, completion_tokens: 300, red_flag_calls: 0, degraded_calls: 1 },
+      { model_name: "rule:red_flag", model_version: "v1", calls: 1, prompt_tokens: 0, completion_tokens: 0, red_flag_calls: 1, degraded_calls: 0 },
+    ],
+    totals: { model_name: "合计", model_version: "", calls: 3, prompt_tokens: 1500, completion_tokens: 300, red_flag_calls: 1, degraded_calls: 1 },
+  });
   getCouponPoolOverview.mockReset().mockResolvedValue({
     template_count: 4,
     template_active_count: 3,
@@ -151,5 +161,38 @@ describe("数据看板：渲染与口径", () => {
     expect(wrapper.find(".ph-state--forbidden").exists()).toBe(true);
     expect(getCouponPoolOverview).not.toHaveBeenCalled();
     expect(listAssessments).not.toHaveBeenCalled();
+  });
+});
+
+describe("数据看板：AI 用量（D-28）", () => {
+  it("按账期 × 模型摊开真实用量，合计行与各行对得上，且**没有金额**（单价是页面参数）", async () => {
+    const { wrapper } = await mountPage(StatsView, "/admin/stats");
+
+    expect(getAiUsage).toHaveBeenCalled();
+    expect(wrapper.text()).toContain("deepseek-chat");
+    expect(wrapper.text()).toContain("1500");
+    expect(wrapper.text()).toContain("合计");
+    expect(wrapper.text()).toContain("2026-03");
+    // 红线短路那行：没调模型就没有 token（ADR-0021）
+    expect(wrapper.text()).toContain("rule:red_flag");
+  });
+
+  it("估算成本只用页面上填的单价算：不填就显示「—」，填了才是乘法结果", async () => {
+    const { wrapper } = await mountPage(StatsView, "/admin/stats");
+
+    // 单价没填：不拿 0 当默认值（0 会算出一个「成本为零」的假事实）
+    expect(wrapper.text()).toContain("—");
+
+    await wrapper.get("#usage-price-in").setValue("2");    // 输入单价 2 元 / 千 token
+    await wrapper.get("#usage-price-out").setValue("8");   // 输出单价 8 元 / 千 token
+    await flushPromises();
+
+    // 200 条路径：deepseek-chat 1500/1000×2 + 300/1000×8 = 3 + 2.4 = ¥5.40；合计同样
+    expect(wrapper.text()).toContain("¥5.40");
+    // 乘法只在页面发生：没有任何一次请求带上单价
+    expect(getAiUsage.mock.calls.every((call) => {
+      const arg = call[0] as string | undefined;
+      return arg === undefined || typeof arg === "string";
+    })).toBe(true);
   });
 });

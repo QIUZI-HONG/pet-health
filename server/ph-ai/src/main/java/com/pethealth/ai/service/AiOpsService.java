@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.pethealth.ai.domain.AiConsult;
 import com.pethealth.ai.domain.AiOpsTables;
+import com.pethealth.ai.domain.AiUsageRow;
 import com.pethealth.ai.mapper.AiConsultMapper;
 import com.pethealth.ai.mapper.AiOpsMappers;
 import com.pethealth.api.admin.AiOpsDtos;
@@ -20,6 +21,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 /**
@@ -536,5 +539,43 @@ public class AiOpsService {
                 row.getRiskHint(), row.getConfidence(), row.getSourceTitle(), row.getSourceUrl(),
                 row.getReviewStatus(), row.getReviewedBy(), row.getReviewedCredential(), row.getReviewedAt(),
                 row.getEffectiveFrom(), row.getEffectiveTo(), row.getUpdatedAt());
+    }
+    // ---------------------------------------------------------------- AI 用量（成本测算的只读那一半，D-28）
+
+    /**
+     * 按账期把 AI 用量摊开：**每行一个模型**，外加一行合计。
+     *
+     * <p>只给事实（调用数 / token / 红线短路 / 降级）：**单价不进这里**——它是运营假设，
+     * 页面上填参数乘一下即可。做一张「假设表」入库才是问题：那会让测算结果看起来比它实际可信
+     * （ADR-0050 第五节）。所以这一页的定位是「把真实用量摊开给人看」，不是「给出一个成本结论」。
+     *
+     * @param period yyyy-MM；不传按**当月**（看的是正在发生的花销，而不是已结账的月份）
+     */
+    public AiOpsDtos.AiUsageView aiUsage(String period) {
+        YearMonth month;
+        try {
+            month = period == null || period.isBlank() ? YearMonth.from(AppTime.today()) : YearMonth.parse(period);
+        } catch (DateTimeParseException e) {
+            throw BusinessException.paramInvalid("账期格式应为 yyyy-MM");
+        }
+        List<AiUsageRow> rows = consultMapper.usageByModel(
+                month.atDay(1).atStartOfDay(), month.plusMonths(1).atDay(1).atStartOfDay());
+        List<AiOpsDtos.ModelUsage> models = rows.stream()
+                .map(row -> new AiOpsDtos.ModelUsage(
+                        row.getModelName() == null ? "" : row.getModelName(),
+                        row.getModelVersion() == null ? "" : row.getModelVersion(),
+                        row.getCalls() == null ? 0 : row.getCalls(),
+                        row.getPromptTokens() == null ? 0 : row.getPromptTokens(),
+                        row.getCompletionTokens() == null ? 0 : row.getCompletionTokens(),
+                        row.getRedFlagCalls() == null ? 0 : row.getRedFlagCalls(),
+                        row.getDegradedCalls() == null ? 0 : row.getDegradedCalls()))
+                .toList();
+        AiOpsDtos.ModelUsage totals = new AiOpsDtos.ModelUsage("合计", "",
+                models.stream().mapToLong(AiOpsDtos.ModelUsage::calls).sum(),
+                models.stream().mapToLong(AiOpsDtos.ModelUsage::promptTokens).sum(),
+                models.stream().mapToLong(AiOpsDtos.ModelUsage::completionTokens).sum(),
+                models.stream().mapToLong(AiOpsDtos.ModelUsage::redFlagCalls).sum(),
+                models.stream().mapToLong(AiOpsDtos.ModelUsage::degradedCalls).sum());
+        return new AiOpsDtos.AiUsageView(month.toString(), models, totals);
     }
 }

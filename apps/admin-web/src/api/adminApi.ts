@@ -17,6 +17,8 @@
 import type { AdminSchemas as Schemas } from "@pet-health/shared";
 import { adminHttp } from "./client";
 
+export type AiUsageView = Schemas["AiUsageView"];
+export type ModelUsage = Schemas["ModelUsage"];
 export type ProviderProfileView = Schemas["ProviderProfileView"];
 export type ProviderStatusRequest = Schemas["ProviderStatusRequest"];
 export type ProviderAllianceRequest = Schemas["ProviderAllianceRequest"];
@@ -548,6 +550,16 @@ export const adminApp = {
    */
   updateAiSwitch(switchCode: string, enabled: boolean): Promise<SwitchView> {
     return adminHttp.put<SwitchView>(`${BASE}/ai/switches/${switchCode}`, { enabled });
+  },
+
+  /**
+   * AI 用量（按账期 × 模型）：运营成本页要的**事实**——调用数 / token / 红线短路 / 降级。
+   *
+   * **没有金额**：单价与补贴比例是运营假设，页面上填参数乘一下即可（ADR-0050 第五节）——
+   * 做一张「假设表」入库只会让测算结果看起来比它实际的可信度高。
+   */
+  getAiUsage(period?: string, signal?: AbortSignal): Promise<AiUsageView> {
+    return adminHttp.get<AiUsageView>(`${BASE}/ai/usage`, { period }, { signal });
   },
 
   /**

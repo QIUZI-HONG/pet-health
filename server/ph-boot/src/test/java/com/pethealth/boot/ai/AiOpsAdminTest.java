@@ -552,4 +552,80 @@ class AiOpsAdminTest extends ProviderApiTestSupport {
                 Map.of("action", "vet", "reviewer", "李兽医", "credential", "执业兽医师"), admin).code())
                 .isEqualTo(40400);
     }
+    // ------------------------------------------------------------ AI 用量（D-28：成本测算的只读那一半）
+
+    /** 造一条用完量的咨询：token 与模型由调用方给（本类只关心聚合，不关心回答内容）。 */
+    private void insertUsage(String modelName, String modelVersion, int promptTokens, int completionTokens,
+                             boolean redFlag, boolean degraded, java.time.LocalDateTime createdAt) {
+        jdbc.update("""
+                INSERT INTO ai_consult (user_id, pet_id, trace_id, question_enc, image_count, risk_level,
+                                        need_hospital, red_flag_hits, red_flag_check, degraded,
+                                        model_name, model_version, prompt_version, latency_ms,
+                                        prompt_tokens, completion_tokens, created_at, updated_at)
+                VALUES (1, 1, 'trace-usage', 'enc', 0, 2, 0, ?, 'ok', ?, ?, ?, 'p-test', 10, ?, ?, ?, ?)
+                """, redFlag ? "[\"RF-001\"]" : null, degraded ? 1 : 0,
+                modelName, modelVersion, promptTokens, completionTokens, createdAt, createdAt);
+    }
+
+    @Test
+    @DisplayName("AI 用量：按账期 × 模型聚合真实 token，红线短路与降级各计一行，合计对得上")
+    void usageIsAggregatedByModel() {
+        String admin = adminToken();
+        String period = "2026-03";
+        var day = java.time.LocalDateTime.of(2026, 3, 15, 10, 0);
+        insertUsage("deepseek-chat", "v3", 1000, 200, false, false, day);
+        insertUsage("deepseek-chat", "v3", 500, 100, false, true, day);          // 降级的那条
+        insertUsage("rule:red_flag", "v1", 0, 0, true, false, day);              // 红线短路：根本没调模型
+        insertUsage("deepseek-vl", "v1", 300, 50, false, false, day.plusDays(1));
+        // 账期之外的一条：不该出现在 2026-03 里
+        insertUsage("deepseek-chat", "v3", 9999, 9999, false, false, day.plusMonths(1));
+
+        JsonNode usage = api.get("/api/v1/admin/ai/usage?period=" + period, admin).data();
+        assertThat(usage.path("period").asText()).isEqualTo(period);
+
+        JsonNode chat = modelRow(usage, "deepseek-chat", "v3");
+        assertThat(chat.path("calls").asLong()).isEqualTo(2);
+        assertThat(chat.path("prompt_tokens").asLong()).isEqualTo(1500);
+        assertThat(chat.path("completion_tokens").asLong()).isEqualTo(300);
+        assertThat(chat.path("degraded_calls").asLong()).as("两条里有一条降级").isEqualTo(1);
+        assertThat(chat.path("red_flag_calls").asLong()).isZero();
+
+        JsonNode rule = modelRow(usage, "rule:red_flag", "v1");
+        assertThat(rule.path("red_flag_calls").asLong()).as("短路的那条记在红线列上").isEqualTo(1);
+        assertThat(rule.path("prompt_tokens").asLong()).as("没调模型就没有 token").isZero();
+
+        // 合计行 = 各模型行相加（页面上直接显示它，不再自己算）
+        JsonNode totals = usage.path("totals");
+        assertThat(totals.path("model_name").asText()).isEqualTo("合计");
+        assertThat(totals.path("calls").asLong()).isEqualTo(4);
+        assertThat(totals.path("prompt_tokens").asLong()).isEqualTo(1800);
+        assertThat(totals.path("completion_tokens").asLong()).isEqualTo(350);
+
+        // 契约里没有金额字段：这一页只摊开用量，单价由页面上填（ADR-0050 第五节）
+        assertThat(chat.has("cost")).isFalse();
+        assertThat(chat.has("amount")).isFalse();
+
+        // 默认按当月：不传 period 也返回一个合法账期
+        assertThat(api.get("/api/v1/admin/ai/usage", admin).data().path("period").asText())
+                .matches("\\d{4}-\\d{2}");
+        // 格式不对：40001；C 端令牌：40100
+        assertThat(api.get("/api/v1/admin/ai/usage?period=2026/03", admin).code()).isEqualTo(40001);
+        assertThat(api.get("/api/v1/admin/ai/usage", api.registerAndGetAccessToken(nextPhone())).code())
+                .isEqualTo(40100);
+    }
+
+    private static JsonNode modelRow(JsonNode usage, String modelName, String modelVersion) {
+        for (JsonNode row : usage.path("models")) {
+            if (modelName.equals(row.path("model_name").asText())
+                    && modelVersion.equals(row.path("model_version").asText())) {
+                return row;
+            }
+        }
+        throw new AssertionError("用量里没有 " + modelName + " / " + modelVersion + "：" + usage);
+    }
+
+    @AfterEach
+    void cleanUsageRows() {
+        jdbc.execute("DELETE FROM ai_consult WHERE trace_id = 'trace-usage'");
+    }
 }

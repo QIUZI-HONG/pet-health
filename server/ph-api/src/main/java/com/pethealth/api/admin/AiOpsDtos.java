@@ -296,4 +296,27 @@ public final class AiOpsDtos {
             @Size(max = 128, message = "复核资质最长 128 个字符")
             String credential) {
     }
+
+    /**
+     * AI 用量（运营的 AI 成本页）：按「账期 × 模型」聚合的**事实**。
+     *
+     * <p>**没有金额字段**：单价与补贴比例是运营假设，页面上填、看一眼乘法就行，不进库
+     * （ADR-0050 第五节的立场——假设值入库会让「测算结果」看起来比它实际的可信度高）。
+     */
+    public record AiUsageView(
+            String period,
+            List<ModelUsage> models,
+            ModelUsage totals) {
+    }
+
+    /** 一个模型在一个账期里的用量。token 是**真实留痕**（V10 的两列），不是估算。 */
+    public record ModelUsage(
+            String modelName,
+            String modelVersion,
+            long calls,
+            long promptTokens,
+            long completionTokens,
+            long redFlagCalls,
+            long degradedCalls) {
+    }
 }

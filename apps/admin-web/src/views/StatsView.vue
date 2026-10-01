@@ -34,6 +34,40 @@ const invites = useSection<Awaited<ReturnType<typeof adminApp.getInviteOverview>
 /** 积分：GET /api/v1/admin/points/overview */
 const pointsOverview = useSection<Awaited<ReturnType<typeof adminApp.getPointsOverview>>>();
 
+/** AI 用量：GET /api/v1/admin/ai/usage（按账期 × 模型，只有事实、没有金额） */
+const usage = useSection<Awaited<ReturnType<typeof adminApp.getAiUsage>>>();
+/** 用量账期：留空 = 当月（看正在发生的花销，而不是已结账的月份） */
+const usagePeriod = ref("");
+/**
+ * **单价是运营填的假设，不是系统知道的**（ADR-0050 第五节）：单位「元 / 千 token」，
+ * 页面上乘法算个估算值给人参考。它不进库、也不参与任何结算。
+ */
+const unitPriceIn = ref("");
+const unitPriceOut = ref("");
+
+/**
+ * 估算成本（元）= 输入 token / 1000 × 输入单价 + 输出 token / 1000 × 输出单价。
+ *
+ * 单价没填就返回 null（页面显示「—」）：**不拿 0 当默认值**——
+ * 0 会算出一个「成本为零」的结论，那是个假事实。
+ */
+function estimatedCost(row: { prompt_tokens?: number; completion_tokens?: number }): number | null {
+  const priceIn = Number.parseFloat(unitPriceIn.value);
+  const priceOut = Number.parseFloat(unitPriceOut.value);
+  if (!Number.isFinite(priceIn) || !Number.isFinite(priceOut)) return null;
+  return (row.prompt_tokens ?? 0) / 1000 * priceIn + (row.completion_tokens ?? 0) / 1000 * priceOut;
+}
+
+function costText(row: { prompt_tokens?: number; completion_tokens?: number }): string {
+  const cost = estimatedCost(row);
+  return cost === null ? "—" : `¥${cost.toFixed(2)}`;
+}
+
+async function loadUsage(): Promise<void> {
+  await usage.load(() => adminApp.getAiUsage(usagePeriod.value.trim() || undefined),
+      "AI 用量加载失败，请稍后重试");
+}
+
 /** 考核分布：GET /api/v1/admin/assessments（四个请求，见文件头） */
 interface ExamDistribution {
   total: number;
@@ -77,6 +111,7 @@ async function loadExams(): Promise<void> {
 }
 
 function loadAll(): void {
+  void loadUsage();
   void loadPool();
   void loadInvites();
   void loadPoints();
@@ -306,6 +341,88 @@ function ladderText(): string {
         </p>
       </ConsoleListState>
 
+      <!-- AI 用量（来源：GET /api/v1/admin/ai/usage） -->
+      <h4 class="ph-card__title ph-stats__sub">
+        AI 用量（按账期 × 模型）
+        <span class="ph-text-weak">来源：GET /api/v1/admin/ai/usage</span>
+      </h4>
+      <ConsoleListState
+        :loading="usage.loading.value"
+        :forbidden="usage.forbidden.value"
+        :error-message="usage.errorMessage.value"
+        :request-id="usage.requestId.value"
+        :is-empty="false"
+        loading-title="正在加载 AI 用量"
+        forbidden-title="暂无权限"
+        forbidden-description="这个运营账号的令牌不能读取 AI 用量。"
+        @retry="loadUsage"
+      >
+        <div class="ph-toolbar">
+          <label class="ph-field ph-stats__filter">
+            <span class="ph-field__label">账期</span>
+            <input
+              v-model="usagePeriod"
+              class="ph-input ph-stats__period"
+              placeholder="yyyy-MM，留空 = 当月"
+              @keyup.enter="loadUsage"
+            />
+          </label>
+          <label class="ph-field ph-stats__filter" for="usage-price-in">
+            <span class="ph-field__label">输入单价（元 / 千 token）</span>
+            <input id="usage-price-in" v-model="unitPriceIn" class="ph-input ph-stats__period" placeholder="你填，系统不知道" />
+          </label>
+          <label class="ph-field ph-stats__filter" for="usage-price-out">
+            <span class="ph-field__label">输出单价（元 / 千 token）</span>
+            <input id="usage-price-out" v-model="unitPriceOut" class="ph-input ph-stats__period" placeholder="你填，系统不知道" />
+          </label>
+          <button type="button" class="ph-button ph-button--secondary" @click="loadUsage">查用量</button>
+        </div>
+
+        <div class="ph-table-wrap">
+          <table class="ph-table">
+            <thead>
+              <tr>
+                <th>模型</th>
+                <th>版本</th>
+                <th>咨询条数</th>
+                <th>输入 token</th>
+                <th>输出 token</th>
+                <th>红线短路</th>
+                <th>降级</th>
+                <th>估算成本</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, index) in usage.data.value?.models ?? []" :key="`${row.model_name}-${index}`">
+                <td>{{ row.model_name }}</td>
+                <td>{{ row.model_version }}</td>
+                <td class="ph-table__num">{{ row.calls }}</td>
+                <td class="ph-table__num">{{ row.prompt_tokens }}</td>
+                <td class="ph-table__num">{{ row.completion_tokens }}</td>
+                <td class="ph-table__num">{{ row.red_flag_calls }}</td>
+                <td class="ph-table__num">{{ row.degraded_calls }}</td>
+                <td class="ph-table__num">{{ costText(row) }}</td>
+              </tr>
+              <tr v-if="usage.data.value?.totals">
+                <td><strong>{{ usage.data.value.totals.model_name }}</strong></td>
+                <td>—</td>
+                <td class="ph-table__num"><strong>{{ usage.data.value.totals.calls }}</strong></td>
+                <td class="ph-table__num"><strong>{{ usage.data.value.totals.prompt_tokens }}</strong></td>
+                <td class="ph-table__num"><strong>{{ usage.data.value.totals.completion_tokens }}</strong></td>
+                <td class="ph-table__num"><strong>{{ usage.data.value.totals.red_flag_calls }}</strong></td>
+                <td class="ph-table__num"><strong>{{ usage.data.value.totals.degraded_calls }}</strong></td>
+                <td class="ph-table__num"><strong>{{ costText(usage.data.value.totals) }}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="ph-field__hint ph-stats__note">
+          账期：**{{ usage.data.value?.period ?? "—" }}**。token 是留痕里的真实值；**估算成本是拿你填的单价乘出来的**——
+          单价与补贴比例是运营假设，系统不知道也不该猜（ADR-0050 第五节），所以它不进库、不参与结算。
+          `rule:red_flag` 那行是**命中硬红线、根本没调模型**的咨询（ADR-0021），它的 token 恒为 0。
+        </p>
+      </ConsoleListState>
+
       <div class="ph-card ph-stats__gap">
         <h4 class="ph-card__title">这一屏没有的指标（缺口）</h4>
         <p>
@@ -315,8 +432,8 @@ function ladderText(): string {
         <ul class="ph-stats__gaps">
           <li>订单 / 履约：admin.yaml 里没有订单相关的路径（订单在 ph-order，管理端的聚合未进契约）。</li>
           <li>
-            AI 用量与降级：只有抽检明细 <code>/ai/consults</code>（可按 <code>degraded</code> 过滤数条数），
-            它的口径是「留痕条数」而不是咨询总量，也不含预算消耗——等聚合接口进契约再补。
+            AI 的**金额**：用量（token / 条数 / 降级）已经在上面那一格了，但契约里**没有金额**——
+            单价与补贴比例是运营假设，页面参数化即可；要做成系统内的成本模型得先有甲方的商务价。
           </li>
           <li>用户总数 / 新增：没有用户资源（没有 `/users`），见「用户管理」页的文件头。</li>
         </ul>

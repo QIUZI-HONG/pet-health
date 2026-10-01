@@ -264,4 +264,13 @@ public class AiOpsController {
         CurrentUser.requireAdmin();
         return ApiResponse.ok(opsService.reviewKnowledgeEntry(code, request));
     }
+    /**
+     * AI 用量（按账期 × 模型）：**只给事实**，单价由页面上填（ADR-0050 第五节）。
+     */
+    @GetMapping("/usage")
+    public ApiResponse<AiOpsDtos.AiUsageView> aiUsage(
+            @RequestParam(required = false) String period) {
+        CurrentUser.requireAdmin();
+        return ApiResponse.ok(opsService.aiUsage(period));
+    }
 }
