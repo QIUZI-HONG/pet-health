@@ -100,6 +100,20 @@ backend_up() { http_up "http://127.0.0.1:$MGMT_PORT/actuator/health"; }
 # AI 健康：带内部鉴权头（无 token 会被 401 挡掉）
 ai_up() { curl -fsS --max-time 2 -H "x-internal-token: $AI_TOKEN" "http://127.0.0.1:8000/internal/health" >/dev/null 2>&1; }
 
+# 中间件就绪判定：**端口通 ≠ 就绪**——docker 的端口转发在容器一启动就绑上了，
+# 而 mysqld 还要做恢复/初始化。用与 healthcheck 同款的口令问答来等（90 秒上限）。
+wait_middleware_ready() {
+  local i
+  for i in $(seq 1 45); do
+    if docker exec ph-mysql-dev mysqladmin ping -h 127.0.0.1 -pdevroot >/dev/null 2>&1 \
+      && docker exec ph-redis-dev redis-cli ping >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 # ---------------------------------------------------------------- 启动与停止
 
 # 在后台起一个服务：独立会话（setsid）+ 日志 + PID 文件。
@@ -201,8 +215,24 @@ say "[1/4] 中间件（MySQL :3307 / Redis :6379）"
 command -v docker >/dev/null 2>&1 || die "没找到 docker（Docker Desktop 装了吗？）"
 docker info >/dev/null 2>&1 || die "Docker daemon 没在跑——先启动 Docker Desktop，再重跑本脚本"
 docker compose -f "$ROOT/deploy/docker-compose.dev.yml" up -d >/dev/null
-wait_port 3307 60 || die "MySQL 60 秒没就绪，看：docker logs ph-mysql-dev"
-wait_port 6379 30 || die "Redis 30 秒没就绪，看：docker logs ph-redis-dev"
+wait_middleware_ready || die "中间件 90 秒未就绪，看：docker logs ph-mysql-dev / ph-redis-dev"
+
+# 落盘探针（2026-10-01 实测两次的坑）：Docker Desktop 冷启动时若抢在 WSL 文件系统就绪前
+# 拉起容器，`\\wsl.localhost` 的 bind 会被**静默降级成 tmpfs**——数据库照常跑，但数据全在
+# 内存里、重启即失（表现是「库突然空了、Flyway 全量重迁」）。这里探一刀；发现是内存盘就
+# 重建容器（此时文件系统已就绪，bind 能挂上；磁盘上的数据目录原样读回来）。
+middleware_on_disk() {
+  docker exec ph-mysql-dev sh -c 'grep -qE " /var/lib/mysql tmpfs " /proc/mounts' 2>/dev/null && return 1
+  docker exec ph-redis-dev sh -c 'grep -qE " /data tmpfs " /proc/mounts' 2>/dev/null && return 1
+  return 0
+}
+if ! middleware_on_disk; then
+  warn "中间件的数据目录落在内存盘（Docker Desktop 抢跑导致）——正在重建容器挂回磁盘…"
+  docker compose -f "$ROOT/deploy/docker-compose.dev.yml" up -d --force-recreate mysql redis >/dev/null
+  wait_middleware_ready || die "重建后中间件 90 秒未就绪，看：docker logs ph-mysql-dev"
+  middleware_on_disk || die "重建后仍是内存盘——退出 Docker Desktop 重开，再重跑本脚本"
+  ok "已把数据目录挂回磁盘（数据不会再随重启丢）"
+fi
 ok "中间件就绪"
 
 # 2/4 AI 服务
