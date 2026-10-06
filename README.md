@@ -1,5 +1,16 @@
 # 宠物 AI 健康管理平台
 
+> ## 🟢 在线演示（此刻就能点开用）
+>
+> | 端 | 地址 |
+> | --- | --- |
+> | **C 端（主入口）** | **<https://assets-illustrated-phenomenon-vegas.trycloudflare.com>** |
+> | 服务者后台 | <https://particular-behaviour-reveals-join.trycloudflare.com> |
+> | 运营后台 | <https://conducted-movie-humor-mountain.trycloudflare.com> |
+>
+> 演示账号 **`13800138000` / `pet12345`**（三端通用）。
+> 地址走本机隧道（`./online.sh`），**是临时的**——重启就换域名；点不开时按下文「在线演示」一节重新生成，别当成仓库坏了。
+
 以 AI 为基座、24 小时监护宠物健康的平台：先让用户低成本自助解决问题，解决不了再匹配服务者完成交易。
 
 三个端**全部是 Web**——C 端（宠物主人）、服务者后台、运营后台。不做微信小程序，不做移动 APP（见 [ADR-0001](docs/adr/0001-all-web-clients.md)）。
