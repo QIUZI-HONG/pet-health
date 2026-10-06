@@ -7,7 +7,8 @@
 #
 # 它依次做（每一件都先探测、再启动、后等待健康）：
 #   1. 中间件    MySQL 8 :3307 + Redis :6379   （docker compose，随 --stop 也不停，见命令输出）
-#   2. AI 服务   http://127.0.0.1:8000         （ai/.venv/bin/uvicorn，不带 --reload：改 AI 代码要重跑本步）
+#   2. AI 服务   http://127.0.0.1:8000         （ai/.venv/bin/uvicorn，不带 --reload：改 AI 代码要重跑本步；
+#                                              端口可被 ai/.env 的 AI_PORT 覆盖——本机 8000 被别的项目占过）
 #   3. 后端      http://127.0.0.1:8080         （server/./mvnw spring-boot:run，自动读 server/.env；
 #                                              健康检查在独立管理端口 :9090/actuator/health）
 #   4. 三个端    C 端 :5173 / 服务者后台 :5174 / 运营后台 :5175（pnpm --filter <app> dev）
@@ -34,6 +35,11 @@ mkdir -p "$RUN"
 #     8080 上直接访问是 404。
 AI_TOKEN="$(grep -s '^INTERNAL_TOKEN=' "$ROOT/ai/.env" | head -1 | cut -d= -f2-)"
 AI_TOKEN="${AI_TOKEN:-dev-internal-token}"
+# AI 服务端口：默认 8000。允许在 ai/.env 里改 AI_PORT——本机 8000 被另一个项目（HeritagePulse）
+# 占着，不改就只能"服务没起来却显示已在跑"（端口探测是同款误判，见 2026-10-06 的修复）。
+# **改它就必须同步改后端 server/.env 的 AI_SERVICE_BASE_URL**，否则 AI 功能静默走降级；下面有核对。
+AI_PORT="$(grep -s '^AI_PORT=' "$ROOT/ai/.env" | head -1 | cut -d= -f2-)"
+AI_PORT="${AI_PORT:-8000}"
 MGMT_PORT="$(grep -s '^MANAGEMENT_PORT=' "$ROOT/server/.env" | head -1 | cut -d= -f2-)"
 MGMT_PORT="${MGMT_PORT:-9090}"
 
@@ -98,7 +104,7 @@ wait_ok() {
 backend_up() { http_up "http://127.0.0.1:$MGMT_PORT/actuator/health"; }
 
 # AI 健康：带内部鉴权头（无 token 会被 401 挡掉）
-ai_up() { curl -fsS --max-time 2 -H "x-internal-token: $AI_TOKEN" "http://127.0.0.1:8000/internal/health" >/dev/null 2>&1; }
+ai_up() { curl -fsS --max-time 2 -H "x-internal-token: $AI_TOKEN" "http://127.0.0.1:$AI_PORT/internal/health" >/dev/null 2>&1; }
 
 # 中间件就绪判定：**端口通 ≠ 就绪**——docker 的端口转发在容器一启动就绑上了，
 # 而 mysqld 还要做恢复/初始化。用与 healthcheck 同款的口令问答来等（90 秒上限）。
@@ -236,14 +242,23 @@ fi
 ok "中间件就绪"
 
 # 2/4 AI 服务
-say "[2/4] AI 服务（:8000）"
-if port_up 8000; then
+say "[2/4] AI 服务（:$AI_PORT）"
+# 配对核对（踩过一次）：后端按 server/.env 的 AI_SERVICE_BASE_URL 找 AI 服务，没配则默认 8000。
+# 端口改过而这两处没跟着改，表现是「AI 功能全部走降级」——**不报错、最难查**，所以起服务前先喊一声。
+ai_base_url="$(grep -s '^AI_SERVICE_BASE_URL=' "$ROOT/server/.env" | head -1 | cut -d= -f2-)"
+ai_base_url="${ai_base_url%/}"
+if [ "$AI_PORT" != "8000" ] && [ -z "$ai_base_url" ]; then
+  warn "ai/.env 的 AI_PORT=$AI_PORT，但 server/.env 没配 AI_SERVICE_BASE_URL——后端会去默认的 8000 找 AI 服务"
+elif [ -n "$ai_base_url" ] && [ "${ai_base_url##*:}" != "$AI_PORT" ]; then
+  warn "端口对不上：ai/.env 的 AI_PORT=$AI_PORT，server/.env 的 AI_SERVICE_BASE_URL=$ai_base_url"
+fi
+if port_up "$AI_PORT"; then
   ok "已在跑，跳过"
 elif [ ! -x "$ROOT/ai/.venv/bin/uvicorn" ]; then
   warn "没找到 ai/.venv——跳过 AI 服务（建法见 README「本地怎么跑」第 2 步）"
 else
   [ -f "$ROOT/ai/.env" ] || warn "ai/.env 不在——若启动失败，cp ai/.env.example ai/.env 并填 AI_API_KEY"
-  start_bg ai "$ROOT/ai" "$ROOT/ai/.venv/bin/uvicorn" app.main:app --port 8000
+  start_bg ai "$ROOT/ai" "$ROOT/ai/.venv/bin/uvicorn" app.main:app --port "$AI_PORT"
   if wait_ok ai_up 30 dots; then
     ok "AI 服务就绪"
   else
@@ -297,7 +312,7 @@ say "  C 端        http://localhost:5173   ← 主入口"
 say "  服务者后台  http://localhost:5174"
 say "  运营后台    http://localhost:5175"
 say "  后端健康    http://127.0.0.1:9090/actuator/health（独立管理端口）"
-say "  AI 健康     http://127.0.0.1:8000/internal/health（要带 x-internal-token 头）"
+say "  AI 健康     http://127.0.0.1:$AI_PORT/internal/health（要带 x-internal-token 头）"
 say ""
 say "演示数据（没造过就跑一次，幂等）：bash server/scripts/demo-seed.sh"
 say "日志：.run/*.log        停：./open.sh --stop"

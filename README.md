@@ -163,7 +163,7 @@ cd server && ./mvnw -B verify
 
 后端会读这些（括号内是本地默认值）：
 
-- `AI_SERVICE_BASE_URL`（`http://127.0.0.1:8000`）
+- `AI_SERVICE_BASE_URL`（`http://127.0.0.1:8000`；端口要改时在 `ai/.env` 里加 `AI_PORT` 并同步改这里，见「本机特有的三件事」第 3 条）
 - `AI_SERVICE_TOKEN`（`dev-internal-token`）——**必须与 `ai/.env` 的 `INTERNAL_TOKEN` 一致**
 - `AI_TIMEOUT_MS`（`20000`；实测模型偶发 20 秒，配 8 秒等于常态化降级，见 ADR-0017）、`AI_FREE_QUOTA_PER_DAY`（`3`）、`AI_DAILY_BUDGET_CNY`（`50`）
 - `APP_BASE_URL`（`http://127.0.0.1:8080`）——**后端对 AI 服务可达的地址**：档案照片的签名读地址是相对路径，
@@ -237,7 +237,7 @@ docker compose -f deploy/docker-compose.dev.yml exec mysql \
   - **一条要记住的结论**：RediSearch 的中文分词**不支持子串检索**（查「犬瘟」命中不了「犬瘟热」），所以关键词检索走 MySQL ngram——两条路径都实测过，依据见 [#63](https://github.com/QIUZI-HONG/pet-health/issues/63)
   - **三条 CI 流水线全部实测通过**（首次推送时触发）：[Server](https://github.com/QIUZI-HONG/pet-health/actions) · [Web](https://github.com/QIUZI-HONG/pet-health/actions) · [AI Service](https://github.com/QIUZI-HONG/pet-health/actions)。其中 AI 那条确认了 Python 3.14 在 GitHub runner 上可用。
 
-### 本机特有的两件事
+### 本机特有的三件事
 
 **1. GitHub 的 `github.com:443` 在本机被阻断（SNI 层），`api.github.com` 与 `ssh.github.com:443` 可用。** 所以 `git push` 走 SSH over 443。本仓库的 `.git/config` 已配好（**只在本机生效，不进提交**）：
 
@@ -249,6 +249,8 @@ remote.origin.url = ssh://git@ssh.github.com:443/QIUZI-HONG/pet-health.git
 用的是 Windows 侧那把 `id_ed25519_github`，**没有把私钥复制进 WSL**。换机器或被重置时，照上面两行重配即可。
 
 **2. Docker 镜像源**已配在 Docker Desktop 的 `daemon.json`（`docker.1ms.run` → `hub.rat.dev` → `docker.m.daocloud.io`，按实测速度排序），直接 `docker pull` 即可。
+
+**3. 本机的 8000 端口被另一个项目（HeritagePulse）占着。** AI 服务默认就起在 8000——端口被占时 `open.sh` 会把它误判成「已在跑，跳过」，于是后端照样起、AI 功能却全部走降级。所以本机把 AI 服务挪到了 **8001**：`ai/.env` 里 `AI_PORT=8001`，`server/.env` 里 `AI_SERVICE_BASE_URL=http://127.0.0.1:8001` **配对**。两个值要么都改、要么都不改（只改一边，AI 功能会静默降级；`open.sh` 起服务前会核对这处配对并提醒）。换一台机器不用照抄，用默认的 8000 即可。
 
 ### pnpm 12 的一个坑
 
